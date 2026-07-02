@@ -4,7 +4,7 @@
 
 # Connect for Python
 
-[![PyPI version](https://img.shields.io/pypi/v/connect-py?style=flat-square)](https://pypi.org/project/protobuf-py)
+[![PyPI version](https://img.shields.io/pypi/v/connect-py?style=flat-square)](https://pypi.org/project/connect-py)
 [![License](https://img.shields.io/pypi/l/connect-py?style=flat-square)](https://github.com/connectrpc/connect-py/blob/main/LICENSE)
 [![Slack](https://img.shields.io/badge/slack-buf-%23e01e5a?style=flat-square)](https://buf.build/links/slack)
 
@@ -20,14 +20,14 @@ Connect generates type-safe server stubs and client libraries for [**every major
 
 ## Features
 
-- **Servers**: WSGI and ASGI-ready, use with `uvicorn` or any other server
-- **Clients**: Lightweight sync and async clients, backed by [pyqwest](https://pyqwest.dev/)
-- **Protocols**: Supports Connect, gRPC, and gRPC-Web, over both HTTP/1.1 and HTTP/2
-- **Type Safety**: Fully type-annotated generated code
-- **Streaming**: Full support for server, client, and bidirectional streaming
-- **Compression**: Built-in support for gzip, brotli, and zstd compression
-- **Interceptor framework**: Write server-side and client-side middleware for telemetry, logging, etc.
-- **Compliant**: Verified using the official [Connect conformance](https://github.com/connectrpc/conformance) test suite
+- **Servers:** WSGI and ASGI-ready, use with `uvicorn` or any other server
+- **Clients:** Lightweight sync and async clients, backed by `pyqwest`
+- **Protocols:** Supports Connect, gRPC, and gRPC-Web (HTTP/1.1 and HTTP/2)
+- **Type safety:** Fully type-annotated generated code
+- **Streaming:** Full support for server, client, and bidirectional streaming
+- **Compression:** Built-in support for gzip, brotli, and zstd
+- **Middleware:** Server- and client-side interceptors for telemetry, logging, etc.
+- **Compliant:** Verified using the official [Connect conformance](https://github.com/connectrpc/conformance) test suite
 
 ## Getting started
 
@@ -37,14 +37,14 @@ Install the runtime library:
 uv add connectrpc
 ```
 
-For codegen, install [buf](https://github.com/bufbuild/buf) and create `buf.gen.yaml`:
+For codegen, install [`buf`](https://github.com/bufbuild/buf) and create `buf.gen.yaml`:
 
 ```yaml
 version: v2
 plugins:
   - remote: buf.build/bufbuild/py
     out: gen
-  - remote: buf.build/connectrpc/python
+  - remote: buf.build/connectrpc/py
     out: gen
 ```
 
@@ -84,7 +84,7 @@ plugins:
     out: .
   - remote: buf.build/protocolbuffers/pyi
     out: .
-  - remote: buf.build/connectrpc/python
+  - remote: buf.build/connectrpc/py
     out: .
     opt: protobuf=google
 ```
@@ -93,7 +93,9 @@ If configuring a client for JSON codec, make sure to pass `connectrpc.compat.goo
 
 </details>
 
-### Basic Server Usage
+## Usage
+
+A basic Connect server is easy to set up - import the stubs, subclass the generated service, and serve:
 
 ```python
 from connectrpc.request import RequestContext
@@ -107,34 +109,32 @@ class MyHelloService(HelloService):
 # Create ASGI app
 app = HelloServiceASGIApplication(MyHelloService())
 
-# Run with any ASGI server like uvicorn:
+# Run with any ASGI server, e.g. uvicorn:
 # uvicorn server:app --port 8080
 ```
 
-### Basic Client Usage (Async)
+Client libraries are automatically generated for you. Here's what the async client looks like:
 
 ```python
 from your_service_pb import HelloRequest, HelloResponse
 from your_service_connect import HelloServiceClient
 
-# Create async client
 async def main():
+    # Create async client
     async with HelloServiceClient("https://api.example.com") as client:
-        # Make a unary RPC call
         response = await client.say_hello(HelloRequest(name="World"))
         print(response.message)  # "Hello, World!"
 ```
 
-### Basic Client Usage (Sync)
+And the sync client:
 
 ```python
 from your_service_pb import HelloRequest
 from your_service_connect import HelloServiceClientSync
 
-# Create sync client
 def main():
+    # Create sync client
     with HelloServiceClientSync("https://api.example.com") as client:
-        # Make a unary RPC call
         response = client.say_hello(HelloRequest(name="World"))
         print(response.message)  # "Hello, World!"
 
@@ -142,7 +142,8 @@ if __name__ == "__main__":
     main()
 ```
 
-Check out [the docs](https://connectrpc.com/docs/python/getting-started) for more detailed usage:
+Check out [the docs](https://connectrpc.com/docs/python/getting-started/) for more detailed usage.
 
-- [**Streaming:**](https://connectrpc.com/docs/python/streaming) Connect supports server-side, client-side, and bidirectional streaming.
-- [**Interceptors:**](https://connectrpc.com/docs/python/interceptors) Set up middleware for logging, observability, and metrics.
+- [**Streaming:**](https://connectrpc.com/docs/python/streaming/) Connect supports server-side, client-side, and bidirectional streaming.
+- [**Interceptors:**](https://connectrpc.com/docs/python/interceptors/) Set up middleware for logging, observability, and metrics.
+- [**Other languages:**](https://connectrpc.com/docs/introduction/) Generate clients for use in other languages.
