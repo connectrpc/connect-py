@@ -10,13 +10,17 @@
 
 Connect is the **easiest way to build modern APIs**.
 
-Connect generates type-safe server stubs and client libraries for [**every major language**](https://connectrpc.com/), including your frontend. It supports bidirectional streaming, interoperates seamlessly with gRPC, and speaks both JSON and Protobuf.
-
 [Docs](https://connectrpc.com/docs/python/getting-started/) •
 [Example](https://github.com/connectrpc/connect-py/tree/main/example) •
 [New to Connect?](https://connectrpc.com/)
 
 </div>
+
+## Why Connect?
+
+Building an API usually means writing the same types twice: once on the server, once in every client. Connect fixes that - define your API schema in Protobuf, and it will generate type-safe server stubs and client libraries in **every major language**, including your frontend. All that's left to write is your business logic.
+
+And it's all plain HTTP! Connect speaks both JSON and Protobuf, so `curl` works out of the box. It supports streaming as a first-class feature, and interoperates seamlessly with gRPC and gRPC-Web - adopt it one service at a time, alongside what you already run.
 
 ## Features
 
