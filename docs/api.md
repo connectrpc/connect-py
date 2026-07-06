@@ -18,4 +18,8 @@
     options:
         show_submodules: true
 
+::: connectrpc.grpcreflect
+    options:
+        inherited_members: true
+
 ::: connectrpc.compat
