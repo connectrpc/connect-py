@@ -24,7 +24,7 @@ Connect already works with your current tech stack:
 
 - Connect is built on top of HTTP and speaks both JSON and Protobuf, so `curl` works out of the box.
 - It interoperates seamlessly with gRPC and gRPC-Web, and supports streaming as a first-class feature.
-- It runs on WSGI/ASGI, so you can build Connect APIs alongside your current API framework - all in the same app.
+- It runs on WSGI/ASGI. Build Connect APIs *alongside* your current API framework - all in the same app.
 
 ## Features
 
