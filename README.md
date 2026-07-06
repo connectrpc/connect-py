@@ -1,80 +1,89 @@
+<div align="center">
+
+![The Connect logo](https://raw.githubusercontent.com/connectrpc/connectrpc.com/12f7ad8e95c5f784700bc280708b27cd148d0cf1/public/img/logo.svg)
+
 # Connect for Python
 
-[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
-[![CI](https://github.com/connectrpc/connect-py/actions/workflows/ci.yaml/badge.svg)](https://github.com/connectrpc/connect-py/actions/workflows/ci.yaml)
-[![codecov](https://codecov.io/github/connectrpc/connect-py/graph/badge.svg)](https://codecov.io/github/connectrpc/connect-py)
-[![PyPI version](https://img.shields.io/pypi/v/connect-py)](https://pypi.org/project/connect-py)
-[![API Docs](https://img.shields.io/badge/API_Docs-connectrpc.github.io-blue)](https://connectrpc.github.io/connect-py/api/)
+[![PyPI version](https://img.shields.io/pypi/v/connect-py?style=flat-square)](https://pypi.org/project/connect-py)
+[![License](https://img.shields.io/pypi/l/connect-py?style=flat-square)](https://github.com/connectrpc/connect-py/blob/main/LICENSE)
+[![Slack](https://img.shields.io/badge/slack-buf-%23e01e5a?style=flat-square)](https://buf.build/links/slack)
 
-A Python implementation of [Connect](https://connectrpc.com/): Protobuf RPC that works.
+Connect is the **easiest way to build modern APIs**.
 
-This repo provides a Python implementation of Connect, including both client and server support. It includes a protoc plugin that generates typed client stubs and server interfaces from your `.proto` files, along with runtime libraries for both synchronous and asynchronous code.
+[Docs](https://connectrpc.com/docs/python/getting-started/) •
+[Example](https://github.com/connectrpc/connect-py/tree/main/example) •
+[New to Connect?](https://connectrpc.com/)
+
+</div>
+
+## Why Connect?
+
+Building an API usually means writing the same types at least twice: once on the server, and once in every client. Connect makes this simple - define your API schema using Protobuf, and Connect generates type-safe server stubs and idiomatic client libraries in **every major language**, including for your frontend. All that's left to write is your business logic, in plain Python.
+
+Connect already works with your current tech stack:
+
+- Connect is built on top of HTTP and speaks both Protobuf and JSON, so `curl` works out of the box.
+- It interoperates seamlessly with gRPC and gRPC-Web, and supports streaming as a first-class feature.
+- It runs on WSGI/ASGI. Build Connect APIs *alongside* your current API framework - all in the same app.
 
 ## Features
 
-- **Clients**: Both synchronous and asynchronous clients backed by [pyqwest](https://pyqwest.dev/)
-- **Servers**: WSGI and ASGI server implementations for use with any Python app server
-- **Type Safety**: Fully type-annotated, including the generated code
-- **Compression**: Built-in support for gzip, brotli, and zstd compression
-- **Interceptors**: Server-side and client-side interceptors for cross-cutting concerns
-- **Streaming**: Full support for server, client, and bidirectional streaming
-- **Standards Compliant**: Verified implementation using the official
-  [Connect conformance](https://github.com/connectrpc/conformance) test
-  suite
+- **Servers:** WSGI and ASGI-ready, use with any [compatible server](https://connectrpc.com/docs/python/deployment/)
+- **Clients:** Lightweight sync and async clients, backed by `pyqwest`
+- **Protocols:** Supports Connect, gRPC, and gRPC-Web (HTTP/1.1 and HTTP/2)
+- **Type safety:** Fully type-annotated generated code
+- **Streaming:** Full support for server, client, and bidirectional streaming
+- **Compression:** Built-in support for gzip, brotli, and zstd
+- **Middleware:** Server- and client-side interceptors for telemetry, logging, etc.
+- **Compliant:** Verified using the official [Connect conformance](https://github.com/connectrpc/conformance) test suite
 
-## Installation
+## Getting started
 
-### Install the runtime library
-
-```bash
-pip install connectrpc
-```
-
-Or with your preferred package manager:
+Install the runtime library:
 
 ```bash
-# Using uv
 uv add connectrpc
-
-# Using poetry
-poetry add connectrpc
 ```
 
-### Install the code generator
-
-With a protobuf definition in hand, you can generate stub code. This is
-easiest using buf, but you can also use protoc if you're feeling
-masochistic.
-
-A reasonable `buf.gen.yaml`:
+For codegen, install [`buf`](https://github.com/bufbuild/buf) and create `buf.gen.yaml`:
 
 ```yaml
 version: v2
 plugins:
   - remote: buf.build/bufbuild/py
     out: gen
-  - remote: buf.build/connectrpc/python
+  - remote: buf.build/connectrpc/py
     out: gen
 ```
 
-Or, you can install the compiler (e.g. `pip install protoc-gen-connectrpc`), and
-it can be referenced as `protoc-gen-connectrpc`.
-Then, you can use `protoc-gen-connectrpc` as a local plugin:
+<details>
 
-```yaml
-- local: .venv/bin/protoc-gen-connectrpc
-  out: .
+<summary><b>Local plugin setup</b></summary>
+
+The example above uses a Buf-hosted plugin server. To generate code entirely locally, install the relevant plugins:
+
+```bash
+uv add --dev protoc-gen-py protoc-gen-connectrpc
 ```
 
-`protoc-gen-connectrpc` is only needed for code generation. Your actual
-application should include `connectrpc` as a dependency for the runtime
-component.
+Now edit your `buf.gen.yaml`:
 
-#### google.protobuf compatibility
+```yaml
+version: v2
+plugins:
+  - local: .venv/bin/protoc-gen-py
+    out: gen
+  - local: .venv/bin/protoc-gen-connectrpc
+    out: gen
+```
 
-Connect defaults to targeting [protobuf-py](https://protobufpy.com) as the Protocol Buffers
-implementation but Google's Protocol Buffers for Python are also fully supported. Pass `protobuf=google`
-to the codegen plugin to use it.
+</details>
+
+<details>
+
+<summary><b>Compatibility with <code>google-protobuf</code></b></summary>
+
+Connect defaults to targeting [protobuf-py](https://protobufpy.com) as the Protocol Buffers implementation, but it also supports Google's Protocol Buffers for Python. Pass `protobuf=google` to the codegen plugin to use it.
 
 ```yaml
 version: v2
@@ -83,29 +92,18 @@ plugins:
     out: .
   - remote: buf.build/protocolbuffers/pyi
     out: .
-  - remote: buf.build/connectrpc/python
+  - remote: buf.build/connectrpc/py
     out: .
     opt: protobuf=google
 ```
 
-If configuring a client for JSON codec, make sure to pass `connectrpc.compat.google_protobuf_json_codec`
-instead of `connectrpc.codec.proto_json_codec`.
+If configuring a client for JSON codec, make sure to pass `connectrpc.compat.google_protobuf_json_codec` instead of `connectrpc.codec.proto_json_codec`.
 
-### Basic Client Usage
+</details>
 
-```python
-from your_service_pb import HelloRequest, HelloResponse
-from your_service_connect import HelloServiceClient
+## Usage
 
-# Create async client
-async def main():
-    async with HelloServiceClient("https://api.example.com") as client:
-        # Make a unary RPC call
-        response = await client.say_hello(HelloRequest(name="World"))
-        print(response.message)  # "Hello, World!"
-```
-
-### Basic Server Usage
+A basic Connect server is easy to set up. Just import the stubs, subclass the generated service, and serve:
 
 ```python
 from connectrpc.request import RequestContext
@@ -119,20 +117,32 @@ class MyHelloService(HelloService):
 # Create ASGI app
 app = HelloServiceASGIApplication(MyHelloService())
 
-# Run with any ASGI server like uvicorn:
+# Run with any ASGI server, e.g. uvicorn:
 # uvicorn server:app --port 8080
 ```
 
-### Basic Client Usage (Synchronous)
+Client libraries are automatically generated for you. Here's what the async client looks like:
+
+```python
+from your_service_pb import HelloRequest, HelloResponse
+from your_service_connect import HelloServiceClient
+
+async def main():
+    # Create async client
+    async with HelloServiceClient("https://api.example.com") as client:
+        response = await client.say_hello(HelloRequest(name="World"))
+        print(response.message)  # "Hello, World!"
+```
+
+And the sync client:
 
 ```python
 from your_service_pb import HelloRequest
 from your_service_connect import HelloServiceClientSync
 
-# Create sync client
 def main():
+    # Create sync client
     with HelloServiceClientSync("https://api.example.com") as client:
-        # Make a unary RPC call
         response = client.say_hello(HelloRequest(name="World"))
         print(response.message)  # "Hello, World!"
 
@@ -140,302 +150,8 @@ if __name__ == "__main__":
     main()
 ```
 
-Check out [the docs](https://connectrpc.com/docs/python/getting-started) for more detailed usage including [streaming](https://connectrpc.com/docs/python/streaming), [interceptors](https://connectrpc.com/docs/python/interceptors), and other advanced features.
-
-## Streaming Support
-
-Connect supports all RPC streaming types:
-
-- **Unary**: Single request, single response
-- **Server Streaming**: Single request, multiple responses
-- **Client Streaming**: Multiple requests, single response
-- **Bidirectional Streaming**: Multiple requests, multiple responses
-
-### Server Streaming
-
-Single request, multiple responses:
-
-```python
-# Server implementation
-async def make_hats(self, req: Size, ctx: RequestContext) -> AsyncIterator[Hat]:
-    for i in range(3):
-        yield Hat(size=req.inches + i, color=["red", "green", "blue"][i])
-
-# Client usage
-async for hat in client.make_hats(Size(inches=12)):
-    print(f"Received: {hat}")
-```
-
-### Client Streaming
-
-Multiple requests, single response:
-
-```python
-# Server implementation
-async def collect_sizes(self, reqs: AsyncIterator[Size], ctx: RequestContext) -> Summary:
-    total = 0
-    count = 0
-    async for size in reqs:
-        total += size.inches
-        count += 1
-    return Summary(total=total, average=total/count if count else 0)
-
-# Client usage
-async def send_sizes():
-    for i in range(5):
-        yield Size(inches=i * 2)
-
-summary = await client.collect_sizes(send_sizes())
-```
-
-### Bidirectional Streaming
-
-Multiple requests and responses:
-
-```python
-# Server implementation (like the Eliza chatbot)
-async def converse(self, reqs: AsyncIterator[ConverseRequest], ctx: RequestContext) -> AsyncIterator[ConverseResponse]:
-    async for req in reqs:
-        # Process and respond to each message
-        reply = process_message(req.sentence)
-        yield ConverseResponse(sentence=reply)
-
-# Client usage
-async def chat():
-    yield ConverseRequest(sentence="Hello")
-    yield ConverseRequest(sentence="How are you?")
-
-async for response in client.converse(chat()):
-    print(f"Response: {response.sentence}")
-```
-
-### Streaming Notes
-
-- **HTTP/2 ASGI servers**: Support all streaming types including full-duplex bidirectional
-- **HTTP/1.1 servers**: Support half-duplex bidirectional streaming only
-- **WSGI servers**: Support streaming but not full-duplex bidirectional due to protocol limitations
-
-- **Clients**: Support half-duplex bidirectional streaming only
-
-## Examples
-
-The `example/` directory contains complete working examples demonstrating all features:
-
-- **Eliza Chatbot**: A Connect implementation of the classic ELIZA psychotherapist chatbot
-  - `eliza_service.py` - Async ASGI server implementation
-  - `eliza_service_sync.py` - Synchronous WSGI server implementation
-  - `eliza_client.py` - Async client example
-  - `eliza_client_sync.py` - Synchronous client example
-- **All streaming patterns**: Unary, server streaming, client streaming, and bidirectional
-- **Integration examples**: Starlette, Flask, and other frameworks
-
-Run the Eliza example:
-
-```bash
-# Start the server
-cd example
-uvicorn example.eliza_service:app --port 8080
-
-# In another terminal, run the client
-python -m example.eliza_client
-```
-
-## Supported Protocols
-
-- ✅ Connect Protocol over HTTP/1.1 and HTTP/2
-- ✅ gRPC Protocol support
-- ✅ gRPC-Web Protocol support
-
-## Server Runtime Options
-
-We verify the following servers with ConnectRPC's conformance suite.
-
-For ASGI servers:
-
-- [pyvoy](https://pyvoy.dev) - Fully-featured ASGI server, enables all of Connect's features
-- [Uvicorn](https://www.uvicorn.org/) - Lightning-fast ASGI server for HTTP/1
-
-For WSGI servers:
-
-- [pyvoy](https://pyvoy.dev) - Fully-featured WSGI server, enables all of Connect's features
-- [Gunicorn](https://gunicorn.org/) - Python WSGI HTTP Server for HTTP/1
-
-Other ASGI and WSGI servers should also generally work though we have found some issues with flakiness
-with our conformance tests. If you don't have any preference, we recommend one of the above servers.
-
-## WSGI Support
-
-Connect provides full WSGI support via `ConnectWSGIApplication` for synchronous Python applications. This enables integration with traditional WSGI servers like Gunicorn and uWSGI.
-
-```python
-from connectrpc.request import RequestContext
-from connectrpc.server import ConnectWSGIApplication
-from your_service_pb import Request, Response
-from your_service_connect import YourService, YourServiceWSGIApplication
-
-class YourServiceImpl(YourService):
-    def your_method(self, request: Request, ctx: RequestContext) -> Response:
-        # Synchronous implementation
-        return Response(message="Hello from WSGI")
-
-    # WSGI also supports streaming (except full-duplex bidirectional)
-    def stream_data(self, request: Request, ctx: RequestContext) -> Iterator[Response]:
-        for i in range(3):
-            yield Response(message=f"Message {i}")
-
-# Create WSGI application
-app = YourServiceWSGIApplication(YourServiceImpl())
-
-# Run with gunicorn: gunicorn server:app
-```
-
-## Compression Support
-
-Connect supports multiple compression algorithms:
-
-- **gzip**: Built-in support, always available
-- **brotli**: Available when `brotli` package is installed
-- **zstd**: Available when `zstandard` package is installed
-
-Compression is automatically negotiated between client and server based on the `Accept-Encoding` and `Content-Encoding` headers.
-
-## Interceptors
-
-### Server-Side Interceptors
-
-Interceptors allow you to add cross-cutting concerns like authentication, logging, and metrics:
-
-```python
-from connectrpc.interceptor import MetadataInterceptor
-from connectrpc.request import RequestContext
-
-class LoggingInterceptor:
-    """Implements the MetadataInterceptor protocol."""
-
-    async def on_start(self, ctx: RequestContext) -> None:
-        print(f"Handling {ctx.method().name} request")
-
-    async def on_end(self, token: None, ctx: RequestContext, error: Exception | None) -> None:
-        if error:
-            print(f"Failed {ctx.method().name}: {error}")
-        else:
-            print(f"Completed {ctx.method().name} request")
-
-# Add to your application
-app = HelloServiceASGIApplication(
-    MyHelloService(),
-    interceptors=[LoggingInterceptor()]
-)
-```
-
-### Client-Side Interceptors
-
-Clients also support interceptors for request/response processing:
-
-```python
-client = HelloServiceClient(
-    "https://api.example.com",
-    interceptors=[AuthInterceptor(), RetryInterceptor()]
-)
-```
-
-## Advanced Features
-
-### Connect GET Support
-
-Connect automatically enables GET request support for methods marked with `idempotency_level = NO_SIDE_EFFECTS` in your proto files:
-
-```proto
-service YourService {
-  // This method will support both GET and POST requests
-  rpc GetData(Request) returns (Response) {
-    option idempotency_level = NO_SIDE_EFFECTS;
-  }
-}
-```
-
-Clients can use GET requests automatically:
-
-```python
-# The client will use GET for idempotent methods
-response = await client.get_data(request)
-```
-
-### CORS Support
-
-Connect works with any ASGI CORS middleware. For example, using Starlette:
-
-```python
-from starlette.middleware.cors import CORSMiddleware
-from starlette.applications import Starlette
-
-app = Starlette()
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["GET", "POST"],
-    allow_headers=["*"],
-)
-# Mount your Connect application
-```
-
-### Message Size Limits
-
-Protect against resource exhaustion by limiting message sizes:
-
-```python
-# ASGI application with 1MB limit
-app = YourServiceASGIApplication(
-    service,
-    read_max_bytes=1024 * 1024  # 1MB
-)
-
-# Client with message size limit
-client = YourServiceClient(
-    "https://api.example.com",
-    read_max_bytes=1024 * 1024
-)
-```
-
-When exceeded, returns `RESOURCE_EXHAUSTED` error.
-
-### Proto Editions Support
-
-`protoc-gen-connectrpc` supports up to [Protobuf Editions](https://protobuf.dev/editions/overview/) 2024:
-
-```proto
-edition = "2024";
-
-package your.service;
-
-service YourService {
-  rpc YourMethod(Request) returns (Response);
-}
-```
-
-## Development
-
-We use `ruff` for linting and formatting, `ty` for type checking, and `tombi` for TOML linting and formatting.
-
-We rely on the conformance test suit (in
-[./conformance](./conformance)) to verify behavior.
-
-Set up a virtual env:
-
-```sh
-uv sync
-```
-
-Then, use `uv run poe check` to do development checks, or check out `uv run poe` for other targets.
-
-## Status
-
-This project is in beta and is being actively developed.
-1.0 will include a new Protobuf implementation built from scratch by Buf, which may introduce breaking changes.
-Join us on [Slack][] if you have questions or feedback.
-
-## Legal
-
-Offered under the [Apache 2 license](/LICENSE).
-
-[slack]: https://buf.build/links/slack
+Check out [the docs](https://connectrpc.com/docs/python/getting-started/) for more detailed usage.
+
+- [**Streaming:**](https://connectrpc.com/docs/python/streaming/) Connect supports server-side, client-side, and bidirectional streaming.
+- [**Interceptors:**](https://connectrpc.com/docs/python/interceptors/) Set up middleware for logging, observability, and metrics.
+- [**Other languages:**](https://connectrpc.com/docs/introduction/) Generate clients for use in other languages.
