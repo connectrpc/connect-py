@@ -22,7 +22,7 @@ Building an API usually means writing the same types at least twice: once on the
 
 Connect already works with your current tech stack:
 
-- Connect is built on top of HTTP and speaks both JSON and Protobuf, so `curl` works out of the box.
+- Connect is built on top of HTTP and speaks both Protobuf and JSON, so `curl` works out of the box.
 - It interoperates seamlessly with gRPC and gRPC-Web, and supports streaming as a first-class feature.
 - It runs on WSGI/ASGI. Build Connect APIs *alongside* your current API framework - all in the same app.
 
