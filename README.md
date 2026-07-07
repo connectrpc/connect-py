@@ -4,8 +4,8 @@
 
 # Connect for Python
 
-[![PyPI version](https://img.shields.io/pypi/v/connect-py?style=flat-square)](https://pypi.org/project/connect-py)
-[![License](https://img.shields.io/pypi/l/connect-py?style=flat-square)](https://github.com/connectrpc/connect-py/blob/main/LICENSE)
+[![PyPI version](https://img.shields.io/pypi/v/connectrpc?style=flat-square)](https://pypi.org/project/connectrpc)
+[![License](https://img.shields.io/pypi/l/connectrpc?style=flat-square)](https://github.com/connectrpc/connect-py/blob/main/LICENSE)
 [![Slack](https://img.shields.io/badge/slack-buf-%23e01e5a?style=flat-square)](https://buf.build/links/slack)
 
 Connect is the **easiest way to build modern APIs**.
