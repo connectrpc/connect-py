@@ -4,6 +4,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 import pytest_asyncio
+from example.gen.connectrpc.eliza.v1 import eliza_pb
 from protobuf import DescFile, Oneof
 from protobuf.wkt import (
     DescriptorProto,
@@ -54,13 +55,13 @@ ReflectionClient = ServerReflectionClient | ServerReflectionClientSync
 
 
 @pytest_asyncio.fixture(params=["sync", "async"])
-async def haberdasher_reflection_client(
+async def reflection_client(
     request: pytest.FixtureRequest,
 ) -> AsyncIterator[ReflectionClient]:
     match request.param:
         case "sync":
             app = ServerReflectionWSGIApplication(
-                ServerReflectionServiceSync(haberdasher_pb.desc())
+                ServerReflectionServiceSync(haberdasher_pb.desc(), eliza_pb.desc())
             )
             with ServerReflectionClientSync(
                 "http://localhost", http_client=SyncClient(WSGITransport(app=app))
@@ -68,7 +69,7 @@ async def haberdasher_reflection_client(
                 yield client
         case "async":
             app = ServerReflectionASGIApplication(
-                ServerReflectionService(haberdasher_pb.desc())
+                ServerReflectionService(haberdasher_pb.desc(), eliza_pb.desc())
             )
             async with ServerReflectionClient(
                 "http://localhost", http_client=Client(ASGITransport(app))
@@ -101,19 +102,20 @@ def _file_names(res: ServerReflectionResponse) -> list[str]:
 
 
 @pytest.mark.asyncio
-async def test_list_services(haberdasher_reflection_client: ReflectionClient) -> None:
+async def test_list_services(reflection_client: ReflectionClient) -> None:
     req = ServerReflectionRequest(
         host="example.com", message_request=Oneof("list_services", "")
     )
 
-    [res] = await _responses(haberdasher_reflection_client, [req])
+    [res] = await _responses(reflection_client, [req])
 
     assert res.valid_host == "example.com"
     assert res.original_request == req
     assert res.message_response is not None
     assert res.message_response.field == "list_services_response"
     assert [svc.name for svc in res.message_response.value.service] == [
-        "connectrpc.example.Haberdasher"
+        "connectrpc.eliza.v1.ElizaService",
+        "connectrpc.example.Haberdasher",
     ]
 
 
@@ -137,11 +139,9 @@ def test_list_services_service_descriptor() -> None:
 
 
 @pytest.mark.asyncio
-async def test_file_by_filename(
-    haberdasher_reflection_client: ReflectionClient,
-) -> None:
+async def test_file_by_filename(reflection_client: ReflectionClient) -> None:
     [res] = await _responses(
-        haberdasher_reflection_client,
+        reflection_client,
         [
             ServerReflectionRequest(
                 message_request=Oneof("file_by_filename", "haberdasher.proto")
@@ -153,11 +153,9 @@ async def test_file_by_filename(
 
 
 @pytest.mark.asyncio
-async def test_file_dependencies(
-    haberdasher_reflection_client: ReflectionClient,
-) -> None:
+async def test_file_dependencies(reflection_client: ReflectionClient) -> None:
     file_res, symbol_res = await _responses(
-        haberdasher_reflection_client,
+        reflection_client,
         [
             ServerReflectionRequest(
                 message_request=Oneof("file_by_filename", "google/protobuf/empty.proto")
@@ -173,11 +171,9 @@ async def test_file_dependencies(
 
 
 @pytest.mark.asyncio
-async def test_file_containing_symbol(
-    haberdasher_reflection_client: ReflectionClient,
-) -> None:
+async def test_file_containing_symbol(reflection_client: ReflectionClient) -> None:
     [res] = await _responses(
-        haberdasher_reflection_client,
+        reflection_client,
         [
             ServerReflectionRequest(
                 message_request=Oneof(
@@ -191,11 +187,9 @@ async def test_file_containing_symbol(
 
 
 @pytest.mark.asyncio
-async def test_dependencies_sent_once(
-    haberdasher_reflection_client: ReflectionClient,
-) -> None:
+async def test_dependencies_sent_once(reflection_client: ReflectionClient) -> None:
     first, second = await _responses(
-        haberdasher_reflection_client,
+        reflection_client,
         [
             ServerReflectionRequest(
                 message_request=Oneof("file_by_filename", "haberdasher.proto")
@@ -211,9 +205,9 @@ async def test_dependencies_sent_once(
 
 
 @pytest.mark.asyncio
-async def test_not_found(haberdasher_reflection_client: ReflectionClient) -> None:
+async def test_not_found(reflection_client: ReflectionClient) -> None:
     responses = await _responses(
-        haberdasher_reflection_client,
+        reflection_client,
         [
             ServerReflectionRequest(
                 message_request=Oneof("file_by_filename", "missing.proto")
@@ -238,9 +232,9 @@ async def test_not_found(haberdasher_reflection_client: ReflectionClient) -> Non
 
 
 @pytest.mark.asyncio
-async def test_invalid_request(haberdasher_reflection_client: ReflectionClient) -> None:
+async def test_invalid_request(reflection_client: ReflectionClient) -> None:
     with pytest.raises(ConnectError, match="invalid request"):
-        await _responses(haberdasher_reflection_client, [ServerReflectionRequest()])
+        await _responses(reflection_client, [ServerReflectionRequest()])
 
 
 # Define an extension inline to avoid needing a proto for it.

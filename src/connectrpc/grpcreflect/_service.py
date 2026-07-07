@@ -42,12 +42,14 @@ if TYPE_CHECKING:
 _CODE_NOT_FOUND = 5
 
 
-class ServerReflectionBase:
+class ServerReflectionService(ServerReflection):
+    """Asynchronous service implementation for gRPC reflection."""
+
     def __init__(self, *descs: DescFile | DescService) -> None:
         """Creates a service for gRPC reflection.
 
         The services in the passed in descriptors will be made available for reflection.
-        For [DescFile], this means all the services declared in that file. Note that file
+        For [DescFile][protobuf.DescFile], this means all the services declared in that file. Note that file
         dependencies are also automatically added and available for resolution by name,
         but the service list will only reflect the descriptors passed in.
 
@@ -55,15 +57,12 @@ class ServerReflectionBase:
             *descs: The descriptors to make available for reflection.
 
         Returns:
-            A new instance of [ServerReflectionService], for use with [ServerReflectionASGIApplication].
+            A new instance of [ServerReflectionService][connectrpc.grpcreflect.ServerReflectionService],
+                for use with [ServerReflectionASGIApplication][connectrpc.grpcreflect.ServerReflectionASGIApplication].
         """
         registry, service_names = _resolve_registry(descs)
         self._registry = registry
         self._service_names = service_names
-
-
-class ServerReflectionService(ServerReflection, ServerReflectionBase):
-    """Asynchronous service implementation for gRPC reflection."""
 
     async def server_reflection_info(
         self,
@@ -75,8 +74,27 @@ class ServerReflectionService(ServerReflection, ServerReflectionBase):
             yield _handle_request(req, seen, self._registry, self._service_names)
 
 
-class ServerReflectionServiceSync(ServerReflectionSync, ServerReflectionBase):
+class ServerReflectionServiceSync(ServerReflectionSync):
     """Synchronous service implementation for gRPC reflection."""
+
+    def __init__(self, *descs: DescFile | DescService) -> None:
+        """Creates a service for gRPC reflection.
+
+        The services in the passed in descriptors will be made available for reflection.
+        For [DescFile][protobuf.DescFile], this means all the services declared in that file. Note that file
+        dependencies are also automatically added and available for resolution by name,
+        but the service list will only reflect the descriptors passed in.
+
+        Args:
+            *descs: The descriptors to make available for reflection.
+
+        Returns:
+            A new instance of [ServerReflectionServiceSync][connectrpc.grpcreflect.ServerReflectionServiceSync],
+                for use with [ServerReflectionWSGIApplication][connectrpc.grpcreflect.ServerReflectionWSGIApplication].
+        """
+        registry, service_names = _resolve_registry(descs)
+        self._registry = registry
+        self._service_names = service_names
 
     def server_reflection_info(
         self,
@@ -92,8 +110,27 @@ class ServerReflectionServiceSync(ServerReflectionSync, ServerReflectionBase):
 # fully typed, we use a simple binary shim.
 
 
-class ServerReflectionAlphaService(ServerReflectionAlpha, ServerReflectionBase):
+class ServerReflectionAlphaService(ServerReflectionAlpha):
     """Asynchronous service implementation for gRPC reflection (v1alpha)."""
+
+    def __init__(self, *descs: DescFile | DescService) -> None:
+        """Creates a service for gRPC reflection.
+
+        The services in the passed in descriptors will be made available for reflection.
+        For [DescFile][protobuf.DescFile], this means all the services declared in that file. Note that file
+        dependencies are also automatically added and available for resolution by name,
+        but the service list will only reflect the descriptors passed in.
+
+        Args:
+            *descs: The descriptors to make available for reflection.
+
+        Returns:
+            A new instance of [ServerReflectionAlphaService][connectrpc.grpcreflect.ServerReflectionAlphaService],
+                for use with [ServerReflectionAlphaASGIApplication][connectrpc.grpcreflect.ServerReflectionAlphaASGIApplication].
+        """
+        registry, service_names = _resolve_registry(descs)
+        self._registry = registry
+        self._service_names = service_names
 
     async def server_reflection_info(
         self,
@@ -114,8 +151,27 @@ class ServerReflectionAlphaService(ServerReflectionAlpha, ServerReflectionBase):
             )
 
 
-class ServerReflectionAlphaServiceSync(ServerReflectionAlphaSync, ServerReflectionBase):
+class ServerReflectionAlphaServiceSync(ServerReflectionAlphaSync):
     """Synchronous service implementation for gRPC reflection (v1alpha)."""
+
+    def __init__(self, *descs: DescFile | DescService) -> None:
+        """Creates a service for gRPC reflection.
+
+        The services in the passed in descriptors will be made available for reflection.
+        For [DescFile][protobuf.DescFile], this means all the services declared in that file. Note that file
+        dependencies are also automatically added and available for resolution by name,
+        but the service list will only reflect the descriptors passed in.
+
+        Args:
+            *descs: The descriptors to make available for reflection.
+
+        Returns:
+            A new instance of [ServerReflectionAlphaServiceSync][connectrpc.grpcreflect.ServerReflectionAlphaServiceSync],
+                for use with [ServerReflectionAlphaWSGIApplication][connectrpc.grpcreflect.ServerReflectionAlphaWSGIApplication].
+        """
+        registry, service_names = _resolve_registry(descs)
+        self._registry = registry
+        self._service_names = service_names
 
     def server_reflection_info(
         self,
@@ -149,7 +205,7 @@ def _resolve_registry(
         else:
             fds.extend(fd for fd in _file_descriptor_with_dependencies(desc.file, seen))
             service_names.add(desc.type_name)
-    return Registry(*fds), list(service_names)
+    return Registry(*fds), sorted(service_names)
 
 
 def _handle_request(
@@ -158,25 +214,19 @@ def _handle_request(
     registry: Registry,
     service_names: list[str],
 ) -> ServerReflectionResponse:
-    original_req = req
-    if isinstance(req, ServerReflectionAlphaRequest):
-        # HACK: The v1alpha request type is binary compatible with v1, but will fail to serialize as a submessage
-        # of an unrelated type, so to otherwise allow the rest of the implementation to be shared, we do this
-        # conversion here.
-        original_req = ServerReflectionRequest.from_binary(req.to_binary())
-    res = ServerReflectionResponse(valid_host=req.host, original_request=original_req)
+    res = ServerReflectionResponse(valid_host=req.host, original_request=req)
     match req.message_request:
         case Oneof("file_by_filename", filename):
             desc = registry.file(filename)
-            res.message_response = _create_file_response(req, desc, seen)
+            res.message_response = _create_file_response(desc, seen)
         case Oneof("file_containing_symbol", symbol):
             desc: DescFile | None = None
             for d in registry:
-                if isinstance(d, (DescFile, DescExtension)):
+                if isinstance(d, DescFile):
                     continue
                 if d.type_name == symbol:
                     desc = d.file
-            res.message_response = _create_file_response(req, desc, seen)
+            res.message_response = _create_file_response(desc, seen)
         case Oneof("file_containing_extension", extension_request):
             desc: DescFile | None = None
             ext = registry.extension_for(
@@ -184,11 +234,11 @@ def _handle_request(
             )
             if ext:
                 desc = ext.file
-            res.message_response = _create_file_response(req, desc, seen)
+            res.message_response = _create_file_response(desc, seen)
         case Oneof("all_extension_numbers_of_type", containing_type):
             # We should return not found if the message itself isn't registered
             if not registry.message(containing_type):
-                res.message_response = _create_file_response(req, None, seen)
+                res.message_response = _create_file_response(None, seen)
             else:
                 nums: list[int] = [
                     d.number
@@ -213,7 +263,7 @@ def _handle_request(
 
 
 def _create_file_response(
-    req: ServerReflectionRequest, desc: DescFile | None, seen: set[str]
+    desc: DescFile | None, seen: set[str]
 ) -> (
     Oneof[Literal["file_descriptor_response"], FileDescriptorResponse]
     | Oneof[Literal["error_response"], ErrorResponse]
@@ -221,10 +271,7 @@ def _create_file_response(
     if not desc:
         return Oneof(
             "error_response",
-            ErrorResponse(
-                error_code=_CODE_NOT_FOUND,
-                error_message=f"symbol {req.message_request} not found",
-            ),
+            ErrorResponse(error_code=_CODE_NOT_FOUND, error_message="symbol not found"),
         )
     fds = [
         fd.proto.to_binary() for fd in _file_descriptor_with_dependencies(desc, seen)

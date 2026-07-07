@@ -20,6 +20,14 @@
 
 ::: connectrpc.grpcreflect
     options:
-        inherited_members: true
+        members:
+            - ServerReflectionService
+            - ServerReflectionASGIApplication
+            - ServerReflectionServiceSync
+            - ServerReflectionWSGIApplication
+            - ServerReflectionAlphaService
+            - ServerReflectionAlphaASGIApplication
+            - ServerReflectionAlphaServiceSync
+            - ServerReflectionAlphaWSGIApplication
 
 ::: connectrpc.compat
