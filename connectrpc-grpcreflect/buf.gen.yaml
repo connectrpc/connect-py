@@ -1,0 +1,11 @@
+version: v2
+inputs:
+  - module: buf.build/grpc/grpc
+    types:
+      - grpc.reflection.v1.ServerReflection
+      - grpc.reflection.v1alpha.ServerReflection
+plugins:
+  - local: protoc-gen-py
+    out: connectrpc_grpcreflect/_gen
+  - local: protoc-gen-connectrpc
+    out: connectrpc_grpcreflect/_gen

@@ -4,10 +4,13 @@ from typing import TYPE_CHECKING
 
 import pytest
 import pytest_asyncio
+from connectrpc.errors import ConnectError
 from example.gen.connectrpc.eliza.v1 import eliza_pb
 from protobuf import DescFile, Oneof
 from protobuf.wkt import (
     DescriptorProto,
+    EnumDescriptorProto,
+    EnumValueDescriptorProto,
     FieldDescriptorProto,
     FileDescriptorProto,
     FileDescriptorSet,
@@ -15,26 +18,7 @@ from protobuf.wkt import (
 from pyqwest import Client, SyncClient
 from pyqwest.testing import ASGITransport, WSGITransport
 
-from connectrpc._gen.grpc.reflection.v1.reflection_connect import (
-    ServerReflectionClient,
-    ServerReflectionClientSync,
-)
-from connectrpc._gen.grpc.reflection.v1.reflection_pb import (
-    ExtensionRequest,
-    ServerReflectionRequest,
-    ServerReflectionResponse,
-)
-from connectrpc._gen.grpc.reflection.v1alpha.reflection_connect import (
-    ServerReflectionClient as ServerReflectionAlphaClient,
-)
-from connectrpc._gen.grpc.reflection.v1alpha.reflection_connect import (
-    ServerReflectionClientSync as ServerReflectionAlphaClientSync,
-)
-from connectrpc._gen.grpc.reflection.v1alpha.reflection_pb import (
-    ServerReflectionRequest as ServerReflectionAlphaRequest,
-)
-from connectrpc.errors import ConnectError
-from connectrpc.grpcreflect import (
+from connectrpc_grpcreflect import (
     ServerReflectionAlphaASGIApplication,
     ServerReflectionAlphaService,
     ServerReflectionAlphaServiceSync,
@@ -43,6 +27,24 @@ from connectrpc.grpcreflect import (
     ServerReflectionService,
     ServerReflectionServiceSync,
     ServerReflectionWSGIApplication,
+)
+from connectrpc_grpcreflect._gen.grpc.reflection.v1.reflection_connect import (
+    ServerReflectionClient,
+    ServerReflectionClientSync,
+)
+from connectrpc_grpcreflect._gen.grpc.reflection.v1.reflection_pb import (
+    ExtensionRequest,
+    ServerReflectionRequest,
+    ServerReflectionResponse,
+)
+from connectrpc_grpcreflect._gen.grpc.reflection.v1alpha.reflection_connect import (
+    ServerReflectionClient as ServerReflectionAlphaClient,
+)
+from connectrpc_grpcreflect._gen.grpc.reflection.v1alpha.reflection_connect import (
+    ServerReflectionClientSync as ServerReflectionAlphaClientSync,
+)
+from connectrpc_grpcreflect._gen.grpc.reflection.v1alpha.reflection_pb import (
+    ServerReflectionRequest as ServerReflectionAlphaRequest,
 )
 
 from . import haberdasher_pb
@@ -187,6 +189,22 @@ async def test_file_containing_symbol(reflection_client: ReflectionClient) -> No
 
 
 @pytest.mark.asyncio
+async def test_file_containing_method(reflection_client: ReflectionClient) -> None:
+    [res] = await _responses(
+        reflection_client,
+        [
+            ServerReflectionRequest(
+                message_request=Oneof(
+                    "file_containing_symbol", "connectrpc.eliza.v1.ElizaService.Say"
+                )
+            )
+        ],
+    )
+
+    assert _file_names(res) == ["connectrpc/eliza/v1/eliza.proto"]
+
+
+@pytest.mark.asyncio
 async def test_dependencies_sent_once(reflection_client: ReflectionClient) -> None:
     first, second = await _responses(
         reflection_client,
@@ -277,6 +295,62 @@ def _extension_file() -> DescFile:
     return desc
 
 
+def _enum_file() -> DescFile:
+    proto = FileDescriptorProto(
+        name="reflect/enum.proto",
+        package="reflect.test",
+        enum_type=[
+            EnumDescriptorProto(
+                name="Mood",
+                value=[
+                    EnumValueDescriptorProto(name="MOOD_UNKNOWN", number=0),
+                    EnumValueDescriptorProto(name="MOOD_HAPPY", number=1),
+                ],
+            )
+        ],
+        message_type=[
+            DescriptorProto(
+                name="Container",
+                enum_type=[
+                    EnumDescriptorProto(
+                        name="State",
+                        value=[
+                            EnumValueDescriptorProto(name="STATE_UNKNOWN", number=0),
+                            EnumValueDescriptorProto(name="STATE_ON", number=1),
+                        ],
+                    )
+                ],
+            )
+        ],
+        syntax="proto3",
+    )
+    desc = FileDescriptorSet(file=[proto]).to_registry().file("reflect/enum.proto")
+    assert desc is not None
+    return desc
+
+
+def test_file_containing_enum_values() -> None:
+    app = ServerReflectionWSGIApplication(ServerReflectionServiceSync(_enum_file()))
+    reqs = [
+        ServerReflectionRequest(
+            message_request=Oneof("file_containing_symbol", "reflect.test.MOOD_HAPPY")
+        ),
+        ServerReflectionRequest(
+            message_request=Oneof(
+                "file_containing_symbol", "reflect.test.Container.STATE_ON"
+            )
+        ),
+    ]
+
+    with ServerReflectionClientSync(
+        "http://localhost", http_client=SyncClient(WSGITransport(app=app))
+    ) as client:
+        top_level_res, nested_res = client.server_reflection_info(iter(reqs))
+
+    assert _file_names(top_level_res) == ["reflect/enum.proto"]
+    assert _file_names(nested_res) == ["reflect/enum.proto"]
+
+
 def test_extensions() -> None:
     app = ServerReflectionWSGIApplication(
         ServerReflectionServiceSync(_extension_file())
@@ -314,7 +388,7 @@ def test_extensions() -> None:
 @pytest.mark.asyncio
 async def test_v1alpha() -> None:
     app = ServerReflectionAlphaASGIApplication(
-        ServerReflectionAlphaService(haberdasher_pb.desc())
+        ServerReflectionAlphaService(eliza_pb.desc())
     )
     req = ServerReflectionAlphaRequest(
         host="alpha.example.com", message_request=Oneof("list_services", "")
@@ -334,13 +408,13 @@ async def test_v1alpha() -> None:
     assert res.message_response is not None
     assert res.message_response.field == "list_services_response"
     assert [svc.name for svc in res.message_response.value.service] == [
-        "connectrpc.example.Haberdasher"
+        "connectrpc.eliza.v1.ElizaService"
     ]
 
 
 def test_v1alpha_sync() -> None:
     app = ServerReflectionAlphaWSGIApplication(
-        ServerReflectionAlphaServiceSync(haberdasher_pb.desc())
+        ServerReflectionAlphaServiceSync(eliza_pb.desc())
     )
     req = ServerReflectionAlphaRequest(
         host="alpha.example.com", message_request=Oneof("list_services", "")
@@ -356,5 +430,5 @@ def test_v1alpha_sync() -> None:
     assert res.message_response is not None
     assert res.message_response.field == "list_services_response"
     assert [svc.name for svc in res.message_response.value.service] == [
-        "connectrpc.example.Haberdasher"
+        "connectrpc.eliza.v1.ElizaService"
     ]

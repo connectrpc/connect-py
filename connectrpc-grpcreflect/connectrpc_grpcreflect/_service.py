@@ -3,13 +3,15 @@ from __future__ import annotations
 from collections import deque
 from typing import TYPE_CHECKING, Literal
 
-from protobuf import DescExtension, DescFile, DescService, Oneof, Registry
+from connectrpc.code import Code
+from connectrpc.errors import ConnectError
+from protobuf import DescEnum, DescExtension, DescFile, DescService, Oneof, Registry
 
-from connectrpc._gen.grpc.reflection.v1.reflection_connect import (
+from ._gen.grpc.reflection.v1.reflection_connect import (
     ServerReflection,
     ServerReflectionSync,
 )
-from connectrpc._gen.grpc.reflection.v1.reflection_pb import (
+from ._gen.grpc.reflection.v1.reflection_pb import (
     ErrorResponse,
     ExtensionNumberResponse,
     FileDescriptorResponse,
@@ -18,20 +20,18 @@ from connectrpc._gen.grpc.reflection.v1.reflection_pb import (
     ServerReflectionResponse,
     ServiceResponse,
 )
-from connectrpc._gen.grpc.reflection.v1alpha.reflection_connect import (
+from ._gen.grpc.reflection.v1alpha.reflection_connect import (
     ServerReflection as ServerReflectionAlpha,
 )
-from connectrpc._gen.grpc.reflection.v1alpha.reflection_connect import (
+from ._gen.grpc.reflection.v1alpha.reflection_connect import (
     ServerReflectionSync as ServerReflectionAlphaSync,
 )
-from connectrpc._gen.grpc.reflection.v1alpha.reflection_pb import (
+from ._gen.grpc.reflection.v1alpha.reflection_pb import (
     ServerReflectionRequest as ServerReflectionAlphaRequest,
 )
-from connectrpc._gen.grpc.reflection.v1alpha.reflection_pb import (
+from ._gen.grpc.reflection.v1alpha.reflection_pb import (
     ServerReflectionResponse as ServerReflectionAlphaResponse,
 )
-from connectrpc.code import Code
-from connectrpc.errors import ConnectError
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Iterator
@@ -200,10 +200,10 @@ def _resolve_registry(
     service_names: set[str] = set()
     for desc in descs:
         if isinstance(desc, DescFile):
-            fds.extend(fd for fd in _file_descriptor_with_dependencies(desc, seen))
+            fds.extend(_file_descriptor_with_dependencies(desc, seen))
             service_names.update(d.type_name for d in desc.services)
         else:
-            fds.extend(fd for fd in _file_descriptor_with_dependencies(desc.file, seen))
+            fds.extend(_file_descriptor_with_dependencies(desc.file, seen))
             service_names.add(desc.type_name)
     return Registry(*fds), sorted(service_names)
 
@@ -220,12 +220,7 @@ def _handle_request(
             desc = registry.file(filename)
             res.message_response = _create_file_response(desc, seen)
         case Oneof("file_containing_symbol", symbol):
-            desc: DescFile | None = None
-            for d in registry:
-                if isinstance(d, DescFile):
-                    continue
-                if d.type_name == symbol:
-                    desc = d.file
+            desc = _find_file_for_symbol(registry, symbol)
             res.message_response = _create_file_response(desc, seen)
         case Oneof("file_containing_extension", extension_request):
             desc: DescFile | None = None
@@ -293,8 +288,36 @@ def _file_descriptor_with_dependencies(
         file = queue.popleft()
         if file.name in seen:
             continue
-        if file.name not in seen:
-            seen.add(file.name)
-            yield file
-        for dep in file.dependencies:
-            queue.append(dep)
+        seen.add(file.name)
+        yield file
+        queue.extend(file.dependencies)
+
+
+# Finds a fully-qualified symbol name, (e.g. <package>.<service>[.<method>] or <package>.<type>).
+def _find_file_for_symbol(registry: Registry, symbol: str) -> DescFile | None:
+    desc = (
+        registry.message(symbol)
+        or registry.enum(symbol)
+        or registry.service(symbol)
+        or registry.extension(symbol)
+    )
+    if desc:
+        return desc.file
+    # May be a fully qualified method or enum value, split off the parent and find it.
+    parent, _, member = symbol.rpartition(".")
+    if not member:
+        return None
+    if svc := registry.service(parent):
+        if any(m.name == member for m in svc.methods):
+            return svc.file
+        return None
+    # An enum value of a message-nested enum also has a message as its parent
+    # scope, so always finish with the enum value scan.
+    for d in registry:
+        if (
+            isinstance(d, DescEnum)
+            and d.type_name.rpartition(".")[0] == parent
+            and any(v.name == member for v in d.values)
+        ):
+            return d.file
+    return None

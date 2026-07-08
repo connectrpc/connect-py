@@ -18,7 +18,10 @@
     options:
         show_submodules: true
 
-::: connectrpc.grpcreflect
+::: connectrpc.compat
+
+
+::: connectrpc_grpcreflect
     options:
         members:
             - ServerReflectionService
@@ -29,5 +32,3 @@
             - ServerReflectionAlphaASGIApplication
             - ServerReflectionAlphaServiceSync
             - ServerReflectionAlphaWSGIApplication
-
-::: connectrpc.compat

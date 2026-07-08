@@ -1,0 +1,4 @@
+* text=auto eol=lf
+
+src/connectrpc/_gen linguist-generated=true
+conformance/test/gen linguist-generated=true
