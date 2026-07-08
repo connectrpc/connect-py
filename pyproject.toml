@@ -41,6 +41,9 @@ Repository = "https://github.com/connectrpc/connect-py"
 
 [dependency-groups]
 dev = [
+  # Install all packages to be available in docs building, etc.
+  "connectrpc-grpcreflect",
+  "connectrpc-otel",
   "example",
   "protoc-gen-connectrpc",
 

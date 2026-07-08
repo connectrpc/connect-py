@@ -110,7 +110,7 @@ cwd = "conformance"
 
 [tasks.test-grpcreflect]
 help = "Run connectrpc-grpcreflect tests"
-cmd = "uv run pytest"
+cmd = "pytest"
 cwd = "connectrpc-grpcreflect"
 
 [tasks.test-otel]
