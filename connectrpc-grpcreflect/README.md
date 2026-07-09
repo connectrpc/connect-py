@@ -1,6 +1,6 @@
 # connectrpc-grpcreflect
 
-gRPC reflection services to support tools such as [grpcurl](https://github.com/fullstorydev/grpcurl)
+gRPC reflection services to support tools such as [`buf curl`](https://buf.build/docs/curl/)
 that query servers without knowing their schema.
 
 The services are standard Connect services that you use as normal.
