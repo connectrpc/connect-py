@@ -102,7 +102,7 @@ jobs:
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
 
-  publish:
+  wheels:
     runs-on: ubuntu-24.04
     needs: ci
     steps:
@@ -116,16 +116,12 @@ jobs:
 
       - run: uv build
 
-      # Builds to root dist directory so published together with the main project.
-      - run: uv build
-        working-directory: connectrpc-otel
-
       - name: build codegen archives
         run: uv build
         working-directory: protoc-gen-connectrpc
 
-      - uses: pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b # v1.14.0
-        if: github.event_name != 'pull_request'
-        with:
-          repository-url: https://test.pypi.org/legacy/
-          skip-existing: true
+      - run: uv build
+        working-directory: connectrpc-otel
+
+      - run: uv build
+        working-directory: connectrpc-grpcreflect
