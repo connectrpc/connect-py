@@ -5,6 +5,7 @@ requires-python = ">=3.10"
 [manifest]
 members = [
     "connectrpc",
+    "connectrpc-grpcreflect",
     "connectrpc-otel",
     "example",
     "protoc-gen-connectrpc",
@@ -164,6 +165,8 @@ dev = [
     { name = "asgiref" },
     { name = "brotli" },
     { name = "buf-bin" },
+    { name = "connectrpc-grpcreflect" },
+    { name = "connectrpc-otel" },
     { name = "example" },
     { name = "granian" },
     { name = "grpcio-tools" },
@@ -207,6 +210,8 @@ dev = [
     { name = "asgiref", specifier = "==3.11.1" },
     { name = "brotli", specifier = "==1.2.0" },
     { name = "buf-bin", specifier = "==1.71.0" },
+    { name = "connectrpc-grpcreflect", editable = "connectrpc-grpcreflect" },
+    { name = "connectrpc-otel", editable = "connectrpc-otel" },
     { name = "example", editable = "example" },
     { name = "granian", specifier = "==2.7.9" },
     { name = "grpcio-tools", specifier = "==1.81.1" },
@@ -238,6 +243,25 @@ docs = [
     { name = "mkdocstrings-python", specifier = "==2.0.5" },
     { name = "zensical", specifier = "==0.0.47" },
 ]
+
+[[package]]
+name = "connectrpc-grpcreflect"
+version = "0.1.0"
+source = { editable = "connectrpc-grpcreflect" }
+dependencies = [
+    { name = "connectrpc" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "pytest" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "connectrpc", editable = "." }]
+
+[package.metadata.requires-dev]
+dev = [{ name = "pytest", specifier = "==9.1.1" }]
 
 [[package]]
 name = "connectrpc-otel"

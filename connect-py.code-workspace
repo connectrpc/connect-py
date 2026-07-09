@@ -9,6 +9,10 @@
       "path": "./conformance",
     },
     {
+      "name": "connectrpc-grpcreflect",
+      "path": "./connectrpc-grpcreflect",
+    },
+    {
       "name": "connectrpc-otel",
       "path": "./connectrpc-otel",
     },

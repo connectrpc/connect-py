@@ -1,0 +1,57 @@
+[project]
+name = "connectrpc-grpcreflect"
+version = "0.1.0"
+description = "gRPC reflection for connectrpc"
+readme = "README.md"
+requires-python = ">= 3.10"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+maintainers = [
+  { name = "Anuraag Agrawal", email = "anuraaga@gmail.com" },
+  { name = "Spencer Nelson", email = "spencer@firetiger.com" },
+  { name = "Stefan VanBuren", email = "stefan@vanburen.xyz" },
+  { name = "Yasushi Itoh", email = "i2y.may.roku@gmail.com" },
+]
+keywords = [
+  "connect-py",
+  "connectrpc",
+  "grpc",
+]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Environment :: Console",
+  "Intended Audience :: Developers",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
+  "Topic :: System :: Networking",
+]
+dependencies = [
+  "connectrpc>=0.11.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/connectrpc/connect-py"
+Issues = "https://github.com/connectrpc/connect-py/issues"
+Repository = "https://github.com/connectrpc/connect-py"
+
+[dependency-groups]
+dev = [
+  "pytest==9.1.1",
+]
+
+[build-system]
+requires = ["uv_build>=0.11.0,<0.12.0"]
+build-backend = "uv_build"
+
+[tool.ruff]
+extend = "../pyproject.toml"
+
+[tool.uv.build-backend]
+module-name = "connectrpc_grpcreflect"
+module-root = ""

@@ -19,3 +19,16 @@
         show_submodules: true
 
 ::: connectrpc.compat
+
+
+::: connectrpc_grpcreflect
+    options:
+        members:
+            - ServerReflectionService
+            - ServerReflectionASGIApplication
+            - ServerReflectionServiceSync
+            - ServerReflectionWSGIApplication
+            - ServerReflectionAlphaService
+            - ServerReflectionAlphaASGIApplication
+            - ServerReflectionAlphaServiceSync
+            - ServerReflectionAlphaWSGIApplication

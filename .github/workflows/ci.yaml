@@ -89,6 +89,9 @@ jobs:
       - name: run OTel tests
         run: uv run poe test-otel ${{ matrix.coverage == 'cov' && '--cov=connectrpc_otel --cov-report=xml' || '' }}
 
+      - name: run grpcreflect tests
+        run: uv run poe test-grpcreflect ${{ matrix.coverage == 'cov' && '--cov=connectrpc_grpcreflect --cov-report=xml' || '' }}
+
       - name: run conformance tests
         # TODO: Debug stdin/stdout issues on Windows
         if: ${{ !startsWith(matrix.os, 'windows-') }}

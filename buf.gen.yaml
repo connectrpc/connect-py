@@ -1,4 +1,8 @@
 version: v2
+inputs:
+  - module: buf.build/googleapis/googleapis
+    types:
+      - google.rpc.Status
 plugins:
   - local: protoc-gen-py
     out: src/connectrpc/_gen

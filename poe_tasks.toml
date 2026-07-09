@@ -53,6 +53,7 @@ help = "Generate all files"
 sequence = [
   "generate-conformance",
   "generate-example",
+  "generate-grpcreflect",
   "generate-status",
   "generate-test",
   "format",
@@ -67,6 +68,11 @@ cwd = "conformance"
 help = "Generate example files"
 cmd = "buf generate"
 cwd = "example"
+
+[tasks.generate-grpcreflect]
+help = "Generate gRPC reflection files"
+cmd = "buf generate"
+cwd = "connectrpc-grpcreflect"
 
 [tasks.generate-status]
 help = "Generate gRPC status"
@@ -101,6 +107,11 @@ cmd = "pytest"
 help = "Run conformance tests. These are very slow"
 cmd = "pytest"
 cwd = "conformance"
+
+[tasks.test-grpcreflect]
+help = "Run connectrpc-grpcreflect tests"
+cmd = "pytest"
+cwd = "connectrpc-grpcreflect"
 
 [tasks.test-otel]
 help = "Run connectrpc-otel tests"

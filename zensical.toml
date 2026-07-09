@@ -34,7 +34,10 @@ pygments_lang_class = true
 alternate_style = true
 
 [project.plugins.mkdocstrings.handlers.python]
-inventories = ["https://docs.python.org/3/objects.inv"]
+inventories = [
+  "https://docs.python.org/3/objects.inv",
+  "https://protobufpy.com/objects.inv"
+]
 paths = ["src"]
 
 [project.plugins.mkdocstrings.handlers.python.options]

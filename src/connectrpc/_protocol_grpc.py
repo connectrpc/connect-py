@@ -11,7 +11,7 @@ from pyqwest import Headers as HTTPHeaders
 
 from ._compression import IdentityCompression, negotiate_compression
 from ._envelope import EnvelopeReader, EnvelopeWriter
-from ._gen.status_pb import Status
+from ._gen.google.rpc.status_pb import Status
 from ._protocol import (
     ConnectWireError,
     HTTPException,

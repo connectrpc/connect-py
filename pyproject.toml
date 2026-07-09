@@ -41,6 +41,9 @@ Repository = "https://github.com/connectrpc/connect-py"
 
 [dependency-groups]
 dev = [
+  # Install all packages to be available in docs building, etc.
+  "connectrpc-grpcreflect",
+  "connectrpc-otel",
   "example",
   "protoc-gen-connectrpc",
 
@@ -255,10 +258,16 @@ extra-paths = ["conformance/test"]
 module-name = "connectrpc"
 
 [tool.uv.workspace]
-members = ["connectrpc-otel", "example", "protoc-gen-connectrpc"]
+members = [
+  "connectrpc-grpcreflect",
+  "connectrpc-otel",
+  "example",
+  "protoc-gen-connectrpc"
+]
 
 [tool.uv.sources]
 connectrpc = { workspace = true }
+connectrpc-grpcreflect = { workspace = true }
 connectrpc-otel = { workspace = true }
 protoc-gen-connectrpc = { workspace = true }
 
