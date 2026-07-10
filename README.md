@@ -1,6 +1,6 @@
 <div align="center">
 
-![The Connect logo](https://raw.githubusercontent.com/connectrpc/connectrpc.com/12f7ad8e95c5f784700bc280708b27cd148d0cf1/public/img/logo.svg)
+![The Connect logo](https://raw.githubusercontent.com/connectrpc/connectrpc.com/12f7ad8e95c5f784700bc280708b27cd148d0cf1/public/img/logos/simple-connect.svg)
 
 # Connect for Python
 
