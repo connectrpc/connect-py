@@ -13,7 +13,7 @@ permissions:
 jobs:
   release:
     runs-on: ubuntu-24.04
-    environment: pypi-release
+    environment: ${{ (github.event_name == 'workflow_dispatch' && 'pypi-test') || (github.event_name == 'push' && github.ref_type == 'tag' && 'pypi-release') || null }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
@@ -28,4 +28,5 @@ jobs:
       - name: publish connectrpc-grpcreflect
         uses: pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b # v1.14.0
         with:
+          repository-url: ${{ github.event_name == 'workflow_dispatch' && 'https://test.pypi.org/legacy/' || null }}
           skip-existing: true
