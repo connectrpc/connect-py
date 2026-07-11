@@ -16,11 +16,11 @@ class IdentityCompression(Compression):
 
     def compress(self, data: bytes | bytearray | memoryview) -> bytes:
         """Return data as-is without compression."""
-        return bytes(data)
+        return data if isinstance(data, bytes) else bytes(data)
 
     def decompress(self, data: bytes | bytearray | memoryview) -> bytes:
         """Return data as-is without decompression."""
-        return bytes(data)
+        return data if isinstance(data, bytes) else bytes(data)
 
 
 _identity = IdentityCompression()
