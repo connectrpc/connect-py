@@ -6,7 +6,7 @@ from pyqwest.testing import ASGITransport, WSGITransport
 
 from connectrpc.client import ResponseMetadata
 
-from .haberdasher_connect import (
+from .connectrpc.example.haberdasher_connect import (
     Haberdasher,
     HaberdasherASGIApplication,
     HaberdasherClient,
@@ -14,7 +14,7 @@ from .haberdasher_connect import (
     HaberdasherSync,
     HaberdasherWSGIApplication,
 )
-from .haberdasher_pb import Hat, Size
+from .connectrpc.example.haberdasher_pb import Hat, Size
 
 _default_headers = (
     ("content-type", "application/proto"),

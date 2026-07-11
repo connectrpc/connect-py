@@ -13,7 +13,7 @@ from connectrpc._protocol import ConnectWireError
 from connectrpc.code import Code
 from connectrpc.errors import ConnectError, ErrorDetail
 
-from .haberdasher_connect import (
+from .connectrpc.example.haberdasher_connect import (
     Haberdasher,
     HaberdasherASGIApplication,
     HaberdasherClient,
@@ -21,7 +21,7 @@ from .haberdasher_connect import (
     HaberdasherSync,
     HaberdasherWSGIApplication,
 )
-from .haberdasher_pb import Size
+from .connectrpc.example.haberdasher_pb import Size
 
 
 def test_details_sync() -> None:

@@ -13,7 +13,7 @@ from connectrpc.codec import proto_json_codec
 from connectrpc.errors import ConnectError
 
 from ._util import resolve_compression
-from .haberdasher_connect import (
+from .connectrpc.example.haberdasher_connect import (
     Haberdasher,
     HaberdasherASGIApplication,
     HaberdasherClient,
@@ -21,7 +21,7 @@ from .haberdasher_connect import (
     HaberdasherSync,
     HaberdasherWSGIApplication,
 )
-from .haberdasher_pb import Hat, Size
+from .connectrpc.example.haberdasher_pb import Hat, Size
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Iterator
