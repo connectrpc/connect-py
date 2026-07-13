@@ -4,6 +4,7 @@ import pytest
 from pyqwest import Client, SyncClient
 from pyqwest.testing import ASGITransport, WSGITransport
 
+from connectrpc._compression import IdentityCompression
 from connectrpc.client import ResponseMetadata
 from connectrpc.compression.brotli import BrotliCompression
 from connectrpc.compression.gzip import GzipCompression
@@ -88,3 +89,27 @@ def test_server_compressions_sync(compressions: tuple[str], encoding: str) -> No
     assert res.size == 10
     assert res.color == "blue"
     assert meta.headers.get("content-encoding") == encoding
+
+
+class TestIdentityCompression:
+    def test_name(self):
+        assert IdentityCompression().name() == "identity"
+
+    def test_bytes(self):
+        data = b"hello"
+        compression = IdentityCompression()
+        compressed = compression.compress(data)
+        assert compressed is data
+        decompressed = compression.decompress(compressed)
+        assert decompressed is data
+
+    @pytest.mark.parametrize("ctor", [bytearray, memoryview])
+    def test_not_bytes(self, ctor: type[bytearray | memoryview]) -> None:
+        data = ctor(b"hello")
+        compression = IdentityCompression()
+        compressed = compression.compress(data)
+        assert compressed == b"hello"
+        assert isinstance(compressed, bytes)
+        decompressed = compression.decompress(compressed)
+        assert decompressed == b"hello"
+        assert isinstance(decompressed, bytes)
