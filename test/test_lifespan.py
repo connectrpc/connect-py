@@ -8,12 +8,12 @@ from pyqwest.testing import ASGITransport
 
 from connectrpc.errors import ConnectError
 
-from .haberdasher_connect import (
+from .connectrpc.example.haberdasher_connect import (
     Haberdasher,
     HaberdasherASGIApplication,
     HaberdasherClient,
 )
-from .haberdasher_pb import Hat, Size
+from .connectrpc.example.haberdasher_pb import Hat, Size
 
 
 class CountingHaberdasher(Haberdasher):

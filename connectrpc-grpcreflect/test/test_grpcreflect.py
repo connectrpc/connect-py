@@ -47,7 +47,7 @@ from connectrpc_grpcreflect._gen.grpc.reflection.v1alpha.reflection_pb import (
     ServerReflectionRequest as ServerReflectionAlphaRequest,
 )
 
-from . import haberdasher_pb
+from .connectrpc.example import haberdasher_pb
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
@@ -146,12 +146,17 @@ async def test_file_by_filename(reflection_client: ReflectionClient) -> None:
         reflection_client,
         [
             ServerReflectionRequest(
-                message_request=Oneof("file_by_filename", "haberdasher.proto")
+                message_request=Oneof(
+                    "file_by_filename", "connectrpc/example/haberdasher.proto"
+                )
             )
         ],
     )
 
-    assert _file_names(res) == ["haberdasher.proto", "google/protobuf/empty.proto"]
+    assert _file_names(res) == [
+        "connectrpc/example/haberdasher.proto",
+        "google/protobuf/empty.proto",
+    ]
 
 
 @pytest.mark.asyncio
@@ -185,7 +190,10 @@ async def test_file_containing_symbol(reflection_client: ReflectionClient) -> No
         ],
     )
 
-    assert _file_names(res) == ["haberdasher.proto", "google/protobuf/empty.proto"]
+    assert _file_names(res) == [
+        "connectrpc/example/haberdasher.proto",
+        "google/protobuf/empty.proto",
+    ]
 
 
 @pytest.mark.asyncio
@@ -210,16 +218,23 @@ async def test_dependencies_sent_once(reflection_client: ReflectionClient) -> No
         reflection_client,
         [
             ServerReflectionRequest(
-                message_request=Oneof("file_by_filename", "haberdasher.proto")
+                message_request=Oneof(
+                    "file_by_filename", "connectrpc/example/haberdasher.proto"
+                )
             ),
             ServerReflectionRequest(
-                message_request=Oneof("file_by_filename", "haberdasher.proto")
+                message_request=Oneof(
+                    "file_by_filename", "connectrpc/example/haberdasher.proto"
+                )
             ),
         ],
     )
 
-    assert _file_names(first) == ["haberdasher.proto", "google/protobuf/empty.proto"]
-    assert _file_names(second) == ["haberdasher.proto"]
+    assert _file_names(first) == [
+        "connectrpc/example/haberdasher.proto",
+        "google/protobuf/empty.proto",
+    ]
+    assert _file_names(second) == ["connectrpc/example/haberdasher.proto"]
 
 
 @pytest.mark.asyncio

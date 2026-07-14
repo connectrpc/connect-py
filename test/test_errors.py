@@ -23,7 +23,7 @@ from connectrpc._protocol import HTTPException
 from connectrpc.code import Code
 from connectrpc.errors import ConnectError
 
-from .haberdasher_connect import (
+from .connectrpc.example.haberdasher_connect import (
     Haberdasher,
     HaberdasherASGIApplication,
     HaberdasherClient,
@@ -31,7 +31,7 @@ from .haberdasher_connect import (
     HaberdasherSync,
     HaberdasherWSGIApplication,
 )
-from .haberdasher_pb import Hat, Size
+from .connectrpc.example.haberdasher_pb import Hat, Size
 
 if TYPE_CHECKING:
     from connectrpc.request import RequestContext

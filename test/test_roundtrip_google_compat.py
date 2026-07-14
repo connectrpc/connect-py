@@ -6,7 +6,7 @@ from pyqwest.testing import ASGITransport, WSGITransport
 
 from connectrpc.compat import google_protobuf_binary_codec, google_protobuf_json_codec
 
-from .google_compat.haberdasher_connect import (
+from .google_compat.connectrpc.example.haberdasher_connect import (
     Haberdasher,
     HaberdasherASGIApplication,
     HaberdasherClient,
@@ -14,7 +14,7 @@ from .google_compat.haberdasher_connect import (
     HaberdasherSync,
     HaberdasherWSGIApplication,
 )
-from .google_compat.haberdasher_pb2 import Hat, Size
+from .google_compat.connectrpc.example.haberdasher_pb2 import Hat, Size
 
 
 @pytest.mark.parametrize("proto_json", [False, True])

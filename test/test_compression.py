@@ -11,7 +11,7 @@ from connectrpc.compression.gzip import GzipCompression
 from connectrpc.compression.zstd import ZstdCompression
 
 from ._util import resolve_compression
-from .haberdasher_connect import (
+from .connectrpc.example.haberdasher_connect import (
     Haberdasher,
     HaberdasherASGIApplication,
     HaberdasherClient,
@@ -19,7 +19,7 @@ from .haberdasher_connect import (
     HaberdasherSync,
     HaberdasherWSGIApplication,
 )
-from .haberdasher_pb import Hat, Size
+from .connectrpc.example.haberdasher_pb import Hat, Size
 
 
 @pytest.mark.asyncio

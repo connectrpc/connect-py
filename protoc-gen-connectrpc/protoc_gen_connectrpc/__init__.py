@@ -505,7 +505,7 @@ def _message_ident(method: DescMethod, message: DescMessage, options: Options) -
     if message.file != method.parent.file:
         mod = Module(_module_name(message.file.name))
     else:
-        mod = Module(f".{_module_name(message.file.name.split('/')[-1])}")
+        mod = Module(f".{_module_name(message.file.name)}")
     return mod.ident(name)
 
 

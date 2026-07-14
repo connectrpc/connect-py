@@ -8,7 +8,7 @@ from pyqwest.testing import ASGITransport, WSGITransport
 
 from connectrpc.codec import proto_json_codec
 
-from .haberdasher_connect import (
+from .connectrpc.example.haberdasher_connect import (
     Haberdasher,
     HaberdasherASGIApplication,
     HaberdasherClient,
@@ -16,7 +16,7 @@ from .haberdasher_connect import (
     HaberdasherSync,
     HaberdasherWSGIApplication,
 )
-from .haberdasher_pb import Hat, Size
+from .connectrpc.example.haberdasher_pb import Hat, Size
 
 if TYPE_CHECKING:
     from pyqwest._pyqwest import Response, SyncResponse
