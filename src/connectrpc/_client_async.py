@@ -101,6 +101,21 @@ class ConnectClient:
     ) -> None:
         """Creates a new asynchronous Connect client.
 
+        When providing an HTTP client, for example to configure TLS settings,
+        it is the caller's responsibility to close it.
+
+        Examples:
+            ```python
+            from pyqwest import Client
+            from my_service import MyServiceClient
+
+            async with (
+                Client() as http_client,
+                MyServiceClient("http://localhost:8000", http_client=http_client) as client,
+            ):
+                # Use the client!
+            ```
+
         Args:
             address: The address of the server to connect to, including scheme.
             codec: The [Codec][] to use for requests. If unset, defaults to binary protobuf.
@@ -175,7 +190,7 @@ class ConnectClient:
         self._execute_bidi_stream = execute_bidi_stream
 
     async def close(self) -> None:
-        """Close the HTTP client. After closing, the client cannot be used to make requests."""
+        """Close the client. After closing, the client cannot be used to make requests."""
         if not self._closed:
             self._closed = True
 

@@ -36,7 +36,8 @@ alternate_style = true
 [project.plugins.mkdocstrings.handlers.python]
 inventories = [
   "https://docs.python.org/3/objects.inv",
-  "https://protobufpy.com/objects.inv"
+  "https://protobufpy.com/objects.inv",
+  "https://pyqwest.dev/objects.inv",
 ]
 paths = ["src"]
 
