@@ -101,6 +101,21 @@ class ConnectClient:
     ) -> None:
         """Creates a new asynchronous Connect client.
 
+        When providing an HTTP client, for example to configure TLS settings,
+        it is the caller's responsibility to close it.
+
+        Examples:
+            ```python
+            from pyqwest import Client
+            from my_service import MyServiceClient
+
+            async with (
+                Client() as http_client,
+                MyServiceClient("http://localhost:8000", http_client=http_client) as client,
+            ):
+                # Use the client!
+            ```
+
         Args:
             address: The address of the server to connect to, including scheme.
             codec: The [Codec][] to use for requests. If unset, defaults to binary protobuf.
@@ -175,36 +190,7 @@ class ConnectClient:
         self._execute_bidi_stream = execute_bidi_stream
 
     async def close(self) -> None:
-        """Mark the client as closed.
-
-        After closing, the client cannot be used to make requests.
-
-        Note:
-            This method does not close the underlying HTTP client. If you provided
-            your own HTTP client, you are responsible for closing it yourself.
-
-        Example::
-
-            import asyncio
-            from pyqwest import Client
-            from my_service import MyServiceClient
-
-
-            async def main():
-                http_client = Client()
-                client = MyServiceClient("http://localhost", http_client=http_client)
-                try:
-                    # Use the client...
-                    pass
-                finally:
-                    await client.close()  # Marks connect client as closed
-                    await (
-                        http_client.aclose()
-                    )  # You must close the HTTP client yourself
-
-
-            asyncio.run(main())
-        """
+        """Close the client. After closing, the client cannot be used to make requests."""
         if not self._closed:
             self._closed = True
 

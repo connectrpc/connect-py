@@ -94,6 +94,21 @@ class ConnectClientSync:
     ) -> None:
         """Creates a new synchronous Connect client.
 
+        When providing an HTTP client, for example to configure TLS settings,
+        it is the caller's responsibility to close it.
+
+        Examples:
+            ```python
+            from pyqwest import SyncClient
+            from my_service import MyServiceClientSync
+
+            with (
+                SyncClient() as http_client,
+                MyServiceClientSync("http://localhost:8000", http_client=http_client) as client,
+            ):
+                # Use the client!
+            ```
+
         Args:
             address: The address of the server to connect to, including scheme.
             codec: The [Codec][] to use for requests. If unset, defaults to binary protobuf.
@@ -174,28 +189,7 @@ class ConnectClientSync:
         self._execute_bidi_stream = execute_bidi_stream
 
     def close(self) -> None:
-        """Mark the client as closed.
-
-        After closing, the client cannot be used to make requests.
-
-        Note:
-            This method does not close the underlying HTTP client. If you provided
-            your own HTTP client, you are responsible for closing it yourself.
-
-        Example::
-
-            from pyqwest import SyncClient
-            from my_service import MyServiceClient
-
-            http_client = SyncClient()
-            client = MyServiceClient("http://localhost", http_client=http_client)
-            try:
-                # Use the client...
-                pass
-            finally:
-                client.close()  # Marks connect client as closed
-                http_client.close()  # You must close the HTTP client yourself
-        """
+        """Close the client. After closing, the client cannot be used to make requests."""
         if not self._closed:
             self._closed = True
 
