@@ -53,9 +53,6 @@ class EnvelopeReader(Generic[_RES]):
                 compressed = prefix_byte & 0b01 != 0
 
                 message_data = self._buffer[5 : 5 + self._next_message_length]
-                # Use in-place deletion to avoid O(n²) memory copies in streaming RPCs.
-                # `del buf[:n]` uses memmove within the existing buffer, while
-                # `buf = buf[n:]` allocates a new bytearray and copies all remaining bytes.
                 del self._buffer[: 5 + self._next_message_length]
                 self._next_message_length = None
                 if compressed:
