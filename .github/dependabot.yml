@@ -1,0 +1,52 @@
+version: 2
+updates:
+  # GitHub Actions
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "00:00"
+    commit-message:
+      prefix: "ci"
+    groups:
+      github-actions:
+        patterns:
+          - "*"
+
+  # Python dependencies (uv workspace)
+  # Only the root directory is needed because all workspace members
+  # share a single uv.lock file at the repository root.
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "00:00"
+    commit-message:
+      prefix: "deps"
+    # Production dependencies are managed manually and bumped only when
+    # necessary — consistent with the previous renovate.json policy.
+    ignore:
+      # Root production deps
+      - dependency-name: "protobuf-py"
+      - dependency-name: "pyqwest"
+      # connectrpc-otel production deps
+      - dependency-name: "opentelemetry-api"
+      - dependency-name: "opentelemetry-instrumentation"
+      - dependency-name: "opentelemetry-instrumentation-asgi"
+      - dependency-name: "opentelemetry-instrumentation-wsgi"
+      - dependency-name: "opentelemetry-sdk"
+      # Sub-project production deps
+      - dependency-name: "connectrpc"
+      - dependency-name: "flask"
+      - dependency-name: "starlette"
+    groups:
+      otel-dependencies:
+        patterns:
+          - "opentelemetry-*"
+      python-dev-dependencies:
+        exclude-patterns:
+          - "opentelemetry-*"
+        patterns:
+          - "*"
