@@ -53,7 +53,7 @@ class EnvelopeReader(Generic[_RES]):
                 compressed = prefix_byte & 0b01 != 0
 
                 message_data = self._buffer[5 : 5 + self._next_message_length]
-                self._buffer = self._buffer[5 + self._next_message_length :]
+                del self._buffer[: 5 + self._next_message_length]
                 self._next_message_length = None
                 if compressed:
                     if isinstance(self._compression, IdentityCompression):
