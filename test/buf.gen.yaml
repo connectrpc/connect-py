@@ -7,6 +7,8 @@ plugins:
   # TODO: Consider extracting a testing package to share haberdasher among packages.
   - local: protoc-gen-py
     out: ../connectrpc-grpcreflect/test/
+  - local: protoc-gen-connectrpc
+    out: ../connectrpc-grpcreflect/test/
 
   # NOTE: v26.0 is the earliest version supporting protobuf==5.
   - remote: buf.build/protocolbuffers/python:v26.0

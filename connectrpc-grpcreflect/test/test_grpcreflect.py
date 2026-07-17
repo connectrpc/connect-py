@@ -47,7 +47,7 @@ from connectrpc_grpcreflect._gen.grpc.reflection.v1alpha.reflection_pb import (
     ServerReflectionRequest as ServerReflectionAlphaRequest,
 )
 
-from .connectrpc.example import haberdasher_pb
+from .connectrpc.example import haberdasher_connect, haberdasher_pb
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
@@ -123,7 +123,7 @@ async def test_list_services(reflection_client: ReflectionClient) -> None:
 
 def test_list_services_service_descriptor() -> None:
     app = ServerReflectionWSGIApplication(
-        ServerReflectionServiceSync(haberdasher_pb.desc().services[0])
+        ServerReflectionServiceSync(haberdasher_connect.Haberdasher.desc())
     )
 
     with ServerReflectionClientSync(
