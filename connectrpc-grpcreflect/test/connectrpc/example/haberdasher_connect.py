@@ -63,7 +63,6 @@ class Haberdasher(Protocol):
         raise ConnectError(Code.UNIMPLEMENTED, 'Not implemented')
 
     async def do_nothing(self, request: Empty, ctx: RequestContext[Empty, Empty]) -> Empty:
-        """"""
         raise ConnectError(Code.UNIMPLEMENTED, 'Not implemented')
 
     @classmethod
@@ -285,7 +284,6 @@ class HaberdasherClient(ConnectClient):
         headers: Headers | Mapping[str, str] | None = None, 
         timeout_ms: int | None = None,
     ) -> Empty:
-        """"""
         return await self.execute_unary(
             request=request,
             method=MethodInfo(
@@ -334,7 +332,6 @@ class HaberdasherSync(Protocol):
         raise ConnectError(Code.UNIMPLEMENTED, 'Not implemented')
 
     def do_nothing(self, request: Empty, ctx: RequestContext[Empty, Empty]) -> Empty:
-        """"""
         raise ConnectError(Code.UNIMPLEMENTED, 'Not implemented')
 
     @classmethod
@@ -549,7 +546,6 @@ class HaberdasherClientSync(ConnectClientSync):
         headers: Headers | Mapping[str, str] | None = None, 
         timeout_ms: int | None = None,
     ) -> Empty:
-        """"""
         return self.execute_unary(
             request=request,
             method=MethodInfo(

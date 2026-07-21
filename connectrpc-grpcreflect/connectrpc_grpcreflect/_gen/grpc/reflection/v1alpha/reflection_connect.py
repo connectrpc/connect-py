@@ -28,7 +28,6 @@ if TYPE_CHECKING:
 
 
 class ServerReflection(Protocol):
-    """"""
     def server_reflection_info(self, request: AsyncIterator[ServerReflectionRequest], ctx: RequestContext[ServerReflectionRequest, ServerReflectionResponse]) -> AsyncIterator[ServerReflectionResponse]:
         """
         The reflection service is structured as a bidirectional stream, ensuring
@@ -78,7 +77,6 @@ class ServerReflectionASGIApplication(ConnectASGIApplication[ServerReflection]):
 
 
 class ServerReflectionClient(ConnectClient):
-    """"""
     def server_reflection_info(
         self,
         request: AsyncIterator[ServerReflectionRequest],
@@ -104,7 +102,6 @@ class ServerReflectionClient(ConnectClient):
         )
 
 class ServerReflectionSync(Protocol):
-    """"""
     def server_reflection_info(self, request: Iterator[ServerReflectionRequest], ctx: RequestContext[ServerReflectionRequest, ServerReflectionResponse]) -> Iterator[ServerReflectionResponse]:
         """
         The reflection service is structured as a bidirectional stream, ensuring
@@ -152,7 +149,6 @@ class ServerReflectionWSGIApplication(ConnectWSGIApplication):
 
 
 class ServerReflectionClientSync(ConnectClientSync):
-    """"""
     def server_reflection_info(
         self,
         request: Iterator[ServerReflectionRequest],

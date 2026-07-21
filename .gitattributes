@@ -1,5 +1,4 @@
 * text=auto eol=lf
 
-src/connectrpc/_gen linguist-generated=true
-conformance/test/gen linguist-generated=true
-connectrpc-grpcreflect/connectrpc_grpcreflect/_gen linguist-generated=true
+**/gen/** inguist-generated=true
+**/_gen/** linguist-generated=true
