@@ -97,7 +97,15 @@ cmd = "tombi lint"
 
 [tasks.lint-types]
 help = "Apply type checking to Python files"
-cmd = "ty check ."
+# Workaround lack of monorepo support by running in each project explicitly.
+# https://docs.astral.sh/ty/reference/typing-faq/#does-ty-support-monorepos
+# https://github.com/astral-sh/ty/issues/819
+sequence = [
+  { cmd = "ty check --project connectrpc-grpcreflect" },
+  { cmd = "ty check --project connectrpc-otel" },
+  { cmd = "ty check --project example" },
+  { cmd = "ty check" },
+]
 
 [tasks.test]
 help = "Run unit tests"

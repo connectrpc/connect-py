@@ -36,19 +36,37 @@ _PROTO_BINARY_CODEC = google_protobuf_binary_codec()
 _GZIP_COMPRESSION = GzipCompression()
 
 class Haberdasher(Protocol):
+    """
+    A Haberdasher makes hats for clients.
+    """
     async def make_hat(self, request: Size, ctx: RequestContext[Size, Hat]) -> Hat:
+        """
+        MakeHat produces a hat of mysterious, randomly-selected color!
+        """
         raise ConnectError(Code.UNIMPLEMENTED, 'Not implemented')
 
     async def make_flexible_hat(self, request: AsyncIterator[Size], ctx: RequestContext[Size, Hat]) -> Hat:
+        """
+        MakeFlexibleHats produces a single hat adhering to many sizes.
+        """
         raise ConnectError(Code.UNIMPLEMENTED, 'Not implemented')
 
     def make_similar_hats(self, request: Size, ctx: RequestContext[Size, Hat]) -> AsyncIterator[Hat]:
+        """
+        MakeSimilarHats produces hats of mysterious, randomly-selected color following a single order!
+        """
         raise ConnectError(Code.UNIMPLEMENTED, 'Not implemented')
 
     def make_various_hats(self, request: AsyncIterator[Size], ctx: RequestContext[Size, Hat]) -> AsyncIterator[Hat]:
+        """
+        MakeVariousHats produces hats of mysterious, randomly-selected color following many orders!
+        """
         raise ConnectError(Code.UNIMPLEMENTED, 'Not implemented')
 
     def list_parts(self, request: Empty, ctx: RequestContext[Empty, Hat.Part]) -> AsyncIterator[Hat.Part]:
+        """
+        ListParts lists available parts for making a hat.
+        """
         raise ConnectError(Code.UNIMPLEMENTED, 'Not implemented')
 
     async def do_nothing(self, request: Empty, ctx: RequestContext[Empty, Empty]) -> Empty:
@@ -142,6 +160,9 @@ class HaberdasherASGIApplication(ConnectASGIApplication[Haberdasher]):
 
 
 class HaberdasherClient(ConnectClient):
+    """
+    A Haberdasher makes hats for clients.
+    """
     def __init__(
         self,
         address: str,
@@ -174,6 +195,9 @@ class HaberdasherClient(ConnectClient):
         timeout_ms: int | None = None,
         use_get: bool = False,
     ) -> Hat:
+        """
+        MakeHat produces a hat of mysterious, randomly-selected color!
+        """
         return await self.execute_unary(
             request=request,
             method=MethodInfo(
@@ -195,6 +219,9 @@ class HaberdasherClient(ConnectClient):
         headers: Headers | Mapping[str, str] | None = None, 
         timeout_ms: int | None = None,
     ) -> Hat:
+        """
+        MakeFlexibleHats produces a single hat adhering to many sizes.
+        """
         return await self.execute_client_stream(
             request=request,
             method=MethodInfo(
@@ -215,6 +242,9 @@ class HaberdasherClient(ConnectClient):
         headers: Headers | Mapping[str, str] | None = None, 
         timeout_ms: int | None = None,
     ) -> AsyncIterator[Hat]:
+        """
+        MakeSimilarHats produces hats of mysterious, randomly-selected color following a single order!
+        """
         return self.execute_server_stream(
             request=request,
             method=MethodInfo(
@@ -235,6 +265,9 @@ class HaberdasherClient(ConnectClient):
         headers: Headers | Mapping[str, str] | None = None, 
         timeout_ms: int | None = None,
     ) -> AsyncIterator[Hat]:
+        """
+        MakeVariousHats produces hats of mysterious, randomly-selected color following many orders!
+        """
         return self.execute_bidi_stream(
             request=request,
             method=MethodInfo(
@@ -255,6 +288,9 @@ class HaberdasherClient(ConnectClient):
         headers: Headers | Mapping[str, str] | None = None, 
         timeout_ms: int | None = None,
     ) -> AsyncIterator[Hat.Part]:
+        """
+        ListParts lists available parts for making a hat.
+        """
         return self.execute_server_stream(
             request=request,
             method=MethodInfo(
@@ -289,19 +325,37 @@ class HaberdasherClient(ConnectClient):
         )
 
 class HaberdasherSync(Protocol):
+    """
+    A Haberdasher makes hats for clients.
+    """
     def make_hat(self, request: Size, ctx: RequestContext[Size, Hat]) -> Hat:
+        """
+        MakeHat produces a hat of mysterious, randomly-selected color!
+        """
         raise ConnectError(Code.UNIMPLEMENTED, 'Not implemented')
 
     def make_flexible_hat(self, request: Iterator[Size], ctx: RequestContext[Size, Hat]) -> Hat:
+        """
+        MakeFlexibleHats produces a single hat adhering to many sizes.
+        """
         raise ConnectError(Code.UNIMPLEMENTED, 'Not implemented')
 
     def make_similar_hats(self, request: Size, ctx: RequestContext[Size, Hat]) -> Iterator[Hat]:
+        """
+        MakeSimilarHats produces hats of mysterious, randomly-selected color following a single order!
+        """
         raise ConnectError(Code.UNIMPLEMENTED, 'Not implemented')
 
     def make_various_hats(self, request: Iterator[Size], ctx: RequestContext[Size, Hat]) -> Iterator[Hat]:
+        """
+        MakeVariousHats produces hats of mysterious, randomly-selected color following many orders!
+        """
         raise ConnectError(Code.UNIMPLEMENTED, 'Not implemented')
 
     def list_parts(self, request: Empty, ctx: RequestContext[Empty, Hat.Part]) -> Iterator[Hat.Part]:
+        """
+        ListParts lists available parts for making a hat.
+        """
         raise ConnectError(Code.UNIMPLEMENTED, 'Not implemented')
 
     def do_nothing(self, request: Empty, ctx: RequestContext[Empty, Empty]) -> Empty:
@@ -393,6 +447,9 @@ class HaberdasherWSGIApplication(ConnectWSGIApplication):
 
 
 class HaberdasherClientSync(ConnectClientSync):
+    """
+    A Haberdasher makes hats for clients.
+    """
     def __init__(
         self,
         address: str,
@@ -425,6 +482,9 @@ class HaberdasherClientSync(ConnectClientSync):
         timeout_ms: int | None = None,
         use_get: bool = False,
     ) -> Hat:
+        """
+        MakeHat produces a hat of mysterious, randomly-selected color!
+        """
         return self.execute_unary(
             request=request,
             method=MethodInfo(
@@ -445,6 +505,9 @@ class HaberdasherClientSync(ConnectClientSync):
         headers: Headers | Mapping[str, str] | None = None, 
         timeout_ms: int | None = None,
     ) -> Hat:
+        """
+        MakeFlexibleHats produces a single hat adhering to many sizes.
+        """
         return self.execute_client_stream(
             request=request,
             method=MethodInfo(
@@ -464,6 +527,9 @@ class HaberdasherClientSync(ConnectClientSync):
         headers: Headers | Mapping[str, str] | None = None, 
         timeout_ms: int | None = None,
     ) -> Iterator[Hat]:
+        """
+        MakeSimilarHats produces hats of mysterious, randomly-selected color following a single order!
+        """
         return self.execute_server_stream(
             request=request,
             method=MethodInfo(
@@ -483,6 +549,9 @@ class HaberdasherClientSync(ConnectClientSync):
         headers: Headers | Mapping[str, str] | None = None, 
         timeout_ms: int | None = None,
     ) -> Iterator[Hat]:
+        """
+        MakeVariousHats produces hats of mysterious, randomly-selected color following many orders!
+        """
         return self.execute_bidi_stream(
             request=request,
             method=MethodInfo(
@@ -502,6 +571,9 @@ class HaberdasherClientSync(ConnectClientSync):
         headers: Headers | Mapping[str, str] | None = None, 
         timeout_ms: int | None = None,
     ) -> Iterator[Hat.Part]:
+        """
+        ListParts lists available parts for making a hat.
+        """
         return self.execute_server_stream(
             request=request,
             method=MethodInfo(

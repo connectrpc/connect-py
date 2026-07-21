@@ -13,7 +13,9 @@ from connectrpc.code import Code
 from connectrpc.errors import ConnectError
 from connectrpc.method import IdempotencyLevel, MethodInfo
 from connectrpc.server import ConnectASGIApplication, ConnectWSGIApplication, Endpoint, EndpointSync
+from protobuf import DescService
 
+from . import eliza_pb
 from .eliza_pb import ConverseRequest, ConverseResponse, IntroduceRequest, IntroduceResponse, SayRequest, SayResponse
 
 if TYPE_CHECKING:
@@ -26,15 +28,39 @@ if TYPE_CHECKING:
 
 
 class ElizaService(Protocol):
+    """
+    ElizaService provides a way to talk to Eliza, a port of the DOCTOR script
+    for Joseph Weizenbaum's original ELIZA program. Created in the mid-1960s at
+    the MIT Artificial Intelligence Laboratory, ELIZA demonstrates the
+    superficiality of human-computer communication. DOCTOR simulates a
+    psychotherapist, and is commonly found as an Easter egg in emacs
+    distributions.
+    """
     async def say(self, request: SayRequest, ctx: RequestContext[SayRequest, SayResponse]) -> SayResponse:
+        """
+        Say is a unary RPC. Eliza responds to the prompt with a single sentence.
+        """
         raise ConnectError(Code.UNIMPLEMENTED, 'Not implemented')
 
     def converse(self, request: AsyncIterator[ConverseRequest], ctx: RequestContext[ConverseRequest, ConverseResponse]) -> AsyncIterator[ConverseResponse]:
+        """
+        Converse is a bidirectional RPC. The caller may exchange multiple
+        back-and-forth messages with Eliza over a long-lived connection. Eliza
+        responds to each ConverseRequest with a ConverseResponse.
+        """
         raise ConnectError(Code.UNIMPLEMENTED, 'Not implemented')
 
     def introduce(self, request: IntroduceRequest, ctx: RequestContext[IntroduceRequest, IntroduceResponse]) -> AsyncIterator[IntroduceResponse]:
+        """
+        Introduce is a server streaming RPC. Given the caller's name, Eliza
+        returns a stream of sentences to introduce itself.
+        """
         raise ConnectError(Code.UNIMPLEMENTED, 'Not implemented')
 
+    @classmethod
+    def desc(cls) -> DescService:
+        """Returns the descriptor for this service."""
+        return next(s for s in eliza_pb.desc().services if s.type_name == 'connectrpc.eliza.v1.ElizaService')
 
 class ElizaServiceASGIApplication(ConnectASGIApplication[ElizaService]):
     def __init__(
@@ -93,6 +119,14 @@ class ElizaServiceASGIApplication(ConnectASGIApplication[ElizaService]):
 
 
 class ElizaServiceClient(ConnectClient):
+    """
+    ElizaService provides a way to talk to Eliza, a port of the DOCTOR script
+    for Joseph Weizenbaum's original ELIZA program. Created in the mid-1960s at
+    the MIT Artificial Intelligence Laboratory, ELIZA demonstrates the
+    superficiality of human-computer communication. DOCTOR simulates a
+    psychotherapist, and is commonly found as an Easter egg in emacs
+    distributions.
+    """
     async def say(
         self,
         request: SayRequest,
@@ -101,6 +135,9 @@ class ElizaServiceClient(ConnectClient):
         timeout_ms: int | None = None,
         use_get: bool = False,
     ) -> SayResponse:
+        """
+        Say is a unary RPC. Eliza responds to the prompt with a single sentence.
+        """
         return await self.execute_unary(
             request=request,
             method=MethodInfo(
@@ -122,6 +159,11 @@ class ElizaServiceClient(ConnectClient):
         headers: Headers | Mapping[str, str] | None = None, 
         timeout_ms: int | None = None,
     ) -> AsyncIterator[ConverseResponse]:
+        """
+        Converse is a bidirectional RPC. The caller may exchange multiple
+        back-and-forth messages with Eliza over a long-lived connection. Eliza
+        responds to each ConverseRequest with a ConverseResponse.
+        """
         return self.execute_bidi_stream(
             request=request,
             method=MethodInfo(
@@ -142,6 +184,10 @@ class ElizaServiceClient(ConnectClient):
         headers: Headers | Mapping[str, str] | None = None, 
         timeout_ms: int | None = None,
     ) -> AsyncIterator[IntroduceResponse]:
+        """
+        Introduce is a server streaming RPC. Given the caller's name, Eliza
+        returns a stream of sentences to introduce itself.
+        """
         return self.execute_server_stream(
             request=request,
             method=MethodInfo(
@@ -156,15 +202,39 @@ class ElizaServiceClient(ConnectClient):
         )
 
 class ElizaServiceSync(Protocol):
+    """
+    ElizaService provides a way to talk to Eliza, a port of the DOCTOR script
+    for Joseph Weizenbaum's original ELIZA program. Created in the mid-1960s at
+    the MIT Artificial Intelligence Laboratory, ELIZA demonstrates the
+    superficiality of human-computer communication. DOCTOR simulates a
+    psychotherapist, and is commonly found as an Easter egg in emacs
+    distributions.
+    """
     def say(self, request: SayRequest, ctx: RequestContext[SayRequest, SayResponse]) -> SayResponse:
+        """
+        Say is a unary RPC. Eliza responds to the prompt with a single sentence.
+        """
         raise ConnectError(Code.UNIMPLEMENTED, 'Not implemented')
 
     def converse(self, request: Iterator[ConverseRequest], ctx: RequestContext[ConverseRequest, ConverseResponse]) -> Iterator[ConverseResponse]:
+        """
+        Converse is a bidirectional RPC. The caller may exchange multiple
+        back-and-forth messages with Eliza over a long-lived connection. Eliza
+        responds to each ConverseRequest with a ConverseResponse.
+        """
         raise ConnectError(Code.UNIMPLEMENTED, 'Not implemented')
 
     def introduce(self, request: IntroduceRequest, ctx: RequestContext[IntroduceRequest, IntroduceResponse]) -> Iterator[IntroduceResponse]:
+        """
+        Introduce is a server streaming RPC. Given the caller's name, Eliza
+        returns a stream of sentences to introduce itself.
+        """
         raise ConnectError(Code.UNIMPLEMENTED, 'Not implemented')
 
+    @classmethod
+    def desc(cls) -> DescService:
+        """Returns the descriptor for this service."""
+        return next(s for s in eliza_pb.desc().services if s.type_name == 'connectrpc.eliza.v1.ElizaService')
 
 class ElizaServiceWSGIApplication(ConnectWSGIApplication):
     def __init__(
@@ -221,6 +291,14 @@ class ElizaServiceWSGIApplication(ConnectWSGIApplication):
 
 
 class ElizaServiceClientSync(ConnectClientSync):
+    """
+    ElizaService provides a way to talk to Eliza, a port of the DOCTOR script
+    for Joseph Weizenbaum's original ELIZA program. Created in the mid-1960s at
+    the MIT Artificial Intelligence Laboratory, ELIZA demonstrates the
+    superficiality of human-computer communication. DOCTOR simulates a
+    psychotherapist, and is commonly found as an Easter egg in emacs
+    distributions.
+    """
     def say(
         self,
         request: SayRequest,
@@ -229,6 +307,9 @@ class ElizaServiceClientSync(ConnectClientSync):
         timeout_ms: int | None = None,
         use_get: bool = False,
     ) -> SayResponse:
+        """
+        Say is a unary RPC. Eliza responds to the prompt with a single sentence.
+        """
         return self.execute_unary(
             request=request,
             method=MethodInfo(
@@ -249,6 +330,11 @@ class ElizaServiceClientSync(ConnectClientSync):
         headers: Headers | Mapping[str, str] | None = None, 
         timeout_ms: int | None = None,
     ) -> Iterator[ConverseResponse]:
+        """
+        Converse is a bidirectional RPC. The caller may exchange multiple
+        back-and-forth messages with Eliza over a long-lived connection. Eliza
+        responds to each ConverseRequest with a ConverseResponse.
+        """
         return self.execute_bidi_stream(
             request=request,
             method=MethodInfo(
@@ -268,6 +354,10 @@ class ElizaServiceClientSync(ConnectClientSync):
         headers: Headers | Mapping[str, str] | None = None, 
         timeout_ms: int | None = None,
     ) -> Iterator[IntroduceResponse]:
+        """
+        Introduce is a server streaming RPC. Given the caller's name, Eliza
+        returns a stream of sentences to introduce itself.
+        """
         return self.execute_server_stream(
             request=request,
             method=MethodInfo(

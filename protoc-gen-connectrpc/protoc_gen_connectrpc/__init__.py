@@ -7,7 +7,7 @@ from enum import Enum
 from typing import TYPE_CHECKING
 
 from protobuf._sanitization import escape_identifier
-from protobuf.plugin import File, Ident, Module, Schema, run
+from protobuf.plugin import File, Ident, Module, Schema, get_comments, run
 from protobuf.wkt import MethodOptions
 
 if TYPE_CHECKING:
@@ -21,6 +21,9 @@ _ITERATOR = _COLLECTIONS_ABC.ident("Iterator", type_only=True)
 _MAPPING = _COLLECTIONS_ABC.ident("Mapping", type_only=True)
 _TYPING = Module("typing")
 _PROTOCOL = _TYPING.ident("Protocol")
+
+_PROTOBUF = Module("protobuf")
+_DESC_SERVICE = _PROTOBUF.ident("DescService")
 
 _PYQWEST = Module("pyqwest")
 _PYQWEST_CLIENT = _PYQWEST.ident("Client")
@@ -117,6 +120,7 @@ def _generate_async_stubs(f: File, service: DescService, options: Options) -> No
         "_DEFAULT_CODECS" if options.protobuf == _ProtobufOption.GOOGLE else "None"
     )
     with f.scope("class ", service_name, "(", _PROTOCOL, "):"):
+        _print_docstring(f, service)
         for method in service.methods:
             def_prefix, request_type, response_type = _async_signature(method, options)
             with f.scope(
@@ -135,6 +139,7 @@ def _generate_async_stubs(f: File, service: DescService, options: Options) -> No
                 *response_type,
                 ":",
             ):
+                _print_docstring(f, method)
                 f.print(
                     "raise ",
                     _CONNECT_ERROR,
@@ -143,6 +148,8 @@ def _generate_async_stubs(f: File, service: DescService, options: Options) -> No
                     ".UNIMPLEMENTED, 'Not implemented')",
                 )
                 f.print()
+        _generate_desc_method(f, service, options)
+
     f.print()
     with f.scope(
         "class ",
@@ -229,6 +236,8 @@ def _generate_async_stubs(f: File, service: DescService, options: Options) -> No
     f.print()
     f.print()
     with f.scope("class ", service_name, "Client(", _CONNECT_CLIENT, "):"):
+        _print_docstring(f, service)
+
         if options.protobuf == _ProtobufOption.GOOGLE:
             _print_google_compat_client_init(f, _INTERCEPTOR, _PYQWEST_CLIENT)
 
@@ -251,6 +260,7 @@ def _generate_async_stubs(f: File, service: DescService, options: Options) -> No
                 if _supports_get(method):
                     f.print("use_get: bool = False,")
             with f.scope(") -> ", *response_type, ":"):
+                _print_docstring(f, method)
                 await_return = (
                     "await "
                     if method.method_kind in ("unary", "client_streaming")
@@ -297,6 +307,7 @@ def _generate_sync_stubs(f: File, service: DescService, options: Options) -> Non
         "_DEFAULT_CODECS" if options.protobuf == _ProtobufOption.GOOGLE else "None"
     )
     with f.scope("class ", service_name, "Sync(", _PROTOCOL, "):"):
+        _print_docstring(f, service)
         for method in service.methods:
             request_type, response_type = _sync_signature(method, options)
             with f.scope(
@@ -314,6 +325,7 @@ def _generate_sync_stubs(f: File, service: DescService, options: Options) -> Non
                 *response_type,
                 ":",
             ):
+                _print_docstring(f, method)
                 f.print(
                     "raise ",
                     _CONNECT_ERROR,
@@ -322,6 +334,8 @@ def _generate_sync_stubs(f: File, service: DescService, options: Options) -> Non
                     ".UNIMPLEMENTED, 'Not implemented')",
                 )
                 f.print()
+        _generate_desc_method(f, service, options)
+
     f.print()
     with f.scope(
         "class ",
@@ -392,6 +406,8 @@ def _generate_sync_stubs(f: File, service: DescService, options: Options) -> Non
     f.print()
     f.print()
     with f.scope("class ", service_name, "ClientSync(", _CONNECT_CLIENT_SYNC, "):"):
+        _print_docstring(f, service)
+
         if options.protobuf == _ProtobufOption.GOOGLE:
             _print_google_compat_client_init(f, _INTERCEPTOR_SYNC, _PYQWEST_SYNC_CLIENT)
 
@@ -414,6 +430,7 @@ def _generate_sync_stubs(f: File, service: DescService, options: Options) -> Non
                 if _supports_get(method):
                     f.print("use_get: bool = False,")
             with f.scope(") -> ", *response_type, ":"):
+                _print_docstring(f, method)
                 with f.scope("return ", "self.", _client_execute_method(method), "("):
                     f.print("request=request,")
                     with f.scope("method=", _METHOD_INFO, "("):
@@ -507,6 +524,43 @@ def _message_ident(method: DescMethod, message: DescMessage, options: Options) -
     else:
         mod = Module(f".{_module_name(message.file.name)}")
     return mod.ident(name)
+
+
+def _print_docstring(f: File, desc: DescService | DescMethod) -> None:
+    comments = get_comments(desc)
+    text = ""
+    if comments.leading:
+        text += comments.leading.removesuffix("\n")
+    if comments.trailing:
+        if len(text) > 0:
+            text += "\n\n"
+        text += comments.trailing.removesuffix("\n")
+    if len(text) > 0:
+        text += "\n"
+
+    if not text:
+        return
+
+    with f.doc():
+        for line in text.splitlines():
+            # Comments in protobuf often start with a space, this
+            # leads to weird indentation in the generated docstring, so we remove it.
+            f.print(line.removeprefix(" "))
+
+
+def _generate_desc_method(f: File, service: DescService, options: Options) -> None:
+    if options.protobuf == _ProtobufOption.PY:
+        f.print("@classmethod")
+        with f.scope("def desc(cls) -> ", _DESC_SERVICE, ":"):
+            with f.doc("Returns the descriptor for this service."):
+                pass
+            f.print(
+                "return next(s for s in ",
+                service.file,
+                ".desc().services if s.type_name == '",
+                service.type_name,
+                "')",
+            )
 
 
 # https://github.com/grpc/grpc/blob/0dd1b2cad21d89984f9a1b3c6249d649381eeb65/src/compiler/python_generator_helpers.h#L67

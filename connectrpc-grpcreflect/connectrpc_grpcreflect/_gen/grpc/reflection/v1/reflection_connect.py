@@ -13,7 +13,9 @@ from connectrpc.code import Code
 from connectrpc.errors import ConnectError
 from connectrpc.method import IdempotencyLevel, MethodInfo
 from connectrpc.server import ConnectASGIApplication, ConnectWSGIApplication, Endpoint, EndpointSync
+from protobuf import DescService
 
+from . import reflection_pb
 from .reflection_pb import ServerReflectionRequest, ServerReflectionResponse
 
 if TYPE_CHECKING:
@@ -27,8 +29,16 @@ if TYPE_CHECKING:
 
 class ServerReflection(Protocol):
     def server_reflection_info(self, request: AsyncIterator[ServerReflectionRequest], ctx: RequestContext[ServerReflectionRequest, ServerReflectionResponse]) -> AsyncIterator[ServerReflectionResponse]:
+        """
+        The reflection service is structured as a bidirectional stream, ensuring
+        all related requests go to a single server.
+        """
         raise ConnectError(Code.UNIMPLEMENTED, 'Not implemented')
 
+    @classmethod
+    def desc(cls) -> DescService:
+        """Returns the descriptor for this service."""
+        return next(s for s in reflection_pb.desc().services if s.type_name == 'grpc.reflection.v1.ServerReflection')
 
 class ServerReflectionASGIApplication(ConnectASGIApplication[ServerReflection]):
     def __init__(
@@ -74,6 +84,10 @@ class ServerReflectionClient(ConnectClient):
         headers: Headers | Mapping[str, str] | None = None, 
         timeout_ms: int | None = None,
     ) -> AsyncIterator[ServerReflectionResponse]:
+        """
+        The reflection service is structured as a bidirectional stream, ensuring
+        all related requests go to a single server.
+        """
         return self.execute_bidi_stream(
             request=request,
             method=MethodInfo(
@@ -89,8 +103,16 @@ class ServerReflectionClient(ConnectClient):
 
 class ServerReflectionSync(Protocol):
     def server_reflection_info(self, request: Iterator[ServerReflectionRequest], ctx: RequestContext[ServerReflectionRequest, ServerReflectionResponse]) -> Iterator[ServerReflectionResponse]:
+        """
+        The reflection service is structured as a bidirectional stream, ensuring
+        all related requests go to a single server.
+        """
         raise ConnectError(Code.UNIMPLEMENTED, 'Not implemented')
 
+    @classmethod
+    def desc(cls) -> DescService:
+        """Returns the descriptor for this service."""
+        return next(s for s in reflection_pb.desc().services if s.type_name == 'grpc.reflection.v1.ServerReflection')
 
 class ServerReflectionWSGIApplication(ConnectWSGIApplication):
     def __init__(
@@ -134,6 +156,10 @@ class ServerReflectionClientSync(ConnectClientSync):
         headers: Headers | Mapping[str, str] | None = None, 
         timeout_ms: int | None = None,
     ) -> Iterator[ServerReflectionResponse]:
+        """
+        The reflection service is structured as a bidirectional stream, ensuring
+        all related requests go to a single server.
+        """
         return self.execute_bidi_stream(
             request=request,
             method=MethodInfo(

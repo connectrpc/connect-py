@@ -246,6 +246,12 @@ exclude = [
   # gRPC generated code references `grpc.experimental`, which is not exposed by the
   # `grpc` package's public API. See https://github.com/grpc/grpc/issues/39555.
   "**/*_pb2_grpc.py",
+  # Workaround lack of monorepo support by excluding subproject code from top-level project.
+  # https://docs.astral.sh/ty/reference/typing-faq/#does-ty-support-monorepos
+  # https://github.com/astral-sh/ty/issues/819
+  "connectrpc-grpcreflect",
+  "connectrpc-otel",
+  "example",
 ]
 
 [tool.ty.environment]
