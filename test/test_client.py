@@ -73,7 +73,7 @@ def test_headers_sync(headers, trailers, response_headers, response_trailers) ->
     )
 
     with ResponseMetadata() as resp:
-        assert resp.http_status == 0
+        assert resp.http_status is None
         assert list(resp.headers.allitems()) == []
         assert list(resp.trailers.allitems()) == []
         client.make_hat(Size(inches=10))
@@ -113,7 +113,7 @@ async def test_headers_async(
     )
 
     with ResponseMetadata() as resp:
-        assert resp.http_status == 0
+        assert resp.http_status is None
         assert list(resp.headers.allitems()) == []
         assert list(resp.trailers.allitems()) == []
         await client.make_hat(Size(inches=10))

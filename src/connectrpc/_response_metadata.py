@@ -98,10 +98,12 @@ class ResponseMetadata:
         self._token = None
 
     @property
-    def http_status(self) -> int:
-        """Returns the HTTP status code of the response."""
-        if self._http_status is None:
-            return 0
+    def http_status(self) -> int | None:
+        """Returns the HTTP status code of the response.
+
+        If an HTTP response wasn't received, for example due to a network error,
+        this will return `None`.
+        """
         return self._http_status
 
     @property
