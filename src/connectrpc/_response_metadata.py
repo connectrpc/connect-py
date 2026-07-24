@@ -16,11 +16,12 @@ if TYPE_CHECKING:
 _current_response = ContextVar["ResponseMetadata"]("connectrpc_current_response")
 
 
-def handle_response_headers(headers: HTTPHeaders) -> None:
+def handle_response_headers(status: int, headers: HTTPHeaders) -> None:
     response = _current_response.get(None)
     if not response:
         return
 
+    response._http_status = status  # noqa: SLF001
     response_headers: Headers = Headers()
     response_trailers: Headers = Headers()
     for key, value in headers.items():
@@ -60,8 +61,8 @@ class ResponseMetadata:
 
     Commonly, RPC client invocations only need the message payload and do not need to
     directly read other data such as headers or trailers. In cases where they are needed,
-    initialize this class in a context manager to access the response headers and trailers
-    for the invocation made within the context.
+    initialize this class in a context manager to access the response HTTP status,
+    headers and trailers for the invocation made within the context.
 
     Example:
         ```python
@@ -73,6 +74,7 @@ class ResponseMetadata:
         ```
     """
 
+    _http_status: int | None = None
     _headers: Headers | None = None
     _trailers: Headers | None = None
     _token: Token[ResponseMetadata] | None = None
@@ -94,6 +96,13 @@ class ResponseMetadata:
             with contextlib.suppress(Exception):
                 _current_response.reset(self._token)
         self._token = None
+
+    @property
+    def http_status(self) -> int:
+        """Returns the HTTP status code of the response."""
+        if self._http_status is None:
+            return 0
+        return self._http_status
 
     @property
     def headers(self) -> Headers:
