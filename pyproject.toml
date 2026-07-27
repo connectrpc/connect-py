@@ -76,9 +76,9 @@ dev = [
   # If the below issue is resolved, we can move them back to subprojects and configure
   # our default sync setting as --all-packages.
   # https://github.com/astral-sh/uv/issues/5737
-  "opentelemetry-instrumentation-asgi==0.64b0",
-  "opentelemetry-instrumentation-wsgi==0.64b0",
-  "opentelemetry-sdk==1.43.0",
+  "opentelemetry-instrumentation-asgi==0.65b0",
+  "opentelemetry-instrumentation-wsgi==0.65b0",
+  "opentelemetry-sdk==1.44.0",
   "protobuf>=5.28",
   "protoc-gen-grpc-py==0.1.1",
   "protoc-gen-py==0.1.1",
