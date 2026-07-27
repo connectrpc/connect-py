@@ -50,24 +50,24 @@ RES = TypeVar("RES")
 
 
 class _ExecuteUnary(Protocol[REQ, RES]):
-    def __call__(self, request: REQ, ctx: RequestContext[REQ, RES]) -> RES: ...
+    def __call__(self, request: REQ, ctx: RequestContext[REQ, RES], /) -> RES: ...
 
 
 class _ExecuteClientStream(Protocol[REQ, RES]):
     def __call__(
-        self, request: Iterator[REQ], ctx: RequestContext[REQ, RES]
+        self, request: Iterator[REQ], ctx: RequestContext[REQ, RES], /
     ) -> RES: ...
 
 
 class _ExecuteServerStream(Protocol[REQ, RES]):
     def __call__(
-        self, request: REQ, ctx: RequestContext[REQ, RES]
+        self, request: REQ, ctx: RequestContext[REQ, RES], /
     ) -> Iterator[RES]: ...
 
 
 class _ExecuteBidiStream(Protocol[REQ, RES]):
     def __call__(
-        self, request: Iterator[REQ], ctx: RequestContext[REQ, RES]
+        self, request: Iterator[REQ], ctx: RequestContext[REQ, RES], /
     ) -> Iterator[RES]: ...
 
 
@@ -355,17 +355,17 @@ class ConnectClientSync:
             raise ConnectError(Code.UNAVAILABLE, str(e)) from e
 
     def _send_request_client_stream(
-        self, request: Iterator[REQ], ctx: RequestContext[REQ, RES]
+        self, request: Iterator[REQ], ctx: RequestContext[REQ, RES], /
     ) -> RES:
         return _consume_single_response(self._send_request_bidi_stream(request, ctx))
 
     def _send_request_server_stream(
-        self, request: REQ, ctx: RequestContext[REQ, RES]
+        self, request: REQ, ctx: RequestContext[REQ, RES], /
     ) -> Iterator[RES]:
         return self._send_request_bidi_stream(iter([request]), ctx)
 
     def _send_request_bidi_stream(
-        self, request: Iterator[REQ], ctx: RequestContext[REQ, RES]
+        self, request: Iterator[REQ], ctx: RequestContext[REQ, RES], /
     ) -> Iterator[RES]:
         request_headers = HTTPHeaders(ctx.request_headers.allitems())
         url = f"{self._address}/{ctx.method.service_name}/{ctx.method.name}"

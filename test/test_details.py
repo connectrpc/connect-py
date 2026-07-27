@@ -26,7 +26,7 @@ from .connectrpc.example.haberdasher_pb import Size
 
 def test_details_sync() -> None:
     class DetailsHaberdasherSync(HaberdasherSync):
-        def make_hat(self, request, ctx) -> NoReturn:
+        def make_hat(self, _request, _ctx) -> NoReturn:
             raise ConnectError(
                 Code.RESOURCE_EXHAUSTED,
                 "Resource exhausted",
@@ -66,7 +66,7 @@ def test_details_sync() -> None:
 @pytest.mark.asyncio
 async def test_details_async() -> None:
     class DetailsHaberdasher(Haberdasher):
-        async def make_hat(self, request, ctx) -> NoReturn:
+        async def make_hat(self, _request, _ctx) -> NoReturn:
             raise ConnectError(
                 Code.RESOURCE_EXHAUSTED,
                 "Resource exhausted",

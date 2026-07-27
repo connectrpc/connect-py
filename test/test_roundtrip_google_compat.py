@@ -20,7 +20,7 @@ from .google_compat.connectrpc.example.haberdasher_pb2 import Hat, Size
 @pytest.mark.parametrize("proto_json", [False, True])
 def test_roundtrip_sync(proto_json: bool) -> None:
     class RoundtripHaberdasherSync(HaberdasherSync):
-        def make_hat(self, request, ctx):
+        def make_hat(self, request, _ctx):
             return Hat(size=request.inches, color="green")
 
     app = HaberdasherWSGIApplication(RoundtripHaberdasherSync())
@@ -40,7 +40,7 @@ def test_roundtrip_sync(proto_json: bool) -> None:
 @pytest.mark.asyncio
 async def test_roundtrip_async(proto_json: bool) -> None:
     class DetailsHaberdasher(Haberdasher):
-        async def make_hat(self, request, ctx):
+        async def make_hat(self, request, _ctx):
             return Hat(size=request.inches, color="green")
 
     app = HaberdasherASGIApplication(DetailsHaberdasher())

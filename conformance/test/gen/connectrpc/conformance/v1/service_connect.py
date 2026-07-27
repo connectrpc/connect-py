@@ -35,7 +35,7 @@ class ConformanceService(Protocol):
 
     Test servers must implement the service as described.
     """
-    async def unary(self, request: UnaryRequest, ctx: RequestContext[UnaryRequest, UnaryResponse]) -> UnaryResponse:
+    async def unary(self, request: UnaryRequest, ctx: RequestContext[UnaryRequest, UnaryResponse], /) -> UnaryResponse:
         """
         A unary operation. The request indicates the response headers and trailers
         and also indicates either a response message or an error to send back.
@@ -54,7 +54,7 @@ class ConformanceService(Protocol):
         """
         raise ConnectError(Code.UNIMPLEMENTED, 'Not implemented')
 
-    def server_stream(self, request: ServerStreamRequest, ctx: RequestContext[ServerStreamRequest, ServerStreamResponse]) -> AsyncIterator[ServerStreamResponse]:
+    def server_stream(self, request: ServerStreamRequest, ctx: RequestContext[ServerStreamRequest, ServerStreamResponse], /) -> AsyncIterator[ServerStreamResponse]:
         """
         A server-streaming operation. The request indicates the response headers,
         response messages, trailers, and an optional error to send back. The
@@ -79,7 +79,7 @@ class ConformanceService(Protocol):
         """
         raise ConnectError(Code.UNIMPLEMENTED, 'Not implemented')
 
-    async def client_stream(self, request: AsyncIterator[ClientStreamRequest], ctx: RequestContext[ClientStreamRequest, ClientStreamResponse]) -> ClientStreamResponse:
+    async def client_stream(self, request: AsyncIterator[ClientStreamRequest], ctx: RequestContext[ClientStreamRequest, ClientStreamResponse], /) -> ClientStreamResponse:
         """
         A client-streaming operation. The first request indicates the response
         headers and trailers and also indicates either a response message or an
@@ -102,7 +102,7 @@ class ConformanceService(Protocol):
         """
         raise ConnectError(Code.UNIMPLEMENTED, 'Not implemented')
 
-    def bidi_stream(self, request: AsyncIterator[BidiStreamRequest], ctx: RequestContext[BidiStreamRequest, BidiStreamResponse]) -> AsyncIterator[BidiStreamResponse]:
+    def bidi_stream(self, request: AsyncIterator[BidiStreamRequest], ctx: RequestContext[BidiStreamRequest, BidiStreamResponse], /) -> AsyncIterator[BidiStreamResponse]:
         """
         A bidirectional-streaming operation. The first request indicates the response
         headers, response messages, trailers, and an optional error to send back.
@@ -155,14 +155,14 @@ class ConformanceService(Protocol):
         """
         raise ConnectError(Code.UNIMPLEMENTED, 'Not implemented')
 
-    async def unimplemented(self, request: UnimplementedRequest, ctx: RequestContext[UnimplementedRequest, UnimplementedResponse]) -> UnimplementedResponse:
+    async def unimplemented(self, request: UnimplementedRequest, ctx: RequestContext[UnimplementedRequest, UnimplementedResponse], /) -> UnimplementedResponse:
         """
         A unary endpoint that the server should not implement and should instead
         return an unimplemented error when invoked.
         """
         raise ConnectError(Code.UNIMPLEMENTED, 'Not implemented')
 
-    async def idempotent_unary(self, request: IdempotentUnaryRequest, ctx: RequestContext[IdempotentUnaryRequest, IdempotentUnaryResponse]) -> IdempotentUnaryResponse:
+    async def idempotent_unary(self, request: IdempotentUnaryRequest, ctx: RequestContext[IdempotentUnaryRequest, IdempotentUnaryResponse], /) -> IdempotentUnaryResponse:
         """
         A unary endpoint denoted as having no side effects (i.e. idempotent).
         Implementations should use an HTTP GET when invoking this endpoint and
@@ -516,7 +516,7 @@ class ConformanceServiceSync(Protocol):
 
     Test servers must implement the service as described.
     """
-    def unary(self, request: UnaryRequest, ctx: RequestContext[UnaryRequest, UnaryResponse]) -> UnaryResponse:
+    def unary(self, request: UnaryRequest, ctx: RequestContext[UnaryRequest, UnaryResponse], /) -> UnaryResponse:
         """
         A unary operation. The request indicates the response headers and trailers
         and also indicates either a response message or an error to send back.
@@ -535,7 +535,7 @@ class ConformanceServiceSync(Protocol):
         """
         raise ConnectError(Code.UNIMPLEMENTED, 'Not implemented')
 
-    def server_stream(self, request: ServerStreamRequest, ctx: RequestContext[ServerStreamRequest, ServerStreamResponse]) -> Iterator[ServerStreamResponse]:
+    def server_stream(self, request: ServerStreamRequest, ctx: RequestContext[ServerStreamRequest, ServerStreamResponse], /) -> Iterator[ServerStreamResponse]:
         """
         A server-streaming operation. The request indicates the response headers,
         response messages, trailers, and an optional error to send back. The
@@ -560,7 +560,7 @@ class ConformanceServiceSync(Protocol):
         """
         raise ConnectError(Code.UNIMPLEMENTED, 'Not implemented')
 
-    def client_stream(self, request: Iterator[ClientStreamRequest], ctx: RequestContext[ClientStreamRequest, ClientStreamResponse]) -> ClientStreamResponse:
+    def client_stream(self, request: Iterator[ClientStreamRequest], ctx: RequestContext[ClientStreamRequest, ClientStreamResponse], /) -> ClientStreamResponse:
         """
         A client-streaming operation. The first request indicates the response
         headers and trailers and also indicates either a response message or an
@@ -583,7 +583,7 @@ class ConformanceServiceSync(Protocol):
         """
         raise ConnectError(Code.UNIMPLEMENTED, 'Not implemented')
 
-    def bidi_stream(self, request: Iterator[BidiStreamRequest], ctx: RequestContext[BidiStreamRequest, BidiStreamResponse]) -> Iterator[BidiStreamResponse]:
+    def bidi_stream(self, request: Iterator[BidiStreamRequest], ctx: RequestContext[BidiStreamRequest, BidiStreamResponse], /) -> Iterator[BidiStreamResponse]:
         """
         A bidirectional-streaming operation. The first request indicates the response
         headers, response messages, trailers, and an optional error to send back.
@@ -636,14 +636,14 @@ class ConformanceServiceSync(Protocol):
         """
         raise ConnectError(Code.UNIMPLEMENTED, 'Not implemented')
 
-    def unimplemented(self, request: UnimplementedRequest, ctx: RequestContext[UnimplementedRequest, UnimplementedResponse]) -> UnimplementedResponse:
+    def unimplemented(self, request: UnimplementedRequest, ctx: RequestContext[UnimplementedRequest, UnimplementedResponse], /) -> UnimplementedResponse:
         """
         A unary endpoint that the server should not implement and should instead
         return an unimplemented error when invoked.
         """
         raise ConnectError(Code.UNIMPLEMENTED, 'Not implemented')
 
-    def idempotent_unary(self, request: IdempotentUnaryRequest, ctx: RequestContext[IdempotentUnaryRequest, IdempotentUnaryResponse]) -> IdempotentUnaryResponse:
+    def idempotent_unary(self, request: IdempotentUnaryRequest, ctx: RequestContext[IdempotentUnaryRequest, IdempotentUnaryResponse], /) -> IdempotentUnaryResponse:
         """
         A unary endpoint denoted as having no side effects (i.e. idempotent).
         Implementations should use an HTTP GET when invoking this endpoint and

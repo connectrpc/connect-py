@@ -37,7 +37,7 @@ class ConnectInstrumentor(BaseInstrumentor):
         register_post_import_hook(self._patch_client, "connectrpc.client")
         register_post_import_hook(self._patch_server, "connectrpc.server")
 
-    def _uninstrument(self, **kwargs: object) -> None:
+    def _uninstrument(self, **_kwargs: object) -> None:
         # TODO: Remove sys.modules check after
         # https://github.com/open-telemetry/opentelemetry-python-contrib/pull/4321
         if "connectrpc.client" in sys.modules:

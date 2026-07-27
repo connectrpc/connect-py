@@ -57,7 +57,7 @@ def test_headers_sync(headers, trailers, response_headers, response_trailers) ->
             self.headers = headers
             self.trailers = trailers
 
-        def make_hat(self, request, ctx):
+        def make_hat(self, _request, ctx):
             for key, value in self.headers:
                 ctx.response_headers.add(key, value)
             for key, value in self.trailers:
@@ -93,7 +93,7 @@ async def test_headers_async(
             self.headers = headers
             self.trailers = trailers
 
-        async def make_hat(self, request, ctx):
+        async def make_hat(self, _request, ctx):
             for key, value in self.headers:
                 ctx.response_headers.add(key, value)
             for key, value in self.trailers:

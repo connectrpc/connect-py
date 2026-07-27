@@ -62,7 +62,7 @@ def test_sync_errors(code: Code, message: str, http_status: int) -> None:
         def __init__(self, exception: ConnectError) -> None:
             self._exception = exception
 
-        def make_hat(self, request, ctx) -> NoReturn:
+        def make_hat(self, _request, _ctx) -> NoReturn:
             raise self._exception
 
     haberdasher = ErrorHaberdasherSync(ConnectError(code, message))
@@ -102,7 +102,7 @@ async def test_async_errors(code: Code, message: str, http_status: int) -> None:
         def __init__(self, exception: ConnectError) -> None:
             self._exception = exception
 
-        async def make_hat(self, request, ctx) -> NoReturn:
+        async def make_hat(self, _request, _ctx) -> NoReturn:
             raise self._exception
 
     haberdasher = ErrorHaberdasher(ConnectError(code, message))
@@ -187,7 +187,7 @@ def test_sync_http_errors(
     response_status, content, response_headers, code, message
 ) -> None:
     class MockTransport(SyncTransport):
-        def execute_sync(self, request: SyncRequest) -> SyncResponse:
+        def execute_sync(self, request: SyncRequest) -> SyncResponse:  # noqa: ARG002
             return SyncResponse(
                 status=response_status,
                 content=content,
@@ -213,7 +213,7 @@ async def test_async_http_errors(
     response_status, content, response_headers, code, message
 ) -> None:
     class MockTransport(Transport):
-        async def execute(self, request: Request) -> Response:
+        async def execute(self, request: Request) -> Response:  # noqa: ARG002
             return Response(
                 status=response_status,
                 content=content,
@@ -313,7 +313,7 @@ def test_sync_client_errors(
     method, path, headers, body, response_status, response_headers
 ) -> None:
     class ValidHaberdasherSync(HaberdasherSync):
-        def make_hat(self, request, ctx):
+        def make_hat(self, _request, _ctx):
             return Hat()
 
     app = HaberdasherWSGIApplication(ValidHaberdasherSync())
@@ -337,7 +337,7 @@ async def test_async_client_errors(
     method, path, headers, body, response_status, response_headers
 ) -> None:
     class ValidHaberdasher(Haberdasher):
-        async def make_hat(self, request, ctx):
+        async def make_hat(self, _request, _ctx):
             return Hat()
 
     haberdasher = ValidHaberdasher()
@@ -373,7 +373,7 @@ def test_sync_client_timeout(client_timeout_ms, call_timeout_ms) -> None:
     timed_out = threading.Event()
 
     class SleepingHaberdasher(HaberdasherSync):
-        def make_hat(self, request, ctx) -> NoReturn:
+        def make_hat(self, _request, _ctx) -> NoReturn:
             timed_out.wait()
             raise AssertionError("Timedout already")
 
@@ -412,7 +412,7 @@ async def test_async_client_timeout(client_timeout_ms, call_timeout_ms) -> None:
             return await self._transport.execute(request)
 
     class SleepingHaberdasher(Haberdasher):
-        async def make_hat(self, request, ctx) -> NoReturn:
+        async def make_hat(self, _request, _ctx) -> NoReturn:
             await asyncio.sleep(10)
             raise AssertionError("Should be timedout already")
 
@@ -433,7 +433,7 @@ async def test_async_client_timeout(client_timeout_ms, call_timeout_ms) -> None:
 @pytest.mark.asyncio
 async def test_async_unhandled_exception_reraised() -> None:
     class RaisingHaberdasher(Haberdasher):
-        async def make_hat(self, request, ctx) -> NoReturn:
+        async def make_hat(self, _request, _ctx) -> NoReturn:
             raise TypeError("Something went wrong")
 
     app = HaberdasherASGIApplication(RaisingHaberdasher())
@@ -453,7 +453,7 @@ async def test_async_unhandled_exception_reraised() -> None:
 @pytest.mark.asyncio
 async def test_async_unhandled_exception_reraised_stream() -> None:
     class RaisingHaberdasher(Haberdasher):
-        def make_similar_hats(self, request: Size, ctx: RequestContext) -> NoReturn:
+        def make_similar_hats(self, _request: Size, _ctx: RequestContext) -> NoReturn:
             raise TypeError("Something went wrong")
 
     app = HaberdasherASGIApplication(RaisingHaberdasher())
@@ -474,7 +474,7 @@ async def test_async_unhandled_exception_reraised_stream() -> None:
 @pytest.mark.asyncio
 async def test_async_connect_exception_not_reraised() -> None:
     class RaisingHaberdasher(Haberdasher):
-        async def make_hat(self, request, ctx) -> NoReturn:
+        async def make_hat(self, _request, _ctx) -> NoReturn:
             raise ConnectError(Code.INTERNAL, "We're broken")
 
     app = HaberdasherASGIApplication(RaisingHaberdasher())
@@ -493,7 +493,7 @@ async def test_async_connect_exception_not_reraised() -> None:
 @pytest.mark.asyncio
 async def test_async_connect_exception_not_reraised_stream() -> None:
     class RaisingHaberdasher(Haberdasher):
-        def make_similar_hats(self, request: Size, ctx: RequestContext) -> NoReturn:
+        def make_similar_hats(self, _request: Size, _ctx: RequestContext) -> NoReturn:
             raise ConnectError(Code.INTERNAL, "We're broken")
 
     app = HaberdasherASGIApplication(RaisingHaberdasher())
@@ -513,7 +513,7 @@ async def test_async_connect_exception_not_reraised_stream() -> None:
 @pytest.mark.asyncio
 async def test_async_http_exception_not_reraised() -> None:
     class RaisingHaberdasher(Haberdasher):
-        async def make_hat(self, request, ctx) -> NoReturn:
+        async def make_hat(self, _request, _ctx) -> NoReturn:
             raise HTTPException(status=HTTPStatus.INTERNAL_SERVER_ERROR, headers=[])
 
     app = HaberdasherASGIApplication(RaisingHaberdasher())
@@ -531,7 +531,7 @@ async def test_async_http_exception_not_reraised() -> None:
 
 def test_sync_unhandled_exception_logged() -> None:
     class RaisingHaberdasher(HaberdasherSync):
-        def make_hat(self, request, ctx) -> NoReturn:
+        def make_hat(self, _request, _ctx) -> NoReturn:
             raise TypeError("Something went wrong")
 
     app = HaberdasherWSGIApplication(RaisingHaberdasher())
@@ -554,7 +554,7 @@ def test_sync_unhandled_exception_logged() -> None:
 
 def test_sync_unhandled_exception_logged_stream() -> None:
     class RaisingHaberdasher(HaberdasherSync):
-        def make_similar_hats(self, request, ctx) -> NoReturn:
+        def make_similar_hats(self, _request, _ctx) -> NoReturn:
             raise TypeError("Something went wrong")
 
     app = HaberdasherWSGIApplication(RaisingHaberdasher())

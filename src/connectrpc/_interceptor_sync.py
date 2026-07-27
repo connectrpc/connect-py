@@ -21,6 +21,7 @@ class UnaryInterceptorSync(Protocol):
         call_next: Callable[[REQ, RequestContext], RES],
         request: REQ,
         ctx: RequestContext,
+        /,
     ) -> RES:
         """Intercepts a unary RPC.
 
@@ -48,6 +49,7 @@ class ClientStreamInterceptorSync(Protocol):
         call_next: Callable[[Iterator[REQ], RequestContext], RES],
         request: Iterator[REQ],
         ctx: RequestContext,
+        /,
     ) -> RES:
         """Intercepts a client-streaming RPC.
 
@@ -75,6 +77,7 @@ class ServerStreamInterceptorSync(Protocol):
         call_next: Callable[[REQ, RequestContext], Iterator[RES]],
         request: REQ,
         ctx: RequestContext,
+        /,
     ) -> Iterator[RES]:
         """Intercepts a server-streaming RPC.
 
@@ -102,6 +105,7 @@ class BidiStreamInterceptorSync(Protocol):
         call_next: Callable[[Iterator[REQ], RequestContext], Iterator[RES]],
         request: Iterator[REQ],
         ctx: RequestContext,
+        /,
     ) -> Iterator[RES]:
         """Intercepts a bidirectional-streaming RPC.
 
@@ -129,7 +133,7 @@ class MetadataInterceptorSync(Protocol[T]):
     corresponding to the type of method such as [UnaryInterceptorSync][].
     """
 
-    def on_start_sync(self, ctx: RequestContext) -> T:
+    def on_start_sync(self, ctx: RequestContext, /) -> T:
         """Called when the RPC starts. The return value will be passed to [on_end_sync][] as-is.
         For example, if measuring RPC invocation time, on_start_sync may return the current
         time. If a return value isn't needed or [on_end_sync][] won't be used, return None.
@@ -137,7 +141,11 @@ class MetadataInterceptorSync(Protocol[T]):
         ...
 
     def on_end_sync(
-        self, token: T, ctx: RequestContext, error: Exception | None
+        self,
+        token: T,  # noqa: ARG002 # keep name clean for public API
+        ctx: RequestContext,  # noqa: ARG002 # keep name clean for public API
+        error: Exception | None,  # noqa: ARG002 # keep name clean for public API
+        /,
     ) -> None:
         """Called when the RPC ends."""
         return

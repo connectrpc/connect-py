@@ -20,7 +20,7 @@ class CountingHaberdasher(Haberdasher):
     def __init__(self, counter: Counter) -> None:
         self._counter = counter
 
-    async def make_hat(self, request, ctx):
+    async def make_hat(self, request, _ctx):
         self._counter["requests"] += 1
         return Hat(size=request.inches, color="blue")
 

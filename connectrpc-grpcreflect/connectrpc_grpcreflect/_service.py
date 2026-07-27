@@ -67,7 +67,7 @@ class ServerReflectionService(ServerReflection):
     async def server_reflection_info(
         self,
         request: AsyncIterator[ServerReflectionRequest],
-        ctx: RequestContext[ServerReflectionRequest, ServerReflectionResponse],
+        _ctx: RequestContext[ServerReflectionRequest, ServerReflectionResponse],
     ) -> AsyncIterator[ServerReflectionResponse]:
         seen: set[str] = set()
         async for req in request:
@@ -99,7 +99,7 @@ class ServerReflectionServiceSync(ServerReflectionSync):
     def server_reflection_info(
         self,
         request: Iterator[ServerReflectionRequest],
-        ctx: RequestContext[ServerReflectionRequest, ServerReflectionResponse],
+        _ctx: RequestContext[ServerReflectionRequest, ServerReflectionResponse],
     ) -> Iterator[ServerReflectionResponse]:
         seen: set[str] = set()
         for req in request:
@@ -135,7 +135,7 @@ class ServerReflectionAlphaService(ServerReflectionAlpha):
     async def server_reflection_info(
         self,
         request: AsyncIterator[ServerReflectionAlphaRequest],
-        ctx: RequestContext[
+        _ctx: RequestContext[
             ServerReflectionAlphaRequest, ServerReflectionAlphaResponse
         ],
     ) -> AsyncIterator[ServerReflectionAlphaResponse]:
@@ -176,7 +176,7 @@ class ServerReflectionAlphaServiceSync(ServerReflectionAlphaSync):
     def server_reflection_info(
         self,
         request: Iterator[ServerReflectionAlphaRequest],
-        ctx: RequestContext[
+        _ctx: RequestContext[
             ServerReflectionAlphaRequest, ServerReflectionAlphaResponse
         ],
     ) -> Iterator[ServerReflectionAlphaResponse]:

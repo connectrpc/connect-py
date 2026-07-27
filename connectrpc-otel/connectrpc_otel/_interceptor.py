@@ -123,7 +123,7 @@ class OpenTelemetryInterceptor:
         self.on_end_sync(token, ctx, error)
 
     def on_end_sync(
-        self, token: Token, ctx: RequestContext, error: Exception | None
+        self, token: Token, _ctx: RequestContext, error: Exception | None
     ) -> None:
         cm, span, start_time, shared_attrs = token
         end_time = time.perf_counter()
