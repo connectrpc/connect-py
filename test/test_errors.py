@@ -203,10 +203,13 @@ def test_sync_http_errors(
             "http://localhost", http_client=SyncClient(transport=MockTransport())
         ) as client,
         pytest.raises(ConnectError) as exc_info,
+        ResponseMetadata() as resp,
     ):
         client.make_hat(request=Size(inches=10))
     assert exc_info.value.code == code
     assert exc_info.value.message == message
+    assert resp.http_status == response_status
+    assert resp.headers == response_headers
 
 
 @pytest.mark.asyncio
@@ -227,10 +230,12 @@ async def test_async_http_errors(
     async with HaberdasherClient(
         "http://localhost", http_client=Client(transport=MockTransport())
     ) as client:
-        with pytest.raises(ConnectError) as exc_info:
+        with pytest.raises(ConnectError) as exc_info, ResponseMetadata() as resp:
             await client.make_hat(request=Size(inches=10))
     assert exc_info.value.code == code
     assert exc_info.value.message == message
+    assert resp.http_status == response_status
+    assert resp.headers == response_headers
 
 
 _client_errors = [
