@@ -20,6 +20,7 @@ from pyqwest import (
 from pyqwest.testing import ASGITransport, WSGITransport
 
 from connectrpc._protocol import HTTPException
+from connectrpc.client import ResponseMetadata
 from connectrpc.code import Code
 from connectrpc.errors import ConnectError
 
@@ -86,6 +87,7 @@ def test_sync_errors(code: Code, message: str, http_status: int) -> None:
     with (
         HaberdasherClientSync("http://localhost", http_client=http_client) as client,
         pytest.raises(ConnectError) as exc_info,
+        ResponseMetadata() as resp,
     ):
         client.make_hat(request=Size(inches=10))
 
@@ -93,6 +95,7 @@ def test_sync_errors(code: Code, message: str, http_status: int) -> None:
     assert exc_info.value.message == message
     assert recorded_response is not None
     assert recorded_response.status == http_status
+    assert resp.http_status == http_status
 
 
 @pytest.mark.asyncio
@@ -123,13 +126,14 @@ async def test_async_errors(code: Code, message: str, http_status: int) -> None:
 
     http_client = Client(transport=ResponseRecorder(transport))
     async with HaberdasherClient("http://localhost", http_client=http_client) as client:
-        with pytest.raises(ConnectError) as exc_info:
+        with pytest.raises(ConnectError) as exc_info, ResponseMetadata() as resp:
             await client.make_hat(request=Size(inches=10))
 
     assert exc_info.value.code == code
     assert exc_info.value.message == message
     assert recorded_response is not None
     assert recorded_response.status == http_status
+    assert resp.http_status == http_status
 
 
 _http_errors = [
@@ -199,10 +203,13 @@ def test_sync_http_errors(
             "http://localhost", http_client=SyncClient(transport=MockTransport())
         ) as client,
         pytest.raises(ConnectError) as exc_info,
+        ResponseMetadata() as resp,
     ):
         client.make_hat(request=Size(inches=10))
     assert exc_info.value.code == code
     assert exc_info.value.message == message
+    assert resp.http_status == response_status
+    assert resp.headers == response_headers
 
 
 @pytest.mark.asyncio
@@ -223,10 +230,12 @@ async def test_async_http_errors(
     async with HaberdasherClient(
         "http://localhost", http_client=Client(transport=MockTransport())
     ) as client:
-        with pytest.raises(ConnectError) as exc_info:
+        with pytest.raises(ConnectError) as exc_info, ResponseMetadata() as resp:
             await client.make_hat(request=Size(inches=10))
     assert exc_info.value.code == code
     assert exc_info.value.message == message
+    assert resp.http_status == response_status
+    assert resp.headers == response_headers
 
 
 _client_errors = [

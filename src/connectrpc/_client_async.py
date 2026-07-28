@@ -327,6 +327,7 @@ class ConnectClient:
                     ),
                     timeout_s,
                 )
+            handle_response_headers(resp.status, resp.headers)
 
             self._protocol.validate_response(
                 self._codec.name(), resp.status, resp.headers.get("content-type", "")
@@ -336,7 +337,6 @@ class ConnectClient:
             self._protocol.handle_response_compression(
                 resp.headers, self._response_compressions, stream=False
             )
-            handle_response_headers(resp.headers)
 
             if resp.status == 200:
                 if (
@@ -394,7 +394,7 @@ class ConnectClient:
                     "POST", url, headers=request_headers, content=request_data
                 ) as resp,
             ):
-                handle_response_headers(resp.headers)
+                handle_response_headers(resp.status, resp.headers)
                 if resp.status == 200:
                     self._protocol.validate_stream_response(
                         self._codec.name(), resp.headers.get("content-type", "")

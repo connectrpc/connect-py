@@ -324,6 +324,7 @@ class ConnectClientSync:
                     content=request_data,
                     timeout=timeout_s,
                 )
+            handle_response_headers(resp.status, resp.headers)
 
             self._protocol.validate_response(
                 self._codec.name(), resp.status, resp.headers.get("content-type", "")
@@ -333,7 +334,6 @@ class ConnectClientSync:
             self._protocol.handle_response_compression(
                 resp.headers, self._response_compressions, stream=False
             )
-            handle_response_headers(resp.headers)
 
             if resp.status == 200:
                 if (
@@ -389,7 +389,7 @@ class ConnectClientSync:
                 content=request_data,
                 timeout=timeout_s,
             ) as resp:
-                handle_response_headers(resp.headers)
+                handle_response_headers(resp.status, resp.headers)
 
                 if resp.status == 200:
                     self._protocol.validate_stream_response(
