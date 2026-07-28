@@ -54,12 +54,12 @@ class CustomCodec(Codec[Message, Message]):
 
 
 class SimpleHaberdasher(Haberdasher):
-    async def make_hat(self, request: Size, ctx):
+    async def make_hat(self, request: Size, _ctx):
         return Hat(size=request.inches, color="blue")
 
 
-class SimpleHabersahserSync(HaberdasherSync):
-    def make_hat(self, request: Size, ctx):
+class SimpleHaberdasherSync(HaberdasherSync):
+    def make_hat(self, request: Size, _ctx):
         return Hat(size=request.inches, color="blue")
 
 
@@ -133,7 +133,7 @@ def test_custom_codec_sync() -> None:
 
     transport = LoggingSyncTransport(
         WSGITransport(
-            HaberdasherWSGIApplication(SimpleHabersahserSync(), codecs=[CustomCodec()])
+            HaberdasherWSGIApplication(SimpleHaberdasherSync(), codecs=[CustomCodec()])
         )
     )
     client = HaberdasherClientSync(

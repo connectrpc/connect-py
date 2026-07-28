@@ -135,7 +135,7 @@ def _generate_async_stubs(f: File, service: DescService, options: Options) -> No
                 _message_ident(method, method.input, options),
                 ", ",
                 _message_ident(method, method.output, options),
-                "]) -> ",
+                "], /) -> ",
                 *response_type,
                 ":",
             ):
@@ -321,7 +321,7 @@ def _generate_sync_stubs(f: File, service: DescService, options: Options) -> Non
                 _message_ident(method, method.input, options),
                 ", ",
                 _message_ident(method, method.output, options),
-                "]) -> ",
+                "], /) -> ",
                 *response_type,
                 ":",
             ):

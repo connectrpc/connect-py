@@ -57,24 +57,24 @@ RES = TypeVar("RES")
 
 
 class _ExecuteUnary(Protocol[REQ, RES]):
-    async def __call__(self, request: REQ, ctx: RequestContext[REQ, RES]) -> RES: ...
+    async def __call__(self, request: REQ, ctx: RequestContext[REQ, RES], /) -> RES: ...
 
 
 class _ExecuteClientStream(Protocol[REQ, RES]):
     async def __call__(
-        self, request: AsyncIterator[REQ], ctx: RequestContext[REQ, RES]
+        self, request: AsyncIterator[REQ], ctx: RequestContext[REQ, RES], /
     ) -> RES: ...
 
 
 class _ExecuteServerStream(Protocol[REQ, RES]):
     def __call__(
-        self, request: REQ, ctx: RequestContext[REQ, RES]
+        self, request: REQ, ctx: RequestContext[REQ, RES], /
     ) -> AsyncIterator[RES]: ...
 
 
 class _ExecuteBidiStream(Protocol[REQ, RES]):
     def __call__(
-        self, request: AsyncIterator[REQ], ctx: RequestContext[REQ, RES]
+        self, request: AsyncIterator[REQ], ctx: RequestContext[REQ, RES], /
     ) -> AsyncIterator[RES]: ...
 
 
@@ -291,7 +291,7 @@ class ConnectClient:
         return self._execute_bidi_stream(request, ctx)
 
     async def _send_request_unary(
-        self, request: REQ, ctx: RequestContext[REQ, RES]
+        self, request: REQ, ctx: RequestContext[REQ, RES], /
     ) -> RES:
         if isinstance(self._protocol, GRPCClientProtocol):
             return await _consume_single_response(
@@ -360,19 +360,19 @@ class ConnectClient:
             raise ConnectError(Code.UNAVAILABLE, str(e)) from e
 
     async def _send_request_client_stream(
-        self, request: AsyncIterator[REQ], ctx: RequestContext[REQ, RES]
+        self, request: AsyncIterator[REQ], ctx: RequestContext[REQ, RES], /
     ) -> RES:
         return await _consume_single_response(
             self._send_request_bidi_stream(request, ctx)
         )
 
     def _send_request_server_stream(
-        self, request: REQ, ctx: RequestContext[REQ, RES]
+        self, request: REQ, ctx: RequestContext[REQ, RES], /
     ) -> AsyncIterator[RES]:
         return self._send_request_bidi_stream(_yield_single_message(request), ctx)
 
     async def _send_request_bidi_stream(
-        self, request: AsyncIterator[REQ], ctx: RequestContext[REQ, RES]
+        self, request: AsyncIterator[REQ], ctx: RequestContext[REQ, RES], /
     ) -> AsyncIterator[RES]:
         request_headers = HTTPHeaders(ctx.request_headers.allitems())
         url = f"{self._address}/{ctx.method.service_name}/{ctx.method.name}"

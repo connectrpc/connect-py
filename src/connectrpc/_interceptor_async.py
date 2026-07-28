@@ -21,6 +21,7 @@ class UnaryInterceptor(Protocol):
         call_next: Callable[[REQ, RequestContext], Awaitable[RES]],
         request: REQ,
         ctx: RequestContext,
+        /,
     ) -> RES:
         """Intercepts a unary RPC.
 
@@ -48,6 +49,7 @@ class ClientStreamInterceptor(Protocol):
         call_next: Callable[[AsyncIterator[REQ], RequestContext], Awaitable[RES]],
         request: AsyncIterator[REQ],
         ctx: RequestContext,
+        /,
     ) -> RES:
         """Intercepts a client-streaming RPC.
 
@@ -75,6 +77,7 @@ class ServerStreamInterceptor(Protocol):
         call_next: Callable[[REQ, RequestContext], AsyncIterator[RES]],
         request: REQ,
         ctx: RequestContext,
+        /,
     ) -> AsyncIterator[RES]:
         """Intercepts a server-streaming RPC.
 
@@ -102,6 +105,7 @@ class BidiStreamInterceptor(Protocol):
         call_next: Callable[[AsyncIterator[REQ], RequestContext], AsyncIterator[RES]],
         request: AsyncIterator[REQ],
         ctx: RequestContext,
+        /,
     ) -> AsyncIterator[RES]:
         """Intercepts a bidirectional-streaming RPC.
 
@@ -137,7 +141,11 @@ class MetadataInterceptor(Protocol[T]):
         ...
 
     async def on_end(
-        self, token: T, ctx: RequestContext, error: Exception | None
+        self,
+        token: T,  # noqa: ARG002 # keep name clean for public API
+        ctx: RequestContext,  # noqa: ARG002 # keep name clean for public API
+        error: Exception | None,  # noqa: ARG002 # keep name clean for public API
+        /,
     ) -> None:
         """Called when the RPC ends."""
         return

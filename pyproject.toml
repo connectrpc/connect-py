@@ -193,8 +193,6 @@ ignore = [
   "INT",
   # Even prevents pytest.raises around an iteration which is too strict
   "PT012",
-  # Triggers for protocol implementations that don't need the arg too
-  "ARG002",
   # Complexity checks usually reduce readability
   "C90",
   # Not Applicable

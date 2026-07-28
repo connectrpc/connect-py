@@ -36,12 +36,12 @@ class DemoElizaService(ElizaService):
     def __init__(self, stream_delay_secs: float = 0):
         self.stream_delay_secs = stream_delay_secs
 
-    async def say(self, request: SayRequest, ctx: RequestContext) -> SayResponse:
+    async def say(self, request: SayRequest, _ctx: RequestContext) -> SayResponse:
         reply, _ = _eliza.reply(request.sentence)
         return SayResponse(sentence=reply)
 
     async def converse(
-        self, request: AsyncIterator[ConverseRequest], ctx: RequestContext
+        self, request: AsyncIterator[ConverseRequest], _ctx: RequestContext
     ) -> AsyncIterator[ConverseResponse]:
         async for req in request:
             reply, end = _eliza.reply(req.sentence)
@@ -50,7 +50,7 @@ class DemoElizaService(ElizaService):
                 return
 
     async def introduce(
-        self, request: IntroduceRequest, ctx: RequestContext
+        self, request: IntroduceRequest, _ctx: RequestContext
     ) -> AsyncIterator[IntroduceResponse]:
         name = request.name
         if not name:

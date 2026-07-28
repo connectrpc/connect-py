@@ -39,7 +39,7 @@ if TYPE_CHECKING:
 
 
 class ElizaServiceTest(ElizaService):
-    async def say(self, request: SayRequest, ctx: RequestContext) -> SayResponse:
+    async def say(self, request: SayRequest, _ctx: RequestContext) -> SayResponse:
         if request.sentence == "connect error":
             raise ConnectError(Code.FAILED_PRECONDITION, "connect error")
         if request.sentence == "unknown error":
@@ -48,7 +48,7 @@ class ElizaServiceTest(ElizaService):
 
 
 class ElizaServiceTestSync(ElizaServiceSync):
-    def say(self, request: SayRequest, ctx: RequestContext) -> SayResponse:
+    def say(self, request: SayRequest, _ctx: RequestContext) -> SayResponse:
         if request.sentence == "connect error":
             raise ConnectError(Code.FAILED_PRECONDITION, "connect error")
         if request.sentence == "unknown error":

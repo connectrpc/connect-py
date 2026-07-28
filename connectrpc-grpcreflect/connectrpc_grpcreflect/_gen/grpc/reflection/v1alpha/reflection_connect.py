@@ -28,7 +28,7 @@ if TYPE_CHECKING:
 
 
 class ServerReflection(Protocol):
-    def server_reflection_info(self, request: AsyncIterator[ServerReflectionRequest], ctx: RequestContext[ServerReflectionRequest, ServerReflectionResponse]) -> AsyncIterator[ServerReflectionResponse]:
+    def server_reflection_info(self, request: AsyncIterator[ServerReflectionRequest], ctx: RequestContext[ServerReflectionRequest, ServerReflectionResponse], /) -> AsyncIterator[ServerReflectionResponse]:
         """
         The reflection service is structured as a bidirectional stream, ensuring
         all related requests go to a single server.
@@ -102,7 +102,7 @@ class ServerReflectionClient(ConnectClient):
         )
 
 class ServerReflectionSync(Protocol):
-    def server_reflection_info(self, request: Iterator[ServerReflectionRequest], ctx: RequestContext[ServerReflectionRequest, ServerReflectionResponse]) -> Iterator[ServerReflectionResponse]:
+    def server_reflection_info(self, request: Iterator[ServerReflectionRequest], ctx: RequestContext[ServerReflectionRequest, ServerReflectionResponse], /) -> Iterator[ServerReflectionResponse]:
         """
         The reflection service is structured as a bidirectional stream, ensuring
         all related requests go to a single server.

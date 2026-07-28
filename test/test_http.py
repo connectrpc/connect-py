@@ -35,7 +35,7 @@ _charset_content_type_cases = [
 @pytest.mark.parametrize("header", _charset_content_type_cases)
 def test_json_charset_content_type(header: str) -> None:
     class HeadersHaberdasherSync(HaberdasherSync):
-        def make_hat(self, request, ctx):
+        def make_hat(self, _request, _ctx):
             return Hat(size=2)
 
     transport = WSGITransport(HaberdasherWSGIApplication(HeadersHaberdasherSync()))
@@ -55,7 +55,7 @@ def test_json_charset_content_type(header: str) -> None:
 @pytest.mark.parametrize("header", _charset_content_type_cases)
 async def test_json_charset_content_type_async(header: str) -> None:
     class HeadersHaberdasher(Haberdasher):
-        async def make_hat(self, request, ctx):
+        async def make_hat(self, _request, _ctx):
             return Hat(size=2)
 
     transport = ASGITransport(HaberdasherASGIApplication(HeadersHaberdasher()))
@@ -79,7 +79,7 @@ _streaming_charset_content_type_cases = [
 @pytest.mark.parametrize("header", _streaming_charset_content_type_cases)
 def test_json_charset_content_type_stream(header: str) -> None:
     class HeadersHaberdasherSync(HaberdasherSync):
-        def make_similar_hats(self, request, ctx):
+        def make_similar_hats(self, _request, _ctx):
             yield Hat(size=2)
             yield Hat(size=3)
 
@@ -111,7 +111,7 @@ def test_json_charset_content_type_stream(header: str) -> None:
 @pytest.mark.parametrize("header", _streaming_charset_content_type_cases)
 async def test_json_charset_content_type_stream_async(header: str) -> None:
     class HeadersHaberdasher(Haberdasher):
-        async def make_similar_hats(self, request, ctx):
+        async def make_similar_hats(self, _request, _ctx):
             yield Hat(size=2)
             yield Hat(size=3)
 

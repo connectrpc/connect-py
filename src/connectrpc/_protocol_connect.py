@@ -315,7 +315,7 @@ class ConnectClientProtocol:
 
 class ConnectEnvelopeReader(EnvelopeReader[RES]):
     def handle_end_message(
-        self, prefix_byte: int, message_data: bytes | bytearray
+        self, prefix_byte: int, message_data: bytes | bytearray, /
     ) -> bool:
         end_stream = prefix_byte & 0b10 != 0
         if not end_stream:

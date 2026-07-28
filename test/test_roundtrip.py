@@ -33,7 +33,7 @@ if TYPE_CHECKING:
 @pytest.mark.parametrize("compression_name", ["gzip", "br", "zstd", "identity"])
 def test_roundtrip_sync(proto_json: bool, compression_name: str) -> None:
     class RoundtripHaberdasherSync(HaberdasherSync):
-        def make_hat(self, request, ctx):
+        def make_hat(self, request, _ctx):
             return Hat(size=request.inches, color="green")
 
     compression = resolve_compression(compression_name)
@@ -57,7 +57,7 @@ def test_roundtrip_sync(proto_json: bool, compression_name: str) -> None:
 @pytest.mark.asyncio
 async def test_roundtrip_async(proto_json: bool, compression_name: str) -> None:
     class DetailsHaberdasher(Haberdasher):
-        async def make_hat(self, request, ctx):
+        async def make_hat(self, request, _ctx):
             return Hat(size=request.inches, color="green")
 
     compression = resolve_compression(compression_name)
@@ -77,7 +77,7 @@ async def test_roundtrip_async(proto_json: bool, compression_name: str) -> None:
 
 def test_roundtrip_sync_connect_get_empty_request() -> None:
     class RoundtripHaberdasherSync(HaberdasherSync):
-        def make_hat(self, request, ctx):
+        def make_hat(self, request, _ctx):
             return Hat(size=request.inches, color="green")
 
     compression = resolve_compression("identity")
@@ -98,7 +98,7 @@ def test_roundtrip_sync_connect_get_empty_request() -> None:
 @pytest.mark.asyncio
 async def test_roundtrip_async_connect_get_empty_request() -> None:
     class RoundtripHaberdasher(Haberdasher):
-        async def make_hat(self, request, ctx):
+        async def make_hat(self, request, _ctx):
             return Hat(size=request.inches, color="green")
 
     compression = resolve_compression("identity")
@@ -122,7 +122,7 @@ async def test_roundtrip_response_stream_async(
     proto_json: bool, compression_name: str
 ) -> None:
     class StreamingHaberdasher(Haberdasher):
-        async def make_similar_hats(self, request, ctx):
+        async def make_similar_hats(self, request, _ctx):
             yield Hat(size=request.inches, color="green")
             yield Hat(size=request.inches, color="red")
             yield Hat(size=request.inches, color="blue")
@@ -166,11 +166,11 @@ def test_message_limit_sync(client_bad: bool, compression_name: str) -> None:
     bad_hat = Hat(color="X" * 1000)
 
     class LargeHaberdasher(HaberdasherSync):
-        def make_hat(self, request, ctx):
+        def make_hat(self, request, _ctx):
             requests.append(request)
             return good_hat if client_bad else bad_hat
 
-        def make_various_hats(self, request: Iterator[Size], ctx) -> Iterator[Hat]:
+        def make_various_hats(self, request: Iterator[Size], _ctx) -> Iterator[Hat]:
             for size in request:
                 requests.append(size)
             yield Hat(color="good")
@@ -232,12 +232,12 @@ async def test_message_limit_async(client_bad: bool, compression_name: str) -> N
     bad_hat = Hat(color="X" * 1000)
 
     class LargeHaberdasher(Haberdasher):
-        async def make_hat(self, request, ctx):
+        async def make_hat(self, request, _ctx):
             requests.append(request)
             return good_hat if client_bad else bad_hat
 
         async def make_various_hats(
-            self, request: AsyncIterator[Size], ctx
+            self, request: AsyncIterator[Size], _ctx
         ) -> AsyncIterator[Hat]:
             async for size in request:
                 requests.append(size)
@@ -296,7 +296,7 @@ async def test_server_stream_client_disconnect() -> None:
     generator_closed = asyncio.Event()
 
     class InfiniteHaberdasher(Haberdasher):
-        async def make_similar_hats(self, request, ctx):
+        async def make_similar_hats(self, request, _ctx):
             try:
                 while True:
                     yield Hat(size=request.inches, color="green")

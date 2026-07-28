@@ -33,12 +33,12 @@ class DemoElizaServiceSync(ElizaServiceSync):
     def __init__(self, stream_delay_secs: float = 0):
         self.stream_delay_secs = stream_delay_secs
 
-    def say(self, request: SayRequest, ctx: RequestContext) -> SayResponse:
+    def say(self, request: SayRequest, _ctx: RequestContext) -> SayResponse:
         reply, _ = _eliza.reply(request.sentence)
         return SayResponse(sentence=reply)
 
     def converse(
-        self, request: Iterator[ConverseRequest], ctx: RequestContext
+        self, request: Iterator[ConverseRequest], _ctx: RequestContext
     ) -> Iterator[ConverseResponse]:
         for req in request:
             reply, end = _eliza.reply(req.sentence)
@@ -47,7 +47,7 @@ class DemoElizaServiceSync(ElizaServiceSync):
                 return
 
     def introduce(
-        self, request: IntroduceRequest, ctx: RequestContext
+        self, request: IntroduceRequest, _ctx: RequestContext
     ) -> Iterator[IntroduceResponse]:
         name = request.name
         if not name:

@@ -39,37 +39,37 @@ class Haberdasher(Protocol):
     """
     A Haberdasher makes hats for clients.
     """
-    async def make_hat(self, request: Size, ctx: RequestContext[Size, Hat]) -> Hat:
+    async def make_hat(self, request: Size, ctx: RequestContext[Size, Hat], /) -> Hat:
         """
         MakeHat produces a hat of mysterious, randomly-selected color!
         """
         raise ConnectError(Code.UNIMPLEMENTED, 'Not implemented')
 
-    async def make_flexible_hat(self, request: AsyncIterator[Size], ctx: RequestContext[Size, Hat]) -> Hat:
+    async def make_flexible_hat(self, request: AsyncIterator[Size], ctx: RequestContext[Size, Hat], /) -> Hat:
         """
         MakeFlexibleHats produces a single hat adhering to many sizes.
         """
         raise ConnectError(Code.UNIMPLEMENTED, 'Not implemented')
 
-    def make_similar_hats(self, request: Size, ctx: RequestContext[Size, Hat]) -> AsyncIterator[Hat]:
+    def make_similar_hats(self, request: Size, ctx: RequestContext[Size, Hat], /) -> AsyncIterator[Hat]:
         """
         MakeSimilarHats produces hats of mysterious, randomly-selected color following a single order!
         """
         raise ConnectError(Code.UNIMPLEMENTED, 'Not implemented')
 
-    def make_various_hats(self, request: AsyncIterator[Size], ctx: RequestContext[Size, Hat]) -> AsyncIterator[Hat]:
+    def make_various_hats(self, request: AsyncIterator[Size], ctx: RequestContext[Size, Hat], /) -> AsyncIterator[Hat]:
         """
         MakeVariousHats produces hats of mysterious, randomly-selected color following many orders!
         """
         raise ConnectError(Code.UNIMPLEMENTED, 'Not implemented')
 
-    def list_parts(self, request: Empty, ctx: RequestContext[Empty, Hat.Part]) -> AsyncIterator[Hat.Part]:
+    def list_parts(self, request: Empty, ctx: RequestContext[Empty, Hat.Part], /) -> AsyncIterator[Hat.Part]:
         """
         ListParts lists available parts for making a hat.
         """
         raise ConnectError(Code.UNIMPLEMENTED, 'Not implemented')
 
-    async def do_nothing(self, request: Empty, ctx: RequestContext[Empty, Empty]) -> Empty:
+    async def do_nothing(self, request: Empty, ctx: RequestContext[Empty, Empty], /) -> Empty:
         raise ConnectError(Code.UNIMPLEMENTED, 'Not implemented')
 
 
@@ -328,37 +328,37 @@ class HaberdasherSync(Protocol):
     """
     A Haberdasher makes hats for clients.
     """
-    def make_hat(self, request: Size, ctx: RequestContext[Size, Hat]) -> Hat:
+    def make_hat(self, request: Size, ctx: RequestContext[Size, Hat], /) -> Hat:
         """
         MakeHat produces a hat of mysterious, randomly-selected color!
         """
         raise ConnectError(Code.UNIMPLEMENTED, 'Not implemented')
 
-    def make_flexible_hat(self, request: Iterator[Size], ctx: RequestContext[Size, Hat]) -> Hat:
+    def make_flexible_hat(self, request: Iterator[Size], ctx: RequestContext[Size, Hat], /) -> Hat:
         """
         MakeFlexibleHats produces a single hat adhering to many sizes.
         """
         raise ConnectError(Code.UNIMPLEMENTED, 'Not implemented')
 
-    def make_similar_hats(self, request: Size, ctx: RequestContext[Size, Hat]) -> Iterator[Hat]:
+    def make_similar_hats(self, request: Size, ctx: RequestContext[Size, Hat], /) -> Iterator[Hat]:
         """
         MakeSimilarHats produces hats of mysterious, randomly-selected color following a single order!
         """
         raise ConnectError(Code.UNIMPLEMENTED, 'Not implemented')
 
-    def make_various_hats(self, request: Iterator[Size], ctx: RequestContext[Size, Hat]) -> Iterator[Hat]:
+    def make_various_hats(self, request: Iterator[Size], ctx: RequestContext[Size, Hat], /) -> Iterator[Hat]:
         """
         MakeVariousHats produces hats of mysterious, randomly-selected color following many orders!
         """
         raise ConnectError(Code.UNIMPLEMENTED, 'Not implemented')
 
-    def list_parts(self, request: Empty, ctx: RequestContext[Empty, Hat.Part]) -> Iterator[Hat.Part]:
+    def list_parts(self, request: Empty, ctx: RequestContext[Empty, Hat.Part], /) -> Iterator[Hat.Part]:
         """
         ListParts lists available parts for making a hat.
         """
         raise ConnectError(Code.UNIMPLEMENTED, 'Not implemented')
 
-    def do_nothing(self, request: Empty, ctx: RequestContext[Empty, Empty]) -> Empty:
+    def do_nothing(self, request: Empty, ctx: RequestContext[Empty, Empty], /) -> Empty:
         raise ConnectError(Code.UNIMPLEMENTED, 'Not implemented')
 
 
