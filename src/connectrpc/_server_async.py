@@ -106,6 +106,7 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
                           If set to empty, disables compression.
             codecs: The codecs supported by the server. If unset, defaults to Protocol Buffers
                     binary and JSON codecs.
+
         """
         super().__init__()
         self._service = service
@@ -137,7 +138,7 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
                             )
                             try:
                                 service = await anext(service_iter)
-                            except Exception as e:
+                            except Exception as e:  # noqa: BLE001
                                 await send(
                                     {
                                         "type": "lifespan.startup.failed",
@@ -153,7 +154,7 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
                         if service_iter is not None:
                             try:
                                 await service_iter.aclose()
-                            except Exception as e:
+                            except Exception as e:  # noqa: BLE001
                                 await send(
                                     {
                                         "type": "lifespan.shutdown.failed",
@@ -340,7 +341,6 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
         headers: Headers,
     ) -> _REQ:
         """Handle POST request with body."""
-
         # Get request body
         chunks: list[bytes] = [chunk async for chunk in _read_body(receive)]
         req_body = b"".join(chunks)
@@ -456,7 +456,7 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
                     await aclose()
         except CancelledError as e:
             raise ConnectError(Code.CANCELED, "Request was cancelled") from e
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             error = e
         finally:
             end_message = writer.end(

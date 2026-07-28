@@ -95,6 +95,7 @@ def prepare_response_headers(
 
     Returns:
         The final response headers with content-encoding set.
+
     """
     headers = base_headers.copy()
 
@@ -170,6 +171,7 @@ class ConnectWSGIApplication(ABC):
                           If set to empty, disables compression.
             codecs: The codecs supported by the server. If unset, defaults to Protocol Buffers
                     binary and JSON codecs.
+
         """
         super().__init__()
         if interceptors:
@@ -238,7 +240,7 @@ class ConnectWSGIApplication(ABC):
                 environ, start_response, send_trailers, protocol, headers, endpoint, ctx
             )
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             _drain_request_body(environ)
             _maybe_log_exception(environ, e)
             return self._handle_error(e, ctx, start_response)
@@ -290,7 +292,6 @@ class ConnectWSGIApplication(ABC):
         request_headers: Headers,
     ) -> tuple[_REQ, Codec]:
         """Handle POST request with body."""
-
         codec_name = codec_name_from_content_type(
             request_headers.get("content-type", ""), stream=False
         )
@@ -397,11 +398,12 @@ class ConnectWSGIApplication(ABC):
             try:
                 # TODO - Use content type from queryparam
                 request = codec.decode(message, endpoint.method.input)
-                return request, codec
             except Exception as e:
                 raise ConnectError(
                     Code.INVALID_ARGUMENT, f"Failed to decode message: {e!s}"
                 ) from e
+            else:
+                return request, codec
 
         except Exception as e:
             if not isinstance(e, ConnectError):
@@ -487,7 +489,7 @@ class ConnectWSGIApplication(ABC):
             return _response_stream(
                 first_response, environ, response_stream, writer, send_trailers, ctx
             )
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             # Exception before any response message was returned. An error after the first
             # response message will be handled by _response_stream, so here we have a
             # full error-only response.
@@ -592,7 +594,7 @@ def _response_stream(
         for message in response_stream:
             body = writer.write(message)
             yield body
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         error = e
         _drain_request_body(environ)
 

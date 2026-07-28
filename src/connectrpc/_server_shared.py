@@ -17,11 +17,11 @@ U = TypeVar("U")
 
 @dataclass(kw_only=True, frozen=True, slots=True)
 class Endpoint(Generic[REQ, RES]):
-    """
-    Represents an endpoint in a service.
+    """Represents an endpoint in a service.
 
     Attributes:
         method: The method to map to the RPC function.
+
     """
 
     method: MethodInfo[REQ, RES]
@@ -79,11 +79,11 @@ class EndpointBidiStream(Endpoint[REQ, RES]):
 
 @dataclass(kw_only=True, frozen=True, slots=True)
 class EndpointSync(Generic[REQ, RES]):
-    """
-    Represents a sync endpoint in a service.
+    """Represents a sync endpoint in a service.
 
     Attributes:
         method: The method to map to the RPC function.
+
     """
 
     method: MethodInfo[REQ, RES]

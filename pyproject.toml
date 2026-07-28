@@ -110,118 +110,52 @@ skip-magic-trailing-comma = true
 docstring-code-format = true
 
 [tool.ruff.lint]
-extend-select = [
-  # Same order as listed on https://docs.astral.sh/ruff/rules/
-  "YTT",
-  "ANN",
-  "ASYNC",
-  "S",
-  "FBT",
-  "B",
-  "A",
-  "COM818",  # Other comma rules are handled by formatting
-  "C4",
-  "DTZ",
-  "T10",
-  "EM",
-  "EXE",
-  "FA",
-  "ISC",
-  "ICN",
-  "LOG",
-  "G",
-  "INP",
-  "PIE",
-  "T20",
-  "PYI",
-  "PT",
-  "Q004",  # Other quote rules are handled by formatting
-  "RSE",
-  "RET",
-  # This rule is a bit strict since accessing private members within this package can be
-  # useful to reduce public API exposure. But it is important to not access private members
-  # of external dependencies so we enable it and ignore the locations where we need to.
-  "SLF",
-  "SIM",
-  "SLOT",
-  "TID",
-  # TODO: Update TODOs then enable
-  # "TD",
-  "TC",
-  "ARG",
-  "PTH",
-  "FLY",
-  "I",
-  "N",
-  "PERF",
-  "E",
-  "W",
-  # TODO: Flesh out docs and enable
-  # "DOC"
-  # "D",
-  "F",
-  "PGH",
-  "PLC",
-  "PLE",
-  "PLW",
-  "UP",
-  "FURB",
-  "RUF",
-  # TODO: See if it makes sense to enable after a pass at reducing code duplication
-  # "TRY",
-]
-
-# Document reasons for ignoring specific linting errors
+typing-extensions = false
+select = ["ALL"]
 ignore = [
-  # Not applicable
-  "AIR",
-  # Dangerous false positives https://github.com/astral-sh/ruff/issues/4845
-  "ERA",
-  # Not Applicable
-  "FAST",
-  # Important to call user callbacks safely
-  "BLE",
-  # stdlib includes a module named code. This is less of an issue since users need to import a module so allow it
-  "A005",
-  # TODO: Consider using copyright headers
-  "CPY",
-  # Not Applicable
-  "DJ",
-  # It's fine to have TODOs
-  "FIX",
-  # Not Applicable
-  "INT",
-  # Even prevents pytest.raises around an iteration which is too strict
-  "PT012",
-  # Complexity checks usually reduce readability
-  "C90",
-  # Not Applicable
-  "NPY",
-  # Not Applicable
-  "PD",
-  # We use the Exception suffix instead
-  "N818",
-  # Handled by formatting
+  # Rules recommended to ignore when using ruff formatting
+  # https://docs.astral.sh/ruff/formatter/#conflicting-lint-rules
+  "W191",
   "E111",
   "E114",
   "E117",
   "E501",
-  "W191",
-  # Low signal-to-noise ratio
-  "PLR",
+  "D206",
+  "D300",
+  "Q",
+  "COM812",
+  "COM819",
+
+  "TRY301",  # Abstract `raise` to an inner function - prevents a common pattern of having different validation points when creating a single response
+  "SLF001",  # Private member accessed
+  "ANN401",  # Dynamically typed expressions (typing.Any) are disallowed
+  "PLR2004",  # Magic value used in comparison - not helpful to name obvious constants
+  # Complexity rules: humans reviewing code can judge whether complexity is justified.
+  "C901",  # McCabe complexity
+  "PLR0911",  # Too many return statements
+  "PLR0912",  # Too many branches
+  "PLR0913",  # Too many arguments in function definition
+  "PLR0914",  # Too many local variables
+  "PLR0915",  # Too many statements
+  "PLR0916",  # Too many boolean expressions
+  "PLR0917",  # Too many positional arguments
+  "PLR1702",  # Too many nested blocks
+  "PT012",  # pytest.raises should surround a single statement - too restrictive, author can decide
+
+  # TODO rules
+  "TD",
+  "FIX002",  # Line contains TODO, consider resolving the issue
 ]
 
-typing-extensions = false
-
 [tool.ruff.lint.per-file-ignores]
-"conformance/test/**" = ["ANN", "INP", "SLF", "SIM115", "S101", "D"]
+"conformance/test/**" = ["ANN", "BLE", "INP", "SLF", "SIM115", "S101", "D"]
 "example/**" = [
   "ANN",
   "S",  # Keep examples simpler, e.g. allow normal random
   "T20",
   "D",
 ]
-"**/test_*.py" = [
+"**/test/*.py" = [
   "ANN",
   "S101",
   "S603",
@@ -236,6 +170,7 @@ typing-extensions = false
 "**/*_grpc.py" = ["N", "FBT"]
 
 [tool.ruff.lint.isort]
+combine-as-imports = true
 required-imports = ["from __future__ import annotations"]
 split-on-trailing-comma = false
 

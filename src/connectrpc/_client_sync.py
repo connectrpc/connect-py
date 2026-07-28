@@ -4,8 +4,7 @@ import functools
 from typing import TYPE_CHECKING, Any, Protocol, TypeVar
 from urllib.parse import urlencode
 
-from pyqwest import FullResponse, SyncClient, SyncResponse
-from pyqwest import Headers as HTTPHeaders
+from pyqwest import FullResponse, Headers as HTTPHeaders, SyncClient, SyncResponse
 
 from connectrpc._protocol_grpc import GRPCClientProtocol, GRPCWebClientProtocol
 
@@ -92,7 +91,7 @@ class ConnectClientSync:
         interceptors: Iterable[InterceptorSync] = (),
         http_client: SyncClient | None = None,
     ) -> None:
-        """Creates a new synchronous Connect client.
+        """Create a new synchronous Connect client.
 
         When providing an HTTP client, for example to configure TLS settings,
         it is the caller's responsibility to close it.
@@ -122,6 +121,7 @@ class ConnectClientSync:
             read_max_bytes: The maximum number of bytes to read from the response.
             interceptors: A list of interceptors to apply to requests.
             http_client: A pyqwest SyncClient to use for requests.
+
         """
         self._address = address
         self._codec = codec or proto_binary_codec()

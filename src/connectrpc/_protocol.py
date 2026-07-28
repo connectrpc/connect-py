@@ -16,8 +16,7 @@ from .errors import ConnectError, ErrorDetail
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
 
-    from pyqwest import FullResponse
-    from pyqwest import Headers as HTTPHeaders
+    from pyqwest import FullResponse, Headers as HTTPHeaders
 
     from ._codec import Codec
     from ._compression import Compression
@@ -102,7 +101,7 @@ class ConnectWireError:
     def from_response(response: FullResponse) -> ConnectWireError:
         try:
             data = response.json()
-        except Exception:
+        except Exception:  # noqa: BLE001
             data = None
         if isinstance(data, dict):
             return ConnectWireError.from_dict(data, response.status, Code.UNAVAILABLE)
@@ -174,7 +173,7 @@ class ConnectWireError:
                 if debug := detail.value():
                     try:
                         debug_value = message_to_json_value(debug)
-                    except Exception:  # noqa: S110
+                    except Exception:  # noqa: BLE001, S110
                         pass
                     else:
                         detail_dict["debug"] = debug_value
@@ -195,29 +194,29 @@ class ServerProtocol(Protocol):
         headers: Headers,
         client_address: str | None = None,
     ) -> RequestContext[REQ, RES]:
-        """Creates a RequestContext from the HTTP method and headers."""
+        """Create a RequestContext from the HTTP method and headers."""
         ...
 
     def create_envelope_writer(
         self, codec: Codec[T, Any], compression: Compression | None
     ) -> EnvelopeWriter[T]:
-        """Creates the EnvelopeWriter to write response messages."""
+        """Create the EnvelopeWriter to write response messages."""
         ...
 
     def uses_trailers(self) -> bool:
-        """Returns whether the protocol uses trailers for status reporting."""
+        """Return whether the protocol uses trailers for status reporting."""
         ...
 
     def content_type(self, codec: Codec) -> str:
-        """Returns the content type for the given codec."""
+        """Return the content type for the given codec."""
         ...
 
     def compression_header_name(self) -> str:
-        """Returns the compression header name and value."""
+        """Return the compression header name and value."""
         ...
 
     def codec_name_from_content_type(self, content_type: str, *, stream: bool) -> str:
-        """Extracts the codec name from the content type."""
+        """Extract the codec name from the content type."""
         ...
 
     def negotiate_stream_compression(
@@ -241,25 +240,25 @@ class ClientProtocol(Protocol):
         accept_compression: str,
         send_compression: Compression | None,
     ) -> RequestContext[REQ, RES]:
-        """Creates a RequestContext for the given method and headers."""
+        """Create a RequestContext for the given method and headers."""
         ...
 
     def validate_response(
         self, request_codec_name: str, status_code: int, response_content_type: str
     ) -> None:
-        """Validates a unary response"""
+        """Validate a unary response."""
         ...
 
     def validate_stream_response(
         self, request_codec_name: str, response_content_type: str
     ) -> None:
-        """Validates a streaming response"""
+        """Validate a streaming response."""
         ...
 
     def handle_response_compression(
         self, headers: HTTPHeaders, *, stream: bool
     ) -> Compression:
-        """Handles response compression based on the response headers."""
+        """Handle response compression based on the response headers."""
         ...
 
     def create_envelope_reader(
@@ -269,7 +268,7 @@ class ClientProtocol(Protocol):
         compression: Compression,
         read_max_bytes: int | None,
     ) -> EnvelopeReader[RES]:
-        """Creates the EnvelopeReader to read response messages."""
+        """Create the EnvelopeReader to read response messages."""
         ...
 
 

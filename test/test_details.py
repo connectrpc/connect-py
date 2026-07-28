@@ -4,8 +4,7 @@ from typing import NoReturn
 
 import pytest
 from protobuf import Oneof
-from protobuf.wkt import Any as AnyPb
-from protobuf.wkt import Duration, Struct, Value
+from protobuf.wkt import Any as AnyPb, Duration, Struct, Value
 from pyqwest import Client, SyncClient
 from pyqwest.testing import ASGITransport, WSGITransport
 

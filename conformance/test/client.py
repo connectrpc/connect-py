@@ -19,15 +19,13 @@ from gen.connectrpc.conformance.v1.client_compat_pb import (
     ClientErrorResult,
     ClientResponseResult,
 )
-from gen.connectrpc.conformance.v1.config_pb import Code as ConformanceCode
 from gen.connectrpc.conformance.v1.config_pb import (
+    Code as ConformanceCode,
     Codec,
+    Compression as ConformanceCompression,
     HTTPVersion,
     Protocol,
     StreamType,
-)
-from gen.connectrpc.conformance.v1.config_pb import (
-    Compression as ConformanceCompression,
 )
 from gen.connectrpc.conformance.v1.service_connect import (
     ConformanceServiceClient,
@@ -37,16 +35,21 @@ from gen.connectrpc.conformance.v1.service_pb import (
     BidiStreamRequest,
     ClientStreamRequest,
     ConformancePayload,
+    Error as ConformanceError,
+    Header as ConformanceHeader,
     IdempotentUnaryRequest,
     ServerStreamRequest,
     UnaryRequest,
     UnimplementedRequest,
 )
-from gen.connectrpc.conformance.v1.service_pb import Error as ConformanceError
-from gen.connectrpc.conformance.v1.service_pb import Header as ConformanceHeader
 from protobuf import Message, Oneof, Registry
-from pyqwest import Client, HTTPTransport, SyncClient, SyncHTTPTransport
-from pyqwest import HTTPVersion as PyQwestHTTPVersion
+from pyqwest import (
+    Client,
+    HTTPTransport,
+    HTTPVersion as PyQwestHTTPVersion,
+    SyncClient,
+    SyncHTTPTransport,
+)
 
 from connectrpc.client import ResponseMetadata
 from connectrpc.code import Code

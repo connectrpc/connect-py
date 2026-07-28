@@ -44,7 +44,8 @@ class ElizaServiceTestSync(ElizaServiceSync):
         if request.sentence == "connect error":
             raise ConnectError(Code.FAILED_PRECONDITION, "connect error")
         if request.sentence == "unknown error":
-            raise ValueError("unknown error")
+            msg = "unknown error"
+            raise ValueError(msg)
         return SayResponse(sentence="Hello")
 
 

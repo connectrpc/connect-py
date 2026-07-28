@@ -7,9 +7,7 @@ from asyncio import CancelledError, sleep, wait_for
 from typing import TYPE_CHECKING, Any, Protocol, TypeVar
 from urllib.parse import urlencode
 
-from pyqwest import Client as HTTPClient
-from pyqwest import FullResponse, Response
-from pyqwest import Headers as HTTPHeaders
+from pyqwest import Client as HTTPClient, FullResponse, Headers as HTTPHeaders, Response
 
 from . import _client_shared
 from ._codec import proto_binary_codec
@@ -99,7 +97,7 @@ class ConnectClient:
         interceptors: Iterable[Interceptor] = (),
         http_client: HTTPClient | None = None,
     ) -> None:
-        """Creates a new asynchronous Connect client.
+        """Create a new asynchronous Connect client.
 
         When providing an HTTP client, for example to configure TLS settings,
         it is the caller's responsibility to close it.
@@ -129,6 +127,7 @@ class ConnectClient:
             read_max_bytes: The maximum number of bytes to read from the response.
             interceptors: A list of interceptors to apply to requests.
             http_client: A pyqwest Client to use for requests.
+
         """
         self._address = address
         self._codec = codec or proto_binary_codec()

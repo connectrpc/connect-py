@@ -38,7 +38,8 @@ class CustomCodec(Codec[Message, Message]):
             case Hat(size=size, color=color):
                 return f"{size}:{color}".encode()
             case _:
-                raise ValueError(f"unexpected message type: {type(message)}")
+                msg = f"unexpected message type: {type(message)}"
+                raise ValueError(msg)
 
     def decode(self, data: bytes | bytearray, message_class: type[Message]) -> Message:
         s = data.decode()

@@ -171,7 +171,7 @@ class GRPCEnvelopeWriter(EnvelopeWriter):
                 grpc_status = Status(
                     code=int(status),
                     message=error.message,
-                    details=[d._any for d in error.details],  # noqa: SLF001
+                    details=[d._any for d in error.details],
                 )
                 grpc_status_bin = (
                     b64encode(grpc_status.to_binary()).decode().rstrip("=")

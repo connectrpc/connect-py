@@ -1,3 +1,5 @@
+"""Protocol for defining compression to use with Connect."""
+
 from __future__ import annotations
 
 __all__ = ["Compression"]
@@ -20,8 +22,10 @@ class Compression(Protocol):
     """
 
     def name(self) -> str:
-        """Returns the name of the compression method. This value is used in HTTP
-        headers to indicate accepted and used compression.
+        """Return the name of the compression method.
+
+        This value is used in HTTP headers to indicate accepted and used
+        compression.
         """
         ...
 

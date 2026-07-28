@@ -1,3 +1,5 @@
+"""The Connect RPC interceptor protocols."""
+
 from __future__ import annotations
 
 __all__ = [

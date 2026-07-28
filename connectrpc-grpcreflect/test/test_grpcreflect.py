@@ -39,8 +39,6 @@ from connectrpc_grpcreflect._gen.grpc.reflection.v1.reflection_pb import (
 )
 from connectrpc_grpcreflect._gen.grpc.reflection.v1alpha.reflection_connect import (
     ServerReflectionClient as ServerReflectionAlphaClient,
-)
-from connectrpc_grpcreflect._gen.grpc.reflection.v1alpha.reflection_connect import (
     ServerReflectionClientSync as ServerReflectionAlphaClientSync,
 )
 from connectrpc_grpcreflect._gen.grpc.reflection.v1alpha.reflection_pb import (
