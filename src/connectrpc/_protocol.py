@@ -272,7 +272,7 @@ class ClientProtocol(Protocol):
         ...
 
 
-class HTTPException(Exception):
+class HTTPError(Exception):
     """An HTTP exception returned directly before starting the connect protocol."""
 
     def __init__(self, status: HTTPStatus, headers: list[tuple[str, str]]) -> None:

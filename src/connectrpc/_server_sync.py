@@ -22,7 +22,7 @@ from ._interceptor_sync import (
     ServerStreamInterceptorSync,
     UnaryInterceptorSync,
 )
-from ._protocol import ConnectWireError, HTTPException, ServerProtocol
+from ._protocol import ConnectWireError, HTTPError, ServerProtocol
 from ._protocol_connect import (
     CONNECT_UNARY_CONTENT_TYPE_PREFIX,
     ConnectServerProtocol,
@@ -206,7 +206,7 @@ class ConnectWSGIApplication(ABC):
                 endpoint = self._endpoints.get(self.path + path)
 
             if not endpoint:
-                raise HTTPException(HTTPStatus.NOT_FOUND, [])
+                raise HTTPError(HTTPStatus.NOT_FOUND, [])
 
             http_method = environ["REQUEST_METHOD"]
             http_scheme = environ.get("wsgi.url_scheme", "http")
@@ -297,7 +297,7 @@ class ConnectWSGIApplication(ABC):
         )
         codec = self._codecs.get(codec_name)
         if not codec:
-            raise HTTPException(
+            raise HTTPError(
                 HTTPStatus.UNSUPPORTED_MEDIA_TYPE,
                 [("Accept-Post", "application/json, application/proto")],
             )
@@ -429,7 +429,7 @@ class ConnectWSGIApplication(ABC):
         )
         codec = self._codecs.get(codec_name)
         if not codec:
-            raise HTTPException(
+            raise HTTPError(
                 HTTPStatus.UNSUPPORTED_MEDIA_TYPE,
                 [
                     (
@@ -514,7 +514,7 @@ class ConnectWSGIApplication(ABC):
         headers: list[tuple[str, str]]
         body: list[bytes]
         status: str
-        if isinstance(exc, HTTPException):
+        if isinstance(exc, HTTPError):
             headers = exc.headers
             body = []
             status = f"{exc.status.value} {exc.status.phrase}"
@@ -664,7 +664,7 @@ def _drain_request_body(environ: WSGIEnvironment) -> None:
 
 
 def _maybe_log_exception(environ: WSGIEnvironment, exc: Exception) -> None:
-    if isinstance(exc, (ConnectError, HTTPException)):
+    if isinstance(exc, (ConnectError, HTTPError)):
         return
     errors: ErrorStream = environ["wsgi.errors"]
     errors.write(

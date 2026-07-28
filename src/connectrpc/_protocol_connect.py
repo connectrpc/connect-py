@@ -10,7 +10,7 @@ from ._compression import IdentityCompression, negotiate_compression
 from ._envelope import EnvelopeReader, EnvelopeWriter
 from ._protocol import (
     ConnectWireError,
-    HTTPException,
+    HTTPError,
     host_to_server_address,
     url_to_server_address,
 )
@@ -82,11 +82,9 @@ class ConnectServerProtocol:
     ) -> RequestContext[REQ, RES]:
         if method.idempotency_level == IdempotencyLevel.NO_SIDE_EFFECTS:
             if http_method not in ("GET", "POST"):
-                raise HTTPException(
-                    HTTPStatus.METHOD_NOT_ALLOWED, [("allow", "GET, POST")]
-                )
+                raise HTTPError(HTTPStatus.METHOD_NOT_ALLOWED, [("allow", "GET, POST")])
         elif http_method != "POST":
-            raise HTTPException(HTTPStatus.METHOD_NOT_ALLOWED, [("allow", "POST")])
+            raise HTTPError(HTTPStatus.METHOD_NOT_ALLOWED, [("allow", "POST")])
 
         # We don't require connect-protocol-version header. connect-go provides an option
         # to require it but it's almost never used in practice.

@@ -19,7 +19,7 @@ from pyqwest import (
 )
 from pyqwest.testing import ASGITransport, WSGITransport
 
-from connectrpc._protocol import HTTPException
+from connectrpc._protocol import HTTPError
 from connectrpc.client import ResponseMetadata
 from connectrpc.code import Code
 from connectrpc.errors import ConnectError
@@ -527,7 +527,7 @@ async def test_async_connect_exception_not_reraised_stream() -> None:
 async def test_async_http_exception_not_reraised() -> None:
     class RaisingHaberdasher(Haberdasher):
         async def make_hat(self, _request, _ctx) -> NoReturn:
-            raise HTTPException(status=HTTPStatus.INTERNAL_SERVER_ERROR, headers=[])
+            raise HTTPError(status=HTTPStatus.INTERNAL_SERVER_ERROR, headers=[])
 
     app = HaberdasherASGIApplication(RaisingHaberdasher())
     transport = ASGITransport(app)

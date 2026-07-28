@@ -14,7 +14,7 @@ from ._envelope import EnvelopeReader, EnvelopeWriter
 from ._gen.google.rpc.status_pb import Status
 from ._protocol import (
     ConnectWireError,
-    HTTPException,
+    HTTPError,
     host_to_server_address,
     url_to_server_address,
 )
@@ -58,7 +58,7 @@ class GRPCServerProtocol:
         client_address: str | None = None,
     ) -> RequestContext[REQ, RES]:
         if http_method != "POST":
-            raise HTTPException(HTTPStatus.METHOD_NOT_ALLOWED, [("allow", "POST")])
+            raise HTTPError(HTTPStatus.METHOD_NOT_ALLOWED, [("allow", "POST")])
 
         timeout_header = headers.get(GRPC_HEADER_TIMEOUT)
         timeout_ms = _parse_timeout(timeout_header) if timeout_header else None
