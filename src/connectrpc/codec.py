@@ -1,4 +1,4 @@
-"""The Connect RPC codecs."""
+"""The Connect codecs."""
 
 from __future__ import annotations
 

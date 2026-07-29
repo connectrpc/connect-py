@@ -8,7 +8,7 @@ from . import Compression
 
 
 class GzipCompression(Compression):
-    """Compression implementation using GZip."""
+    """Compression implementation using Gzip."""
 
     def __init__(self, level: int = 6) -> None:
         """Create a new GzipCompression.
@@ -20,13 +20,13 @@ class GzipCompression(Compression):
         self._level = level
 
     def name(self) -> str:
-        """Return the compression name for GZip."""
+        """Return the compression name for Gzip."""
         return "gzip"
 
     def compress(self, data: bytes | bytearray | memoryview) -> bytes:
-        """Compress the given data using GZip."""
+        """Compress the given data using Gzip."""
         return gzip.compress(data, compresslevel=self._level)
 
     def decompress(self, data: bytes | bytearray | memoryview) -> bytes:
-        """Decompress the given data using GZip."""
+        """Decompress the given data using Gzip."""
         return gzip.decompress(data)

@@ -1,4 +1,4 @@
-"""The Connect RPC error codes."""
+"""The Connect error codes."""
 
 from __future__ import annotations
 

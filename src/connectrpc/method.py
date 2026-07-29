@@ -1,4 +1,4 @@
-"""The Connect RPC method information."""
+"""The Connect method information."""
 
 from __future__ import annotations
 

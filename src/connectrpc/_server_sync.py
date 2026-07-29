@@ -240,7 +240,7 @@ class ConnectWSGIApplication(ABC):
                 environ, start_response, send_trailers, protocol, headers, endpoint, ctx
             )
 
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:  # noqa: BLE001 # invoking user callback
             _drain_request_body(environ)
             _maybe_log_exception(environ, e)
             return self._handle_error(e, ctx, start_response)
@@ -489,7 +489,7 @@ class ConnectWSGIApplication(ABC):
             return _response_stream(
                 first_response, environ, response_stream, writer, send_trailers, ctx
             )
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:  # noqa: BLE001 # invoking user callback
             # Exception before any response message was returned. An error after the first
             # response message will be handled by _response_stream, so here we have a
             # full error-only response.
@@ -594,7 +594,7 @@ def _response_stream(
         for message in response_stream:
             body = writer.write(message)
             yield body
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:  # noqa: BLE001 # invoking user callback
         error = e
         _drain_request_body(environ)
 

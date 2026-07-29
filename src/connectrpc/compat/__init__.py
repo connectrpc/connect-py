@@ -1,4 +1,4 @@
-"""Support for the google.protobuf Protobuf implementation with Connect."""
+"""Support for the [google.protobuf][] Protobuf implementation with Connect."""
 
 from __future__ import annotations
 

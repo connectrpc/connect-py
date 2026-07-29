@@ -38,6 +38,7 @@ inventories = [
   "https://docs.python.org/3/objects.inv",
   "https://protobufpy.com/objects.inv",
   "https://pyqwest.dev/objects.inv",
+  "https://googleapis.dev/python/protobuf/latest/objects.inv",
 ]
 paths = ["src"]
 

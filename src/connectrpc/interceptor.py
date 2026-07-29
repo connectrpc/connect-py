@@ -1,4 +1,4 @@
-"""The Connect RPC interceptor protocols."""
+"""The Connect interceptor protocols."""
 
 from __future__ import annotations
 

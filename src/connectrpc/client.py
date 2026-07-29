@@ -1,4 +1,4 @@
-"""The Connect RPC client implementations."""
+"""The Connect client implementations."""
 
 from __future__ import annotations
 

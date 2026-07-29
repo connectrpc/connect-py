@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import json
 from base64 import b64decode, b64encode
 from dataclasses import dataclass
@@ -101,7 +102,7 @@ class ConnectWireError:
     def from_response(response: FullResponse) -> ConnectWireError:
         try:
             data = response.json()
-        except Exception:  # noqa: BLE001
+        except ValueError:
             data = None
         if isinstance(data, dict):
             return ConnectWireError.from_dict(data, response.status, Code.UNAVAILABLE)
@@ -171,11 +172,8 @@ class ConnectWireError:
                 # Try to produce debug info, but expect failure when we don't
                 # have descriptors for the message type.
                 if debug := detail.value():
-                    try:
+                    with contextlib.suppress(ValueError):
                         debug_value = message_to_json_value(debug)
-                    except Exception:  # noqa: BLE001, S110
-                        pass
-                    else:
                         detail_dict["debug"] = debug_value
                 details.append(detail_dict)
             data["details"] = details

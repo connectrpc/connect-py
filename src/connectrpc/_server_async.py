@@ -138,7 +138,7 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
                             )
                             try:
                                 service = await anext(service_iter)
-                            except Exception as e:  # noqa: BLE001
+                            except Exception as e:  # noqa: BLE001 # invoking user callback
                                 await send(
                                     {
                                         "type": "lifespan.startup.failed",
@@ -154,7 +154,7 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
                         if service_iter is not None:
                             try:
                                 await service_iter.aclose()
-                            except Exception as e:  # noqa: BLE001
+                            except Exception as e:  # noqa: BLE001 # invoking user callback
                                 await send(
                                     {
                                         "type": "lifespan.shutdown.failed",
@@ -456,7 +456,7 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
                     await aclose()
         except CancelledError as e:
             raise ConnectError(Code.CANCELED, "Request was cancelled") from e
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:  # noqa: BLE001 # invoking user callback
             error = e
         finally:
             end_message = writer.end(
