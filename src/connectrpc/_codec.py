@@ -47,7 +47,7 @@ V = TypeVar("V", bound=Message)
 
 class Codec(Protocol[T_contra, U]):
     def name(self) -> str:
-        """Returns the name of the codec.
+        """Return the name of the codec.
 
         This corresponds to the content-type used in requests.
         """
@@ -102,16 +102,17 @@ def get_default_codecs() -> list[Codec]:
 
 
 def proto_binary_codec() -> Codec:
-    """Returns the Protocol Buffers binary codec."""
+    """Return the Protocol Buffers binary codec."""
     return _proto_binary_codec
 
 
 def proto_json_codec(registry: Registry | None = None) -> Codec:
-    """Returns the Protocol Buffers JSON codec.
+    """Return the Protocol Buffers JSON codec.
 
     Args:
         registry: An optional protobuf Registry to use for marshaling Any and extensions in messages.
                   If not provided, a default registry containing WKTs will be used.
+
     """
     if registry:
         return ProtoJSONCodec(name=CODEC_NAME_JSON, registry=registry)

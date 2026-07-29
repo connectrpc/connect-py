@@ -1,7 +1,4 @@
 * text=auto eol=lf
 
-**/gen/** inguist-generated=true
-**/_gen/** linguist-generated=true
-**/*_pb.py linguist-generated=true
-**/*_pb2.py linguist-generated=true
-**/*_connect.py linguist-generated=true
+**/gen/**/*.py inguist-generated=true
+**/_gen/**/*.py linguist-generated=true

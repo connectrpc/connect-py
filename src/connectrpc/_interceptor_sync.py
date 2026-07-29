@@ -23,7 +23,7 @@ class UnaryInterceptorSync(Protocol):
         ctx: RequestContext,
         /,
     ) -> RES:
-        """Intercepts a unary RPC.
+        """Intercept a unary RPC.
 
         Args:
             call_next: A callable to invoke to continue processing, either to another
@@ -36,6 +36,7 @@ class UnaryInterceptorSync(Protocol):
 
         Returns:
             The response message.
+
         """
         ...
 
@@ -51,7 +52,7 @@ class ClientStreamInterceptorSync(Protocol):
         ctx: RequestContext,
         /,
     ) -> RES:
-        """Intercepts a client-streaming RPC.
+        """Intercept a client-streaming RPC.
 
         Args:
             call_next: A callable to invoke to continue processing, either to another
@@ -64,6 +65,7 @@ class ClientStreamInterceptorSync(Protocol):
 
         Returns:
             The response message.
+
         """
         ...
 
@@ -79,7 +81,7 @@ class ServerStreamInterceptorSync(Protocol):
         ctx: RequestContext,
         /,
     ) -> Iterator[RES]:
-        """Intercepts a server-streaming RPC.
+        """Intercept a server-streaming RPC.
 
         Args:
             call_next: A callable to invoke to continue processing, either to another
@@ -92,6 +94,7 @@ class ServerStreamInterceptorSync(Protocol):
 
         Returns:
             The response message iterator.
+
         """
         ...
 
@@ -107,7 +110,7 @@ class BidiStreamInterceptorSync(Protocol):
         ctx: RequestContext,
         /,
     ) -> Iterator[RES]:
-        """Intercepts a bidirectional-streaming RPC.
+        """Intercept a bidirectional-streaming RPC.
 
         Args:
             call_next: A callable to invoke to continue processing, either to another
@@ -120,23 +123,27 @@ class BidiStreamInterceptorSync(Protocol):
 
         Returns:
             The response message iterator.
+
         """
         ...
 
 
 @runtime_checkable
 class MetadataInterceptorSync(Protocol[T]):
-    """An interceptor that can be applied to any type of method, only having
-    access to metadata such as headers and trailers.
+    """An interceptor that can be applied to any type of method.
 
-    To access request and response bodies of a method, instead use an interceptor
-    corresponding to the type of method such as [UnaryInterceptorSync][].
+    Only metadata such as headers and trailers is accessible. To access request
+    and response bodies of a method, instead use an interceptor corresponding to
+    the type of method such as [UnaryInterceptorSync][].
     """
 
     def on_start_sync(self, ctx: RequestContext, /) -> T:
-        """Called when the RPC starts. The return value will be passed to [on_end_sync][] as-is.
-        For example, if measuring RPC invocation time, on_start_sync may return the current
-        time. If a return value isn't needed or [on_end_sync][] won't be used, return None.
+        """Handle the start of the RPC.
+
+        The return value is passed to [on_end_sync][] as-is. For example, if
+        measuring RPC invocation time, on_start_sync may return the current time.
+        If a return value isn't needed or [on_end_sync][] won't be used, return
+        None.
         """
         ...
 
@@ -147,7 +154,7 @@ class MetadataInterceptorSync(Protocol[T]):
         error: Exception | None,  # noqa: ARG002 # keep name clean for public API
         /,
     ) -> None:
-        """Called when the RPC ends."""
+        """Handle the end of the RPC."""
         return
 
 

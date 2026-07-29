@@ -3,8 +3,7 @@ from __future__ import annotations
 import base64
 from typing import TYPE_CHECKING, TypeVar
 
-from pyqwest import Headers as HTTPHeaders
-from pyqwest import StreamError, StreamErrorCode
+from pyqwest import Headers as HTTPHeaders, StreamError, StreamErrorCode
 
 from ._protocol_connect import CONNECT_PROTOCOL_VERSION
 from .code import Code

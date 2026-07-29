@@ -86,8 +86,10 @@ class EnvelopeReader(Generic[_RES]):
     def handle_end_message(
         self, _prefix_byte: int, _message_data: bytes | bytearray, /
     ) -> bool:
-        """For client protocols with an end message like Connect and gRPC-Web, handle the end message.
-        Returns True if the end message was handled, False otherwise.
+        """Handle the end message for client protocols that have one.
+
+        Connect and gRPC-Web are such protocols. Returns True if the end
+        message was handled, False otherwise.
         """
         return False
 
@@ -95,6 +97,7 @@ class EnvelopeReader(Generic[_RES]):
         self, response: Response | SyncResponse, /, e: ConnectError | None = None
     ) -> None:
         """Handle any client finalization needed when the response is complete.
+
         This is typically used to process trailers for gRPC.
         """
 

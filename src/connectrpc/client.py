@@ -1,3 +1,5 @@
+"""The Connect client implementations."""
+
 from __future__ import annotations
 
 __all__ = ["ConnectClient", "ConnectClientSync", "ResponseMetadata"]

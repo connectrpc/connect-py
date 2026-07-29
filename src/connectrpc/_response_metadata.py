@@ -21,7 +21,7 @@ def handle_response_headers(status: int, headers: HTTPHeaders) -> None:
     if not response:
         return
 
-    response._http_status = status  # noqa: SLF001
+    response._http_status = status
     response_headers: Headers = Headers()
     response_trailers: Headers = Headers()
     for key, value in headers.items():
@@ -33,9 +33,9 @@ def handle_response_headers(status: int, headers: HTTPHeaders) -> None:
             obj = response_headers
         obj.add(normalized_key, value)
     if response_headers:
-        response._headers = response_headers  # noqa: SLF001
+        response._headers = response_headers
     if response_trailers:
-        response._trailers = response_trailers  # noqa: SLF001
+        response._trailers = response_trailers
 
 
 def handle_response_trailers(
@@ -52,12 +52,11 @@ def handle_response_trailers(
             for v in value:
                 response_trailers.add(key, v)
     if response_trailers:
-        response._trailers = response_trailers  # noqa: SLF001
+        response._trailers = response_trailers
 
 
 class ResponseMetadata:
-    """
-    Response metadata separate from the message payload.
+    """Response metadata separate from the message payload.
 
     Commonly, RPC client invocations only need the message payload and do not need to
     directly read other data such as headers or trailers. In cases where they are needed,
@@ -72,6 +71,7 @@ class ResponseMetadata:
             check_response_headers(resp_data.headers())
             check_response_trailers(resp_data.trailers())
         ```
+
     """
 
     _http_status: int | None = None

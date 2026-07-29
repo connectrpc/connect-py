@@ -22,14 +22,10 @@ from ._gen.grpc.reflection.v1.reflection_pb import (
 )
 from ._gen.grpc.reflection.v1alpha.reflection_connect import (
     ServerReflection as ServerReflectionAlpha,
-)
-from ._gen.grpc.reflection.v1alpha.reflection_connect import (
     ServerReflectionSync as ServerReflectionAlphaSync,
 )
 from ._gen.grpc.reflection.v1alpha.reflection_pb import (
     ServerReflectionRequest as ServerReflectionAlphaRequest,
-)
-from ._gen.grpc.reflection.v1alpha.reflection_pb import (
     ServerReflectionResponse as ServerReflectionAlphaResponse,
 )
 
@@ -46,7 +42,7 @@ class ServerReflectionService(ServerReflection):
     """Asynchronous service implementation for gRPC reflection."""
 
     def __init__(self, *descs: DescFile | DescService) -> None:
-        """Creates a service for gRPC reflection.
+        """Create a service for gRPC reflection.
 
         The services in the passed in descriptors will be made available for reflection.
         For [DescFile][protobuf.DescFile], this means all the services declared in that file. Note that file
@@ -59,6 +55,7 @@ class ServerReflectionService(ServerReflection):
         Returns:
             A new instance of [ServerReflectionService][connectrpc.grpcreflect.ServerReflectionService],
                 for use with [ServerReflectionASGIApplication][connectrpc.grpcreflect.ServerReflectionASGIApplication].
+
         """
         registry, service_names = _resolve_registry(descs)
         self._registry = registry
@@ -78,7 +75,7 @@ class ServerReflectionServiceSync(ServerReflectionSync):
     """Synchronous service implementation for gRPC reflection."""
 
     def __init__(self, *descs: DescFile | DescService) -> None:
-        """Creates a service for gRPC reflection.
+        """Create a service for gRPC reflection.
 
         The services in the passed in descriptors will be made available for reflection.
         For [DescFile][protobuf.DescFile], this means all the services declared in that file. Note that file
@@ -91,6 +88,7 @@ class ServerReflectionServiceSync(ServerReflectionSync):
         Returns:
             A new instance of [ServerReflectionServiceSync][connectrpc.grpcreflect.ServerReflectionServiceSync],
                 for use with [ServerReflectionWSGIApplication][connectrpc.grpcreflect.ServerReflectionWSGIApplication].
+
         """
         registry, service_names = _resolve_registry(descs)
         self._registry = registry
@@ -114,7 +112,7 @@ class ServerReflectionAlphaService(ServerReflectionAlpha):
     """Asynchronous service implementation for gRPC reflection (v1alpha)."""
 
     def __init__(self, *descs: DescFile | DescService) -> None:
-        """Creates a service for gRPC reflection.
+        """Create a service for gRPC reflection.
 
         The services in the passed in descriptors will be made available for reflection.
         For [DescFile][protobuf.DescFile], this means all the services declared in that file. Note that file
@@ -127,6 +125,7 @@ class ServerReflectionAlphaService(ServerReflectionAlpha):
         Returns:
             A new instance of [ServerReflectionAlphaService][connectrpc.grpcreflect.ServerReflectionAlphaService],
                 for use with [ServerReflectionAlphaASGIApplication][connectrpc.grpcreflect.ServerReflectionAlphaASGIApplication].
+
         """
         registry, service_names = _resolve_registry(descs)
         self._registry = registry
@@ -155,7 +154,7 @@ class ServerReflectionAlphaServiceSync(ServerReflectionAlphaSync):
     """Synchronous service implementation for gRPC reflection (v1alpha)."""
 
     def __init__(self, *descs: DescFile | DescService) -> None:
-        """Creates a service for gRPC reflection.
+        """Create a service for gRPC reflection.
 
         The services in the passed in descriptors will be made available for reflection.
         For [DescFile][protobuf.DescFile], this means all the services declared in that file. Note that file
@@ -168,6 +167,7 @@ class ServerReflectionAlphaServiceSync(ServerReflectionAlphaSync):
         Returns:
             A new instance of [ServerReflectionAlphaServiceSync][connectrpc.grpcreflect.ServerReflectionAlphaServiceSync],
                 for use with [ServerReflectionAlphaWSGIApplication][connectrpc.grpcreflect.ServerReflectionAlphaWSGIApplication].
+
         """
         registry, service_names = _resolve_registry(descs)
         self._registry = registry

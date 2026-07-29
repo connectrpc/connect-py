@@ -2,8 +2,7 @@ from __future__ import annotations
 
 from typing import TypeVar
 
-from google.protobuf.json_format import MessageToJson
-from google.protobuf.json_format import Parse as MessageFromJson
+from google.protobuf.json_format import MessageToJson, Parse as MessageFromJson
 from google.protobuf.message import Message
 
 from connectrpc.codec import Codec
@@ -54,15 +53,15 @@ _default_codecs: list[Codec] = [_proto_binary_codec, _proto_json_codec]
 
 
 def google_protobuf_codecs() -> list[Codec]:
-    """Returns the codecs for marshaling Protocol Buffers using google.protobuf."""
+    """Return the codecs for marshaling Protocol Buffers using google.protobuf."""
     return _default_codecs
 
 
 def google_protobuf_binary_codec() -> Codec:
-    """Returns the Protocol Buffers binary codec using google.protobuf."""
+    """Return the Protocol Buffers binary codec using google.protobuf."""
     return _proto_binary_codec
 
 
 def google_protobuf_json_codec() -> Codec:
-    """Returns the Protocol Buffers JSON codec using google.protobuf."""
+    """Return the Protocol Buffers JSON codec using google.protobuf."""
     return _proto_json_codec

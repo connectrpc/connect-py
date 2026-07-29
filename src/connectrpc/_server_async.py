@@ -22,7 +22,7 @@ from ._interceptor_async import (
     UnaryInterceptor,
     resolve_interceptors,
 )
-from ._protocol import ConnectWireError, HTTPException, ServerProtocol
+from ._protocol import ConnectWireError, HTTPError, ServerProtocol
 from ._protocol_connect import CONNECT_UNARY_CONTENT_TYPE_PREFIX, ConnectServerProtocol
 from ._protocol_server import negotiate_server_protocol
 from ._server_shared import (
@@ -106,6 +106,7 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
                           If set to empty, disables compression.
             codecs: The codecs supported by the server. If unset, defaults to Protocol Buffers
                     binary and JSON codecs.
+
         """
         super().__init__()
         self._service = service
@@ -137,7 +138,7 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
                             )
                             try:
                                 service = await anext(service_iter)
-                            except Exception as e:
+                            except Exception as e:  # noqa: BLE001 # invoking user callback
                                 await send(
                                     {
                                         "type": "lifespan.startup.failed",
@@ -153,7 +154,7 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
                         if service_iter is not None:
                             try:
                                 await service_iter.aclose()
-                            except Exception as e:
+                            except Exception as e:  # noqa: BLE001 # invoking user callback
                                 await send(
                                     {
                                         "type": "lifespan.shutdown.failed",
@@ -183,7 +184,7 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
                 path = path.removeprefix(scope["root_path"])
                 endpoint = endpoints.get(path)
             if not endpoint:
-                raise HTTPException(HTTPStatus.NOT_FOUND, [])
+                raise HTTPError(HTTPStatus.NOT_FOUND, [])
 
             http_method = scope["method"]
             http_scheme = scope.get("scheme", "http")
@@ -215,7 +216,7 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
                 )
             codec = self._codecs.get(codec_name)
             if not codec:
-                raise HTTPException(
+                raise HTTPError(
                     HTTPStatus.UNSUPPORTED_MEDIA_TYPE,
                     [("Accept-Post", "application/json, application/proto")],
                 )
@@ -233,7 +234,7 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
                 )
         except Exception as e:
             await self._handle_error(e, ctx, send)
-            if not isinstance(e, (ConnectError, HTTPException)):
+            if not isinstance(e, (ConnectError, HTTPError)):
                 raise
             return None
 
@@ -340,7 +341,6 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
         headers: Headers,
     ) -> _REQ:
         """Handle POST request with body."""
-
         # Get request body
         chunks: list[bytes] = [chunk async for chunk in _read_body(receive)]
         req_body = b"".join(chunks)
@@ -456,7 +456,7 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
                     await aclose()
         except CancelledError as e:
             raise ConnectError(Code.CANCELED, "Request was cancelled") from e
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 # invoking user callback
             error = e
         finally:
             end_message = writer.end(
@@ -499,7 +499,7 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
         headers: list[tuple[bytes, bytes]]
         body: bytes
         status: int
-        if isinstance(exc, HTTPException):
+        if isinstance(exc, HTTPError):
             status = exc.status.value
             headers = [(k.encode("utf-8"), v.encode("utf-8")) for k, v in exc.headers]
             body = b""

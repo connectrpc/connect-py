@@ -1,3 +1,5 @@
+"""The HTTP request context for a Connect invocation."""
+
 from __future__ import annotations
 
 __all__ = ["Headers", "RequestContext"]
@@ -34,9 +36,7 @@ class RequestContext(Generic[REQ, RES]):
         server_address: str | None = None,
         client_address: str | None = None,
     ) -> None:
-        """
-        Initialize a Context object.
-        """
+        """Initialize a Context object."""
         self._method = method
         self._http_method = http_method
         self._request_headers = request_headers
@@ -71,18 +71,14 @@ class RequestContext(Generic[REQ, RES]):
 
     @property
     def response_headers(self) -> Headers:
-        """
-        Returns the response headers that will be sent before the response.
-        """
+        """Returns the response headers that will be sent before the response."""
         if self._response_headers is None:
             self._response_headers = Headers()
         return self._response_headers
 
     @property
     def response_trailers(self) -> Headers:
-        """
-        Returns the response trailers that will be sent after the response.
-        """
+        """Returns the response trailers that will be sent after the response."""
         if self._response_trailers is None:
             self._response_trailers = Headers()
         return self._response_trailers
@@ -96,8 +92,7 @@ class RequestContext(Generic[REQ, RES]):
 
     @property
     def server_address(self) -> str | None:
-        """
-        Returns the server address for this request, if available, as a "address:port" string.
+        """Returns the server address for this request, if available, as a "address:port" string.
 
         - On the client, this is components from the URL configured when constructing the client.
         - On the server, this is determined from the Host header and scheme of the request.
@@ -106,8 +101,7 @@ class RequestContext(Generic[REQ, RES]):
 
     @property
     def client_address(self) -> str | None:
-        """
-        Returns the client address for this request, if available, as a "address:port" string.
+        """Returns the client address for this request, if available, as a "address:port" string.
 
         - On the client, this is never populated.
         - On the server, this is the value provided by the server implementation, generally
