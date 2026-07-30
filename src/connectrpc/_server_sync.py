@@ -22,7 +22,7 @@ from ._interceptor_sync import (
     ServerStreamInterceptorSync,
     UnaryInterceptorSync,
 )
-from ._protocol import ConnectWireError, HTTPException, ServerProtocol
+from ._protocol import ConnectWireError, HTTPError, ServerProtocol
 from ._protocol_connect import (
     CONNECT_UNARY_CONTENT_TYPE_PREFIX,
     ConnectServerProtocol,
@@ -95,6 +95,7 @@ def prepare_response_headers(
 
     Returns:
         The final response headers with content-encoding set.
+
     """
     headers = base_headers.copy()
 
@@ -170,6 +171,7 @@ class ConnectWSGIApplication(ABC):
                           If set to empty, disables compression.
             codecs: The codecs supported by the server. If unset, defaults to Protocol Buffers
                     binary and JSON codecs.
+
         """
         super().__init__()
         if interceptors:
@@ -204,7 +206,7 @@ class ConnectWSGIApplication(ABC):
                 endpoint = self._endpoints.get(self.path + path)
 
             if not endpoint:
-                raise HTTPException(HTTPStatus.NOT_FOUND, [])
+                raise HTTPError(HTTPStatus.NOT_FOUND, [])
 
             http_method = environ["REQUEST_METHOD"]
             http_scheme = environ.get("wsgi.url_scheme", "http")
@@ -238,7 +240,7 @@ class ConnectWSGIApplication(ABC):
                 environ, start_response, send_trailers, protocol, headers, endpoint, ctx
             )
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 # invoking user callback
             _drain_request_body(environ)
             _maybe_log_exception(environ, e)
             return self._handle_error(e, ctx, start_response)
@@ -290,13 +292,12 @@ class ConnectWSGIApplication(ABC):
         request_headers: Headers,
     ) -> tuple[_REQ, Codec]:
         """Handle POST request with body."""
-
         codec_name = codec_name_from_content_type(
             request_headers.get("content-type", ""), stream=False
         )
         codec = self._codecs.get(codec_name)
         if not codec:
-            raise HTTPException(
+            raise HTTPError(
                 HTTPStatus.UNSUPPORTED_MEDIA_TYPE,
                 [("Accept-Post", "application/json, application/proto")],
             )
@@ -397,11 +398,12 @@ class ConnectWSGIApplication(ABC):
             try:
                 # TODO - Use content type from queryparam
                 request = codec.decode(message, endpoint.method.input)
-                return request, codec
             except Exception as e:
                 raise ConnectError(
                     Code.INVALID_ARGUMENT, f"Failed to decode message: {e!s}"
                 ) from e
+            else:
+                return request, codec
 
         except Exception as e:
             if not isinstance(e, ConnectError):
@@ -427,7 +429,7 @@ class ConnectWSGIApplication(ABC):
         )
         codec = self._codecs.get(codec_name)
         if not codec:
-            raise HTTPException(
+            raise HTTPError(
                 HTTPStatus.UNSUPPORTED_MEDIA_TYPE,
                 [
                     (
@@ -487,7 +489,7 @@ class ConnectWSGIApplication(ABC):
             return _response_stream(
                 first_response, environ, response_stream, writer, send_trailers, ctx
             )
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 # invoking user callback
             # Exception before any response message was returned. An error after the first
             # response message will be handled by _response_stream, so here we have a
             # full error-only response.
@@ -512,7 +514,7 @@ class ConnectWSGIApplication(ABC):
         headers: list[tuple[str, str]]
         body: list[bytes]
         status: str
-        if isinstance(exc, HTTPException):
+        if isinstance(exc, HTTPError):
             headers = exc.headers
             body = []
             status = f"{exc.status.value} {exc.status.phrase}"
@@ -592,7 +594,7 @@ def _response_stream(
         for message in response_stream:
             body = writer.write(message)
             yield body
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 # invoking user callback
         error = e
         _drain_request_body(environ)
 
@@ -662,7 +664,7 @@ def _drain_request_body(environ: WSGIEnvironment) -> None:
 
 
 def _maybe_log_exception(environ: WSGIEnvironment, exc: Exception) -> None:
-    if isinstance(exc, (ConnectError, HTTPException)):
+    if isinstance(exc, (ConnectError, HTTPError)):
         return
     errors: ErrorStream = environ["wsgi.errors"]
     errors.write(

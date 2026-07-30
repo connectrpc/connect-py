@@ -36,13 +36,13 @@ class ElizaService(Protocol):
     psychotherapist, and is commonly found as an Easter egg in emacs
     distributions.
     """
-    async def say(self, request: SayRequest, ctx: RequestContext[SayRequest, SayResponse]) -> SayResponse:
+    async def say(self, request: SayRequest, ctx: RequestContext[SayRequest, SayResponse], /) -> SayResponse:
         """
         Say is a unary RPC. Eliza responds to the prompt with a single sentence.
         """
         raise ConnectError(Code.UNIMPLEMENTED, 'Not implemented')
 
-    def converse(self, request: AsyncIterator[ConverseRequest], ctx: RequestContext[ConverseRequest, ConverseResponse]) -> AsyncIterator[ConverseResponse]:
+    def converse(self, request: AsyncIterator[ConverseRequest], ctx: RequestContext[ConverseRequest, ConverseResponse], /) -> AsyncIterator[ConverseResponse]:
         """
         Converse is a bidirectional RPC. The caller may exchange multiple
         back-and-forth messages with Eliza over a long-lived connection. Eliza
@@ -50,7 +50,7 @@ class ElizaService(Protocol):
         """
         raise ConnectError(Code.UNIMPLEMENTED, 'Not implemented')
 
-    def introduce(self, request: IntroduceRequest, ctx: RequestContext[IntroduceRequest, IntroduceResponse]) -> AsyncIterator[IntroduceResponse]:
+    def introduce(self, request: IntroduceRequest, ctx: RequestContext[IntroduceRequest, IntroduceResponse], /) -> AsyncIterator[IntroduceResponse]:
         """
         Introduce is a server streaming RPC. Given the caller's name, Eliza
         returns a stream of sentences to introduce itself.
@@ -210,13 +210,13 @@ class ElizaServiceSync(Protocol):
     psychotherapist, and is commonly found as an Easter egg in emacs
     distributions.
     """
-    def say(self, request: SayRequest, ctx: RequestContext[SayRequest, SayResponse]) -> SayResponse:
+    def say(self, request: SayRequest, ctx: RequestContext[SayRequest, SayResponse], /) -> SayResponse:
         """
         Say is a unary RPC. Eliza responds to the prompt with a single sentence.
         """
         raise ConnectError(Code.UNIMPLEMENTED, 'Not implemented')
 
-    def converse(self, request: Iterator[ConverseRequest], ctx: RequestContext[ConverseRequest, ConverseResponse]) -> Iterator[ConverseResponse]:
+    def converse(self, request: Iterator[ConverseRequest], ctx: RequestContext[ConverseRequest, ConverseResponse], /) -> Iterator[ConverseResponse]:
         """
         Converse is a bidirectional RPC. The caller may exchange multiple
         back-and-forth messages with Eliza over a long-lived connection. Eliza
@@ -224,7 +224,7 @@ class ElizaServiceSync(Protocol):
         """
         raise ConnectError(Code.UNIMPLEMENTED, 'Not implemented')
 
-    def introduce(self, request: IntroduceRequest, ctx: RequestContext[IntroduceRequest, IntroduceResponse]) -> Iterator[IntroduceResponse]:
+    def introduce(self, request: IntroduceRequest, ctx: RequestContext[IntroduceRequest, IntroduceResponse], /) -> Iterator[IntroduceResponse]:
         """
         Introduce is a server streaming RPC. Given the caller's name, Eliza
         returns a stream of sentences to introduce itself.

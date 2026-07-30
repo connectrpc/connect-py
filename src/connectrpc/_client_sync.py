@@ -4,8 +4,7 @@ import functools
 from typing import TYPE_CHECKING, Any, Protocol, TypeVar
 from urllib.parse import urlencode
 
-from pyqwest import FullResponse, SyncClient, SyncResponse
-from pyqwest import Headers as HTTPHeaders
+from pyqwest import FullResponse, Headers as HTTPHeaders, SyncClient, SyncResponse
 
 from connectrpc._protocol_grpc import GRPCClientProtocol, GRPCWebClientProtocol
 
@@ -50,24 +49,24 @@ RES = TypeVar("RES")
 
 
 class _ExecuteUnary(Protocol[REQ, RES]):
-    def __call__(self, request: REQ, ctx: RequestContext[REQ, RES]) -> RES: ...
+    def __call__(self, request: REQ, ctx: RequestContext[REQ, RES], /) -> RES: ...
 
 
 class _ExecuteClientStream(Protocol[REQ, RES]):
     def __call__(
-        self, request: Iterator[REQ], ctx: RequestContext[REQ, RES]
+        self, request: Iterator[REQ], ctx: RequestContext[REQ, RES], /
     ) -> RES: ...
 
 
 class _ExecuteServerStream(Protocol[REQ, RES]):
     def __call__(
-        self, request: REQ, ctx: RequestContext[REQ, RES]
+        self, request: REQ, ctx: RequestContext[REQ, RES], /
     ) -> Iterator[RES]: ...
 
 
 class _ExecuteBidiStream(Protocol[REQ, RES]):
     def __call__(
-        self, request: Iterator[REQ], ctx: RequestContext[REQ, RES]
+        self, request: Iterator[REQ], ctx: RequestContext[REQ, RES], /
     ) -> Iterator[RES]: ...
 
 
@@ -92,7 +91,7 @@ class ConnectClientSync:
         interceptors: Iterable[InterceptorSync] = (),
         http_client: SyncClient | None = None,
     ) -> None:
-        """Creates a new synchronous Connect client.
+        """Create a new synchronous Connect client.
 
         When providing an HTTP client, for example to configure TLS settings,
         it is the caller's responsibility to close it.
@@ -122,6 +121,7 @@ class ConnectClientSync:
             read_max_bytes: The maximum number of bytes to read from the response.
             interceptors: A list of interceptors to apply to requests.
             http_client: A pyqwest SyncClient to use for requests.
+
         """
         self._address = address
         self._codec = codec or proto_binary_codec()
@@ -324,6 +324,7 @@ class ConnectClientSync:
                     content=request_data,
                     timeout=timeout_s,
                 )
+            handle_response_headers(resp.status, resp.headers)
 
             self._protocol.validate_response(
                 self._codec.name(), resp.status, resp.headers.get("content-type", "")
@@ -333,7 +334,6 @@ class ConnectClientSync:
             self._protocol.handle_response_compression(
                 resp.headers, self._response_compressions, stream=False
             )
-            handle_response_headers(resp.headers)
 
             if resp.status == 200:
                 if (
@@ -355,17 +355,17 @@ class ConnectClientSync:
             raise ConnectError(Code.UNAVAILABLE, str(e)) from e
 
     def _send_request_client_stream(
-        self, request: Iterator[REQ], ctx: RequestContext[REQ, RES]
+        self, request: Iterator[REQ], ctx: RequestContext[REQ, RES], /
     ) -> RES:
         return _consume_single_response(self._send_request_bidi_stream(request, ctx))
 
     def _send_request_server_stream(
-        self, request: REQ, ctx: RequestContext[REQ, RES]
+        self, request: REQ, ctx: RequestContext[REQ, RES], /
     ) -> Iterator[RES]:
         return self._send_request_bidi_stream(iter([request]), ctx)
 
     def _send_request_bidi_stream(
-        self, request: Iterator[REQ], ctx: RequestContext[REQ, RES]
+        self, request: Iterator[REQ], ctx: RequestContext[REQ, RES], /
     ) -> Iterator[RES]:
         request_headers = HTTPHeaders(ctx.request_headers.allitems())
         url = f"{self._address}/{ctx.method.service_name}/{ctx.method.name}"
@@ -389,7 +389,7 @@ class ConnectClientSync:
                 content=request_data,
                 timeout=timeout_s,
             ) as resp:
-                handle_response_headers(resp.headers)
+                handle_response_headers(resp.status, resp.headers)
 
                 if resp.status == 200:
                     self._protocol.validate_stream_response(

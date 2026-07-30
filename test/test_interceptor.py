@@ -41,7 +41,7 @@ class RequestInterceptor:
         return f"Hello {ctx.method.name}"
 
     def on_end_sync(
-        self, token: str, ctx: RequestContext, error: Exception | None
+        self, token: str, _ctx: RequestContext, error: Exception | None
     ) -> None:
         msg = f"{token} and goodbye"
         if error is not None:
@@ -64,12 +64,12 @@ async def client_async(
     client_interceptor: RequestInterceptor, server_interceptor: RequestInterceptor
 ):
     class SimpleHaberdasher(Haberdasher):
-        async def make_hat(self, request, ctx):
+        async def make_hat(self, request, _ctx):
             if request.inches < 0:
                 raise ConnectError(Code.INVALID_ARGUMENT, "Size must be non-negative")
             return Hat(size=request.inches, color="green")
 
-        async def make_flexible_hat(self, request, ctx):
+        async def make_flexible_hat(self, request, _ctx):
             size = 0
             async for s in request:
                 if s.inches < 0:
@@ -79,13 +79,13 @@ async def client_async(
                 size += s.inches
             return Hat(size=size, color="red")
 
-        async def make_similar_hats(self, request, ctx):
+        async def make_similar_hats(self, request, _ctx):
             if request.inches < 0:
                 raise ConnectError(Code.INVALID_ARGUMENT, "Size must be non-negative")
             yield Hat(size=request.inches, color="orange")
             yield Hat(size=request.inches, color="blue")
 
-        async def make_various_hats(self, request, ctx):
+        async def make_various_hats(self, request, _ctx):
             colors = itertools.cycle(("black", "white", "gold"))
             async for s in request:
                 if s.inches < 0:
@@ -251,12 +251,12 @@ def client_sync(
     client_interceptor: RequestInterceptor, server_interceptor: RequestInterceptor
 ):
     class SimpleHaberdasherSync(HaberdasherSync):
-        def make_hat(self, request, ctx):
+        def make_hat(self, request, _ctx):
             if request.inches < 0:
                 raise ConnectError(Code.INVALID_ARGUMENT, "Size must be non-negative")
             return Hat(size=request.inches, color="green")
 
-        def make_flexible_hat(self, request, ctx):
+        def make_flexible_hat(self, request, _ctx):
             size = 0
             for s in request:
                 if s.inches < 0:
@@ -266,13 +266,13 @@ def client_sync(
                 size += s.inches
             return Hat(size=size, color="red")
 
-        def make_similar_hats(self, request, ctx):
+        def make_similar_hats(self, request, _ctx):
             if request.inches < 0:
                 raise ConnectError(Code.INVALID_ARGUMENT, "Size must be non-negative")
             yield Hat(size=request.inches, color="orange")
             yield Hat(size=request.inches, color="blue")
 
-        def make_various_hats(self, request, ctx):
+        def make_various_hats(self, request, _ctx):
             colors = itertools.cycle(("black", "white", "gold"))
             requests = [*request]
             for s in requests:

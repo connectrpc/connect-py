@@ -37,7 +37,7 @@ async def test_server_compressions_async(
     compressions: tuple[str], encoding: str
 ) -> None:
     class SimpleHaberdasher(Haberdasher):
-        async def make_hat(self, request, ctx):
+        async def make_hat(self, _request, _ctx):
             return Hat(size=10, color="blue")
 
     app = HaberdasherASGIApplication(
@@ -72,7 +72,7 @@ async def test_server_compressions_async(
 )
 def test_server_compressions_sync(compressions: tuple[str], encoding: str) -> None:
     class SimpleHaberdasher(HaberdasherSync):
-        def make_hat(self, request, ctx):
+        def make_hat(self, _request, _ctx):
             return Hat(size=10, color="blue")
 
     app = HaberdasherWSGIApplication(

@@ -73,7 +73,7 @@ class Timeout:
                 self._timeout_handler = loop.call_at(when, self._on_timeout)
 
     def expired(self) -> bool:
-        """Is timeout expired during execution?"""
+        """Whether timeout expired during execution."""
         return self._state in (_State.EXPIRING, _State.EXPIRED)
 
     def __repr__(self) -> str:

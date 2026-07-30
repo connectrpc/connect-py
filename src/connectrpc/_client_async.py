@@ -7,9 +7,7 @@ from asyncio import CancelledError, sleep, wait_for
 from typing import TYPE_CHECKING, Any, Protocol, TypeVar
 from urllib.parse import urlencode
 
-from pyqwest import Client as HTTPClient
-from pyqwest import FullResponse, Response
-from pyqwest import Headers as HTTPHeaders
+from pyqwest import Client as HTTPClient, FullResponse, Headers as HTTPHeaders, Response
 
 from . import _client_shared
 from ._codec import proto_binary_codec
@@ -57,24 +55,24 @@ RES = TypeVar("RES")
 
 
 class _ExecuteUnary(Protocol[REQ, RES]):
-    async def __call__(self, request: REQ, ctx: RequestContext[REQ, RES]) -> RES: ...
+    async def __call__(self, request: REQ, ctx: RequestContext[REQ, RES], /) -> RES: ...
 
 
 class _ExecuteClientStream(Protocol[REQ, RES]):
     async def __call__(
-        self, request: AsyncIterator[REQ], ctx: RequestContext[REQ, RES]
+        self, request: AsyncIterator[REQ], ctx: RequestContext[REQ, RES], /
     ) -> RES: ...
 
 
 class _ExecuteServerStream(Protocol[REQ, RES]):
     def __call__(
-        self, request: REQ, ctx: RequestContext[REQ, RES]
+        self, request: REQ, ctx: RequestContext[REQ, RES], /
     ) -> AsyncIterator[RES]: ...
 
 
 class _ExecuteBidiStream(Protocol[REQ, RES]):
     def __call__(
-        self, request: AsyncIterator[REQ], ctx: RequestContext[REQ, RES]
+        self, request: AsyncIterator[REQ], ctx: RequestContext[REQ, RES], /
     ) -> AsyncIterator[RES]: ...
 
 
@@ -99,7 +97,7 @@ class ConnectClient:
         interceptors: Iterable[Interceptor] = (),
         http_client: HTTPClient | None = None,
     ) -> None:
-        """Creates a new asynchronous Connect client.
+        """Create a new asynchronous Connect client.
 
         When providing an HTTP client, for example to configure TLS settings,
         it is the caller's responsibility to close it.
@@ -129,6 +127,7 @@ class ConnectClient:
             read_max_bytes: The maximum number of bytes to read from the response.
             interceptors: A list of interceptors to apply to requests.
             http_client: A pyqwest Client to use for requests.
+
         """
         self._address = address
         self._codec = codec or proto_binary_codec()
@@ -291,7 +290,7 @@ class ConnectClient:
         return self._execute_bidi_stream(request, ctx)
 
     async def _send_request_unary(
-        self, request: REQ, ctx: RequestContext[REQ, RES]
+        self, request: REQ, ctx: RequestContext[REQ, RES], /
     ) -> RES:
         if isinstance(self._protocol, GRPCClientProtocol):
             return await _consume_single_response(
@@ -327,6 +326,7 @@ class ConnectClient:
                     ),
                     timeout_s,
                 )
+            handle_response_headers(resp.status, resp.headers)
 
             self._protocol.validate_response(
                 self._codec.name(), resp.status, resp.headers.get("content-type", "")
@@ -336,7 +336,6 @@ class ConnectClient:
             self._protocol.handle_response_compression(
                 resp.headers, self._response_compressions, stream=False
             )
-            handle_response_headers(resp.headers)
 
             if resp.status == 200:
                 if (
@@ -360,19 +359,19 @@ class ConnectClient:
             raise ConnectError(Code.UNAVAILABLE, str(e)) from e
 
     async def _send_request_client_stream(
-        self, request: AsyncIterator[REQ], ctx: RequestContext[REQ, RES]
+        self, request: AsyncIterator[REQ], ctx: RequestContext[REQ, RES], /
     ) -> RES:
         return await _consume_single_response(
             self._send_request_bidi_stream(request, ctx)
         )
 
     def _send_request_server_stream(
-        self, request: REQ, ctx: RequestContext[REQ, RES]
+        self, request: REQ, ctx: RequestContext[REQ, RES], /
     ) -> AsyncIterator[RES]:
         return self._send_request_bidi_stream(_yield_single_message(request), ctx)
 
     async def _send_request_bidi_stream(
-        self, request: AsyncIterator[REQ], ctx: RequestContext[REQ, RES]
+        self, request: AsyncIterator[REQ], ctx: RequestContext[REQ, RES], /
     ) -> AsyncIterator[RES]:
         request_headers = HTTPHeaders(ctx.request_headers.allitems())
         url = f"{self._address}/{ctx.method.service_name}/{ctx.method.name}"
@@ -394,7 +393,7 @@ class ConnectClient:
                     "POST", url, headers=request_headers, content=request_data
                 ) as resp,
             ):
-                handle_response_headers(resp.headers)
+                handle_response_headers(resp.status, resp.headers)
                 if resp.status == 200:
                     self._protocol.validate_stream_response(
                         self._codec.name(), resp.headers.get("content-type", "")

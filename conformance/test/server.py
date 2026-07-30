@@ -19,8 +19,7 @@ from typing import TYPE_CHECKING, Literal, TypeVar, get_args
 import _cov_embed  # noqa: F401
 from _util import create_standard_streams
 from gen.connectrpc.conformance.v1 import service_pb
-from gen.connectrpc.conformance.v1.config_pb import Code as ConformanceCode
-from gen.connectrpc.conformance.v1.config_pb import HTTPVersion
+from gen.connectrpc.conformance.v1.config_pb import Code as ConformanceCode, HTTPVersion
 from gen.connectrpc.conformance.v1.server_compat_pb import (
     ServerCompatRequest,
     ServerCompatResponse,
@@ -37,6 +36,7 @@ from gen.connectrpc.conformance.v1.service_pb import (
     ClientStreamRequest,
     ClientStreamResponse,
     ConformancePayload,
+    Header as ConformanceHeader,
     IdempotentUnaryRequest,
     IdempotentUnaryResponse,
     ServerStreamRequest,
@@ -46,7 +46,6 @@ from gen.connectrpc.conformance.v1.service_pb import (
     UnaryResponse,
     UnaryResponseDefinition,
 )
-from gen.connectrpc.conformance.v1.service_pb import Header as ConformanceHeader
 from protobuf import Oneof, Registry
 from protobuf.wkt import Any
 from pyvoy import PyvoyServer

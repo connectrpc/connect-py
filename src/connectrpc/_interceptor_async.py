@@ -21,8 +21,9 @@ class UnaryInterceptor(Protocol):
         call_next: Callable[[REQ, RequestContext], Awaitable[RES]],
         request: REQ,
         ctx: RequestContext,
+        /,
     ) -> RES:
-        """Intercepts a unary RPC.
+        """Intercept a unary RPC.
 
         Args:
             call_next: A callable to invoke to continue processing, either to another
@@ -35,6 +36,7 @@ class UnaryInterceptor(Protocol):
 
         Returns:
             The response message.
+
         """
         ...
 
@@ -48,8 +50,9 @@ class ClientStreamInterceptor(Protocol):
         call_next: Callable[[AsyncIterator[REQ], RequestContext], Awaitable[RES]],
         request: AsyncIterator[REQ],
         ctx: RequestContext,
+        /,
     ) -> RES:
-        """Intercepts a client-streaming RPC.
+        """Intercept a client-streaming RPC.
 
         Args:
             call_next: A callable to invoke to continue processing, either to another
@@ -62,6 +65,7 @@ class ClientStreamInterceptor(Protocol):
 
         Returns:
             The response message.
+
         """
         ...
 
@@ -75,8 +79,9 @@ class ServerStreamInterceptor(Protocol):
         call_next: Callable[[REQ, RequestContext], AsyncIterator[RES]],
         request: REQ,
         ctx: RequestContext,
+        /,
     ) -> AsyncIterator[RES]:
-        """Intercepts a server-streaming RPC.
+        """Intercept a server-streaming RPC.
 
         Args:
             call_next: A callable to invoke to continue processing, either to another
@@ -89,6 +94,7 @@ class ServerStreamInterceptor(Protocol):
 
         Returns:
             The response message iterator.
+
         """
         ...
 
@@ -102,8 +108,9 @@ class BidiStreamInterceptor(Protocol):
         call_next: Callable[[AsyncIterator[REQ], RequestContext], AsyncIterator[RES]],
         request: AsyncIterator[REQ],
         ctx: RequestContext,
+        /,
     ) -> AsyncIterator[RES]:
-        """Intercepts a bidirectional-streaming RPC.
+        """Intercept a bidirectional-streaming RPC.
 
         Args:
             call_next: A callable to invoke to continue processing, either to another
@@ -116,30 +123,37 @@ class BidiStreamInterceptor(Protocol):
 
         Returns:
             The response message iterator.
+
         """
         ...
 
 
 @runtime_checkable
 class MetadataInterceptor(Protocol[T]):
-    """An interceptor that can be applied to any type of method, only having
-    access to metadata such as headers and trailers.
+    """An interceptor that can be applied to any type of method.
 
-    To access request and response bodies of a method, instead use an interceptor
-    corresponding to the type of method such as [UnaryInterceptor][].
+    Only metadata such as headers and trailers is accessible. To access request
+    and response bodies of a method, instead use an interceptor corresponding to
+    the type of method such as [UnaryInterceptor][].
     """
 
     async def on_start(self, ctx: RequestContext) -> T:
-        """Called when the RPC starts. The return value will be passed to [on_end][] as-is.
-        For example, if measuring RPC invocation time, on_start may return the current
-        time. If a return value isn't needed or [on_end][] won't be used, return None.
+        """Handle the start of the RPC.
+
+        The return value is passed to [on_end][] as-is. For example, if measuring
+        RPC invocation time, on_start may return the current time. If a return
+        value isn't needed or [on_end][] won't be used, return None.
         """
         ...
 
     async def on_end(
-        self, token: T, ctx: RequestContext, error: Exception | None
+        self,
+        token: T,  # noqa: ARG002 # keep name clean for public API
+        ctx: RequestContext,  # noqa: ARG002 # keep name clean for public API
+        error: Exception | None,  # noqa: ARG002 # keep name clean for public API
+        /,
     ) -> None:
-        """Called when the RPC ends."""
+        """Handle the end of the RPC."""
         return
 
 

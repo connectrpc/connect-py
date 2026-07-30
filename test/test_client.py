@@ -57,7 +57,7 @@ def test_headers_sync(headers, trailers, response_headers, response_trailers) ->
             self.headers = headers
             self.trailers = trailers
 
-        def make_hat(self, request, ctx):
+        def make_hat(self, _request, ctx):
             for key, value in self.headers:
                 ctx.response_headers.add(key, value)
             for key, value in self.trailers:
@@ -73,8 +73,12 @@ def test_headers_sync(headers, trailers, response_headers, response_trailers) ->
     )
 
     with ResponseMetadata() as resp:
+        assert resp.http_status is None
+        assert list(resp.headers.allitems()) == []
+        assert list(resp.trailers.allitems()) == []
         client.make_hat(Size(inches=10))
 
+    assert resp.http_status == 200
     assert list(resp.headers.allitems()) == response_headers
     assert list(resp.trailers.allitems()) == response_trailers
 
@@ -93,7 +97,7 @@ async def test_headers_async(
             self.headers = headers
             self.trailers = trailers
 
-        async def make_hat(self, request, ctx):
+        async def make_hat(self, _request, ctx):
             for key, value in self.headers:
                 ctx.response_headers.add(key, value)
             for key, value in self.trailers:
@@ -109,7 +113,11 @@ async def test_headers_async(
     )
 
     with ResponseMetadata() as resp:
+        assert resp.http_status is None
+        assert list(resp.headers.allitems()) == []
+        assert list(resp.trailers.allitems()) == []
         await client.make_hat(Size(inches=10))
 
+    assert resp.http_status == 200
     assert list(resp.headers.allitems()) == response_headers
     assert list(resp.trailers.allitems()) == response_trailers

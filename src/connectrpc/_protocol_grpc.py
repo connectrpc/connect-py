@@ -14,7 +14,7 @@ from ._envelope import EnvelopeReader, EnvelopeWriter
 from ._gen.google.rpc.status_pb import Status
 from ._protocol import (
     ConnectWireError,
-    HTTPException,
+    HTTPError,
     host_to_server_address,
     url_to_server_address,
 )
@@ -58,7 +58,7 @@ class GRPCServerProtocol:
         client_address: str | None = None,
     ) -> RequestContext[REQ, RES]:
         if http_method != "POST":
-            raise HTTPException(HTTPStatus.METHOD_NOT_ALLOWED, [("allow", "POST")])
+            raise HTTPError(HTTPStatus.METHOD_NOT_ALLOWED, [("allow", "POST")])
 
         timeout_header = headers.get(GRPC_HEADER_TIMEOUT)
         timeout_ms = _parse_timeout(timeout_header) if timeout_header else None
@@ -88,7 +88,7 @@ class GRPCServerProtocol:
     def compression_header_name(self) -> str:
         return GRPC_HEADER_COMPRESSION
 
-    def codec_name_from_content_type(self, content_type: str, *, stream: bool) -> str:
+    def codec_name_from_content_type(self, content_type: str, *, stream: bool) -> str:  # noqa: ARG002
         if content_type.startswith(GRPC_CONTENT_TYPE_PREFIX):
             return content_type[len(GRPC_CONTENT_TYPE_PREFIX) :]
         return "proto"
@@ -110,7 +110,7 @@ class GRPCWebServerProtocol(GRPCServerProtocol):
     def content_type(self, codec: Codec) -> str:
         return f"{GRPC_WEB_CONTENT_TYPE_PREFIX}{codec.name()}"
 
-    def codec_name_from_content_type(self, content_type: str, *, stream: bool) -> str:
+    def codec_name_from_content_type(self, content_type: str, *, stream: bool) -> str:  # noqa: ARG002
         if content_type.startswith(GRPC_WEB_CONTENT_TYPE_PREFIX):
             return content_type[len(GRPC_WEB_CONTENT_TYPE_PREFIX) :]
         return "proto"
@@ -171,7 +171,7 @@ class GRPCEnvelopeWriter(EnvelopeWriter):
                 grpc_status = Status(
                     code=int(status),
                     message=error.message,
-                    details=[d._any for d in error.details],  # noqa: SLF001
+                    details=[d._any for d in error.details],
                 )
                 grpc_status_bin = (
                     b64encode(grpc_status.to_binary()).decode().rstrip("=")
@@ -206,7 +206,7 @@ class GRPCClientProtocol:
         user_headers: Headers | Mapping[str, str] | None,
         timeout_ms: int | None,
         codec: Codec,
-        stream: bool,
+        stream: bool,  # noqa: ARG002
         accept_compression: str,
         send_compression: Compression | None,
     ) -> RequestContext[REQ, RES]:
@@ -271,7 +271,11 @@ class GRPCClientProtocol:
             )
 
     def handle_response_compression(
-        self, headers: HTTPHeaders, compressions: dict[str, Compression], stream: bool
+        self,
+        headers: HTTPHeaders,
+        compressions: dict[str, Compression],
+        *,
+        stream: bool,  # noqa: ARG002
     ) -> Compression:
         encoding = headers.get(GRPC_HEADER_COMPRESSION)
         if not encoding:
@@ -321,7 +325,7 @@ class GRPCEnvelopeReader(EnvelopeReader[RES]):
         self._read_message = False
 
     def handle_end_message(
-        self, prefix_byte: int, message_data: bytes | bytearray
+        self, _prefix_byte: int, _message_data: bytes | bytearray, /
     ) -> bool:
         # It's coincidence that this method is called when there is a body and not
         # when there isn't. Somewhat hacky, but easiest way to handle the case
@@ -329,7 +333,9 @@ class GRPCEnvelopeReader(EnvelopeReader[RES]):
         self._read_message = True
         return False
 
-    def get_response_trailers(self, response: Response | SyncResponse) -> HTTPHeaders:
+    def get_response_trailers(
+        self, response: Response | SyncResponse, /
+    ) -> HTTPHeaders:
         return response.trailers
 
     def handle_response_complete(
@@ -395,7 +401,9 @@ class GRPCWebEnvelopeReader(GRPCEnvelopeReader):
             self._trailers.add(key.decode().strip(), value.decode().strip())
         return True
 
-    def get_response_trailers(self, response: Response | SyncResponse) -> HTTPHeaders:
+    def get_response_trailers(
+        self, _response: Response | SyncResponse, /
+    ) -> HTTPHeaders:
         return self._trailers
 
 

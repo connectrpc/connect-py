@@ -1,3 +1,5 @@
+"""Protoc plugin for generating Connect code."""
+
 from __future__ import annotations
 
 import importlib.metadata
@@ -85,6 +87,8 @@ class _IOOption(str, Enum):
 
 @dataclass
 class Options:
+    """Options for the Connect code generator."""
+
     protobuf: _ProtobufOption = _ProtobufOption.PY
     """The protobuf implementation to generate code for."""
 
@@ -135,7 +139,7 @@ def _generate_async_stubs(f: File, service: DescService, options: Options) -> No
                 _message_ident(method, method.input, options),
                 ", ",
                 _message_ident(method, method.output, options),
-                "]) -> ",
+                "], /) -> ",
                 *response_type,
                 ":",
             ):
@@ -321,7 +325,7 @@ def _generate_sync_stubs(f: File, service: DescService, options: Options) -> Non
                 _message_ident(method, method.input, options),
                 ", ",
                 _message_ident(method, method.output, options),
-                "]) -> ",
+                "], /) -> ",
                 *response_type,
                 ":",
             ):
@@ -651,6 +655,7 @@ def _pascal_to_snake_case(text: str) -> str:
 
 
 def main() -> None:
+    """Run the protoc plugin for generating Connect code."""
     run(
         "protoc-gen-connectrpc-py",
         importlib.metadata.version("protoc-gen-connectrpc"),

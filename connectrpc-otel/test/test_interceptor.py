@@ -39,20 +39,22 @@ if TYPE_CHECKING:
 
 
 class ElizaServiceTest(ElizaService):
-    async def say(self, request: SayRequest, ctx: RequestContext) -> SayResponse:
+    async def say(self, request: SayRequest, _ctx: RequestContext) -> SayResponse:
         if request.sentence == "connect error":
             raise ConnectError(Code.FAILED_PRECONDITION, "connect error")
         if request.sentence == "unknown error":
-            raise ValueError("unknown error")
+            msg = "unknown error"
+            raise ValueError(msg)
         return SayResponse(sentence="Hello")
 
 
 class ElizaServiceTestSync(ElizaServiceSync):
-    def say(self, request: SayRequest, ctx: RequestContext) -> SayResponse:
+    def say(self, request: SayRequest, _ctx: RequestContext) -> SayResponse:
         if request.sentence == "connect error":
             raise ConnectError(Code.FAILED_PRECONDITION, "connect error")
         if request.sentence == "unknown error":
-            raise ValueError("unknown error")
+            msg = "unknown error"
+            raise ValueError(msg)
         return SayResponse(sentence="Hello")
 
 
@@ -136,7 +138,8 @@ def client(
         case "sync":
             return client_sync
         case _:
-            raise ValueError(f"invalid client type {request.param}")
+            msg = f"invalid client type {request.param}"
+            raise ValueError(msg)
 
 
 @pytest.fixture(params=["async", "sync"])
@@ -151,7 +154,8 @@ def app(
         case "sync":
             return app_sync
         case _:
-            raise ValueError(f"invalid app type {request.param}")
+            msg = f"invalid app type {request.param}"
+            raise ValueError(msg)
 
 
 def get_metric_data(metric_reader: InMemoryMetricReader) -> list[Metric]:

@@ -57,14 +57,17 @@ class OpenTelemetryInterceptor:
         meter_provider: MeterProvider | None = None,
         client: bool = False,
     ) -> None:
-        """Creates a new OpenTelemetry interceptor.
+        """Create a new OpenTelemetry interceptor.
 
         Args:
             propagator: The OpenTelemetry TextMapPropagator to use. If not
                 provided, the global default will be used.
             tracer_provider: The OpenTelemetry TracerProvider to use. If not
                 provided, the global default will be used.
+            meter_provider: The OpenTelemetry MeterProvider to use. If not
+                provided, the global default will be used.
             client: Whether this interceptor is for a client or server.
+
         """
         self._client = client
         tracer_provider = tracer_provider or get_tracer_provider()
@@ -123,7 +126,7 @@ class OpenTelemetryInterceptor:
         self.on_end_sync(token, ctx, error)
 
     def on_end_sync(
-        self, token: Token, ctx: RequestContext, error: Exception | None
+        self, token: Token, _ctx: RequestContext, error: Exception | None
     ) -> None:
         cm, span, start_time, shared_attrs = token
         end_time = time.perf_counter()

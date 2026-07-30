@@ -16,11 +16,12 @@ if TYPE_CHECKING:
 _current_response = ContextVar["ResponseMetadata"]("connectrpc_current_response")
 
 
-def handle_response_headers(headers: HTTPHeaders) -> None:
+def handle_response_headers(status: int, headers: HTTPHeaders) -> None:
     response = _current_response.get(None)
     if not response:
         return
 
+    response._http_status = status
     response_headers: Headers = Headers()
     response_trailers: Headers = Headers()
     for key, value in headers.items():
@@ -32,9 +33,9 @@ def handle_response_headers(headers: HTTPHeaders) -> None:
             obj = response_headers
         obj.add(normalized_key, value)
     if response_headers:
-        response._headers = response_headers  # noqa: SLF001
+        response._headers = response_headers
     if response_trailers:
-        response._trailers = response_trailers  # noqa: SLF001
+        response._trailers = response_trailers
 
 
 def handle_response_trailers(
@@ -51,17 +52,16 @@ def handle_response_trailers(
             for v in value:
                 response_trailers.add(key, v)
     if response_trailers:
-        response._trailers = response_trailers  # noqa: SLF001
+        response._trailers = response_trailers
 
 
 class ResponseMetadata:
-    """
-    Response metadata separate from the message payload.
+    """Response metadata separate from the message payload.
 
     Commonly, RPC client invocations only need the message payload and do not need to
     directly read other data such as headers or trailers. In cases where they are needed,
-    initialize this class in a context manager to access the response headers and trailers
-    for the invocation made within the context.
+    initialize this class in a context manager to access the response HTTP status,
+    headers and trailers for the invocation made within the context.
 
     Example:
         ```python
@@ -71,8 +71,10 @@ class ResponseMetadata:
             check_response_headers(resp_data.headers())
             check_response_trailers(resp_data.trailers())
         ```
+
     """
 
+    _http_status: int | None = None
     _headers: Headers | None = None
     _trailers: Headers | None = None
     _token: Token[ResponseMetadata] | None = None
@@ -94,6 +96,15 @@ class ResponseMetadata:
             with contextlib.suppress(Exception):
                 _current_response.reset(self._token)
         self._token = None
+
+    @property
+    def http_status(self) -> int | None:
+        """Returns the HTTP status code of the response.
+
+        If an HTTP response wasn't received, for example due to a network error,
+        this will return `None`.
+        """
+        return self._http_status
 
     @property
     def headers(self) -> Headers:

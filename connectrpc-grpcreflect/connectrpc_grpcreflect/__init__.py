@@ -19,8 +19,6 @@ from ._gen.grpc.reflection.v1.reflection_connect import (
 )
 from ._gen.grpc.reflection.v1alpha.reflection_connect import (
     ServerReflectionASGIApplication as ServerReflectionAlphaASGIApplication,
-)
-from ._gen.grpc.reflection.v1alpha.reflection_connect import (
     ServerReflectionWSGIApplication as ServerReflectionAlphaWSGIApplication,
 )
 from ._service import (

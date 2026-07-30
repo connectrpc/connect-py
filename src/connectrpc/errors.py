@@ -1,3 +1,5 @@
+"""The Connect error types."""
+
 from __future__ import annotations
 
 __all__ = ["ConnectError", "ErrorDetail"]
@@ -28,6 +30,11 @@ class ErrorDetail:
     """
 
     def __init__(self, message: Message) -> None:
+        """Create a new error detail from a Protobuf message.
+
+        If the message is an Any, it is used directly. Otherwise, the message
+        is packed into an Any, with it also stored to be recoverable from [value()][].
+        """
         if isinstance(message, Any):
             self._message = None
             self._any = message
@@ -60,7 +67,7 @@ class ErrorDetail:
     def value(
         self, desc_or_registry: Registry | DescMessage | type[Message] | None = None
     ) -> Message | None:
-        """The details message as a Protobuf message, or None if it cannot be deserialized."""
+        """Get the details message as a Protobuf message, or None if it cannot be deserialized."""
         if self._message:
             return self._message
         if not desc_or_registry:
@@ -86,13 +93,13 @@ class ConnectError(Exception):
     def __init__(
         self, code: Code, message: str, details: Iterable[Message | ErrorDetail] = ()
     ) -> None:
-        """
-        Creates a new Connect error.
+        """Create a new Connect error.
 
         Args:
             code: The error code.
             message: The error message.
             details: Additional details about the error.
+
         """
         super().__init__(message)
         self._code = code
@@ -106,12 +113,15 @@ class ConnectError(Exception):
 
     @property
     def code(self) -> Code:
+        """The Connect error code."""
         return self._code
 
     @property
     def message(self) -> str:
+        """The Connect error message."""
         return self._message
 
     @property
     def details(self) -> Sequence[ErrorDetail]:
+        """Additional details about the error, if any."""
         return self._details

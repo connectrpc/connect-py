@@ -38,7 +38,8 @@ class CustomCodec(Codec[Message, Message]):
             case Hat(size=size, color=color):
                 return f"{size}:{color}".encode()
             case _:
-                raise ValueError(f"unexpected message type: {type(message)}")
+                msg = f"unexpected message type: {type(message)}"
+                raise ValueError(msg)
 
     def decode(self, data: bytes | bytearray, message_class: type[Message]) -> Message:
         s = data.decode()
@@ -54,12 +55,12 @@ class CustomCodec(Codec[Message, Message]):
 
 
 class SimpleHaberdasher(Haberdasher):
-    async def make_hat(self, request: Size, ctx):
+    async def make_hat(self, request: Size, _ctx):
         return Hat(size=request.inches, color="blue")
 
 
-class SimpleHabersahserSync(HaberdasherSync):
-    def make_hat(self, request: Size, ctx):
+class SimpleHaberdasherSync(HaberdasherSync):
+    def make_hat(self, request: Size, _ctx):
         return Hat(size=request.inches, color="blue")
 
 
@@ -133,7 +134,7 @@ def test_custom_codec_sync() -> None:
 
     transport = LoggingSyncTransport(
         WSGITransport(
-            HaberdasherWSGIApplication(SimpleHabersahserSync(), codecs=[CustomCodec()])
+            HaberdasherWSGIApplication(SimpleHaberdasherSync(), codecs=[CustomCodec()])
         )
     )
     client = HaberdasherClientSync(

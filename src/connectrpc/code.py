@@ -1,3 +1,5 @@
+"""The Connect error codes."""
+
 from __future__ import annotations
 
 __all__ = ["Code"]
@@ -7,9 +9,7 @@ from enum import Enum
 
 
 class Code(Enum):
-    """
-    Enumeration of Connect error codes.
-    """
+    """Enumeration of Connect error codes."""
 
     CANCELED = "canceled"
     """RPC canceled, usually by the caller."""
