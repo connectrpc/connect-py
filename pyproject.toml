@@ -29,7 +29,7 @@ classifiers = [
   "Typing :: Typed",
 ]
 dependencies = [
-  "protobuf-py==0.1.1",
+  "protobuf-py>=0.1.1",
   "pyqwest>=0.5.1",
 ]
 
@@ -62,11 +62,11 @@ dev = [
   "pyvoy==0.5.0",
   "ruff==0.16.0",
   "tombi==1.2.4",
-  "ty==0.0.63",
+  "ty==0.0.65",
   "types-grpcio==1.82.1.20260724",
   "types-protobuf==7.34.1.20260518",
   "typing_extensions==4.16.0",
-  "uvicorn==0.51.0",
+  "uvicorn==0.52.0",
   "zstandard==0.25.0",
 
   # dev dependencies only used in subprojects. Optimal structure would include these
@@ -80,14 +80,14 @@ dev = [
   "opentelemetry-instrumentation-wsgi==0.65b0",
   "opentelemetry-sdk==1.44.0",
   "protobuf>=5.28",
-  "protoc-gen-grpc-py==0.2.0",
+  "protoc-gen-grpc-py==0.2.1",
   "protoc-gen-py==0.2.0",
 ]
 
 docs = ["mkdocstrings-python==2.0.5", "zensical==0.0.51"]
 
 [build-system]
-requires = ["uv_build>=0.11.0,<0.12.0"]
+requires = ["uv_build>=0.12.0,<0.13.0"]
 build-backend = "uv_build"
 
 [tool.pytest]
@@ -125,6 +125,8 @@ ignore = [
   "Q",
   "COM812",
   "COM819",
+
+  "CPY001",  # We don't use copyright headers
 
   "TRY301",  # Abstract `raise` to an inner function - prevents a common pattern of having different validation points when creating a single response
   "SLF001",  # Private member accessed

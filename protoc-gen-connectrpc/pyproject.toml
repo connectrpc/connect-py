@@ -43,7 +43,7 @@ classifiers = [
   "Topic :: Software Development :: Compilers",
   "Topic :: System :: Networking",
 ]
-dependencies = ["protobuf-py==0.2.0"]
+dependencies = ["protobuf-py>=0.1.1"]
 
 [project.urls]
 Homepage = "https://github.com/connectrpc/connect-py"
@@ -54,7 +54,7 @@ Repository = "https://github.com/connectrpc/connect-py"
 protoc-gen-connectrpc = "protoc_gen_connectrpc:main"
 
 [build-system]
-requires = ["uv_build>=0.11.0,<0.12.0"]
+requires = ["uv_build>=0.12.0,<0.13.0"]
 build-backend = "uv_build"
 
 [tool.uv.build-backend]

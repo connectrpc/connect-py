@@ -110,9 +110,13 @@ from connectrpc.request import RequestContext
 from your_service_pb import HelloRequest, HelloResponse
 from your_service_connect import HelloService, HelloServiceASGIApplication
 
+
 class MyHelloService(HelloService):
-    async def say_hello(self, request: HelloRequest, ctx: RequestContext) -> HelloResponse:
+    async def say_hello(
+        self, request: HelloRequest, ctx: RequestContext
+    ) -> HelloResponse:
         return HelloResponse(message=f"Hello, {request.name}!")
+
 
 # Create ASGI app
 app = HelloServiceASGIApplication(MyHelloService())
@@ -127,6 +131,7 @@ Client libraries are automatically generated for you. Here's what the async clie
 from your_service_pb import HelloRequest, HelloResponse
 from your_service_connect import HelloServiceClient
 
+
 async def main():
     # Create async client
     async with HelloServiceClient("https://api.example.com") as client:
@@ -140,11 +145,13 @@ And the sync client:
 from your_service_pb import HelloRequest
 from your_service_connect import HelloServiceClientSync
 
+
 def main():
     # Create sync client
     with HelloServiceClientSync("https://api.example.com") as client:
         response = client.say_hello(HelloRequest(name="World"))
         print(response.message)  # "Hello, World!"
+
 
 if __name__ == "__main__":
     main()
