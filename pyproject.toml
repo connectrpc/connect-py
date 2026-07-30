@@ -29,7 +29,7 @@ classifiers = [
   "Typing :: Typed",
 ]
 dependencies = [
-  "protobuf-py==0.1.1",
+  "protobuf-py>=0.1.1",
   "pyqwest>=0.5.1",
 ]
 
@@ -47,11 +47,11 @@ dev = [
   "example",
   "protoc-gen-connectrpc",
 
-  "asgiref==3.11.1",
+  "asgiref==3.12.1",
   "brotli==1.2.0",
-  "buf-bin==1.71.0",
+  "buf-bin==1.72.0",
   "granian==2.7.9",
-  "grpcio-tools==1.82.1",
+  "grpcio-tools==1.83.0",
   "gunicorn==26.0.0",
   "hypercorn==0.18.0",
   "poethepoet==0.48.0",
@@ -59,14 +59,14 @@ dev = [
   "pytest-asyncio==1.4.0",
   "pytest-cov==7.1.0",
   "pytest-timeout==2.4.0",
-  "pyvoy==0.4.2",
-  "ruff==0.15.21",
-  "tombi==1.2.0",
-  "ty==0.0.59",
-  "types-grpcio==1.82.1.20260711",
+  "pyvoy==0.5.0",
+  "ruff==0.16.0",
+  "tombi==1.2.4",
+  "ty==0.0.65",
+  "types-grpcio==1.82.1.20260724",
   "types-protobuf==7.34.1.20260518",
   "typing_extensions==4.16.0",
-  "uvicorn==0.51.0",
+  "uvicorn==0.52.0",
   "zstandard==0.25.0",
 
   # dev dependencies only used in subprojects. Optimal structure would include these
@@ -80,14 +80,14 @@ dev = [
   "opentelemetry-instrumentation-wsgi==0.65b0",
   "opentelemetry-sdk==1.44.0",
   "protobuf>=5.28",
-  "protoc-gen-grpc-py==0.1.1",
-  "protoc-gen-py==0.1.1",
+  "protoc-gen-grpc-py==0.2.1",
+  "protoc-gen-py==0.2.0",
 ]
 
-docs = ["mkdocstrings-python==2.0.5", "zensical==0.0.50"]
+docs = ["mkdocstrings-python==2.0.5", "zensical==0.0.51"]
 
 [build-system]
-requires = ["uv_build>=0.11.0,<0.12.0"]
+requires = ["uv_build>=0.12.0,<0.13.0"]
 build-backend = "uv_build"
 
 [tool.pytest]
@@ -125,6 +125,8 @@ ignore = [
   "Q",
   "COM812",
   "COM819",
+
+  "CPY001",  # We don't use copyright headers
 
   "TRY301",  # Abstract `raise` to an inner function - prevents a common pattern of having different validation points when creating a single response
   "SLF001",  # Private member accessed
