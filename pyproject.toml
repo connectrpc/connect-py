@@ -50,7 +50,7 @@ dev = [
   "asgiref==3.12.1",
   "brotli==1.2.0",
   "buf-bin==1.72.0",
-  "granian==2.7.9",
+  "granian==2.8.1",
   "grpcio-tools==1.83.0",
   "gunicorn==26.0.0",
   "hypercorn==0.18.0",
@@ -60,9 +60,9 @@ dev = [
   "pytest-cov==7.1.0",
   "pytest-timeout==2.4.0",
   "pyvoy==0.5.0",
-  "ruff==0.16.1",
-  "tombi==1.2.6",
-  "ty==0.0.65",
+  "ruff==0.16.2",
+  "tombi==1.2.10",
+  "ty==0.0.70",
   "types-grpcio==1.83.0.20260730",
   "types-protobuf==7.34.1.20260518",
   "typing_extensions==4.16.0",
@@ -80,11 +80,11 @@ dev = [
   "opentelemetry-instrumentation-wsgi==0.65b0",
   "opentelemetry-sdk==1.44.0",
   "protobuf>=5.28",
-  "protoc-gen-grpc-py==0.2.1",
-  "protoc-gen-py==0.2.0",
+  "protoc-gen-grpc-py==0.3.0",
+  "protoc-gen-py==0.3.0",
 ]
 
-docs = ["mkdocstrings-python==2.0.5", "zensical==0.0.52"]
+docs = ["mkdocstrings-python==2.0.5", "zensical==0.0.53"]
 
 [build-system]
 requires = ["uv_build>=0.12.0,<0.13.0"]
