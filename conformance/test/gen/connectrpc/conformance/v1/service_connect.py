@@ -151,7 +151,6 @@ class ConformanceService(Protocol):
 
         - if the response_delay_ms duration is specified, the server should wait that
           long in between sending each response message.
-
         """
         raise ConnectError(Code.UNIMPLEMENTED, 'Not implemented')
 
@@ -442,7 +441,6 @@ class ConformanceServiceClient(ConnectClient):
 
         - if the response_delay_ms duration is specified, the server should wait that
           long in between sending each response message.
-
         """
         return self.execute_bidi_stream(
             request=request,
@@ -632,7 +630,6 @@ class ConformanceServiceSync(Protocol):
 
         - if the response_delay_ms duration is specified, the server should wait that
           long in between sending each response message.
-
         """
         raise ConnectError(Code.UNIMPLEMENTED, 'Not implemented')
 
@@ -918,7 +915,6 @@ class ConformanceServiceClientSync(ConnectClientSync):
 
         - if the response_delay_ms duration is specified, the server should wait that
           long in between sending each response message.
-
         """
         return self.execute_bidi_stream(
             request=request,

@@ -8,8 +8,16 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import TYPE_CHECKING
 
-from protobuf._sanitization import escape_identifier
-from protobuf.plugin import File, Ident, Module, Schema, get_comments, run
+from protobuf.plugin import (
+    File,
+    Ident,
+    Module,
+    Schema,
+    escape_public_identifier,
+    get_comments,
+    python_keywords,
+    run,
+)
 from protobuf.wkt import MethodOptions
 
 if TYPE_CHECKING:
@@ -63,6 +71,19 @@ _ENDPOINT = _CONNECTRPC_SERVER.ident("Endpoint")
 _ENDPOINT_SYNC = _CONNECTRPC_SERVER.ident("EndpointSync")
 _CONNECT_ASGI_APPLICATION = _CONNECTRPC_SERVER.ident("ConnectASGIApplication")
 _CONNECT_WSGI_APPLICATION = _CONNECTRPC_SERVER.ident("ConnectWSGIApplication")
+
+_KEYWORDS = frozenset(
+    python_keywords()
+    | {
+        # While not strictly necessary, we go ahead and share keywords for service and client
+        # to have the same names in generated code for them.
+        "desc",
+        "execute_unary",
+        "execute_client_stream",
+        "execute_server_stream",
+        "execute_bidi_stream",
+    }
+)
 
 
 class _ProtobufOption(str, Enum):
@@ -119,7 +140,7 @@ def _generate_file(f: File, desc: DescFile, options: Options) -> None:
 
 
 def _generate_async_stubs(f: File, service: DescService, options: Options) -> None:
-    service_name = escape_identifier(service.name)
+    service_name = escape_public_identifier(service.name, python_keywords())
     default_server_codecs = (
         "_DEFAULT_CODECS" if options.protobuf == _ProtobufOption.GOOGLE else "None"
     )
@@ -157,7 +178,7 @@ def _generate_async_stubs(f: File, service: DescService, options: Options) -> No
     f.print()
     with f.scope(
         "class ",
-        escape_identifier(service.name),
+        service_name,
         "ASGIApplication(",
         _CONNECT_ASGI_APPLICATION,
         "[",
@@ -306,7 +327,7 @@ def _generate_async_stubs(f: File, service: DescService, options: Options) -> No
 
 
 def _generate_sync_stubs(f: File, service: DescService, options: Options) -> None:
-    service_name = f"{escape_identifier(service.name)}"
+    service_name = escape_public_identifier(service.name, python_keywords())
     default_codecs = (
         "_DEFAULT_CODECS" if options.protobuf == _ProtobufOption.GOOGLE else "None"
     )
@@ -342,11 +363,7 @@ def _generate_sync_stubs(f: File, service: DescService, options: Options) -> Non
 
     f.print()
     with f.scope(
-        "class ",
-        escape_identifier(service.name),
-        "WSGIApplication(",
-        _CONNECT_WSGI_APPLICATION,
-        "):",
+        "class ", service_name, "WSGIApplication(", _CONNECT_WSGI_APPLICATION, "):"
     ):
         with f.scope("def __init__("):
             f.print("self,")
@@ -531,25 +548,14 @@ def _message_ident(method: DescMethod, message: DescMessage, options: Options) -
 
 
 def _print_docstring(f: File, desc: DescService | DescMethod) -> None:
-    comments = get_comments(desc)
-    text = ""
-    if comments.leading:
-        text += comments.leading.removesuffix("\n")
-    if comments.trailing:
-        if len(text) > 0:
-            text += "\n\n"
-        text += comments.trailing.removesuffix("\n")
-    if len(text) > 0:
-        text += "\n"
+    comment_lines = get_comments(desc).lines()
 
-    if not text:
+    if not comment_lines:
         return
 
     with f.doc():
-        for line in text.splitlines():
-            # Comments in protobuf often start with a space, this
-            # leads to weird indentation in the generated docstring, so we remove it.
-            f.print(line.removeprefix(" "))
+        for line in comment_lines:
+            f.print(line)
 
 
 def _generate_desc_method(f: File, service: DescService, options: Options) -> None:
@@ -618,7 +624,7 @@ def _client_execute_method(method: DescMethod) -> str:
 
 
 def _method_local_name(method: DescMethod) -> str:
-    return escape_identifier(_pascal_to_snake_case(method.name))
+    return escape_public_identifier(_pascal_to_snake_case(method.name), _KEYWORDS)
 
 
 def _method_url(desc: DescMethod) -> str:

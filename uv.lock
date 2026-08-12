@@ -201,7 +201,7 @@ docs = [
 
 [package.metadata]
 requires-dist = [
-    { name = "protobuf-py", specifier = ">=0.1.1" },
+    { name = "protobuf-py", specifier = ">=0.3.0" },
     { name = "pyqwest", specifier = ">=0.5.1" },
 ]
 
@@ -1246,7 +1246,7 @@ dependencies = [
 ]
 
 [package.metadata]
-requires-dist = [{ name = "protobuf-py", specifier = ">=0.1.1" }]
+requires-dist = [{ name = "protobuf-py", specifier = ">=0.3.0" }]
 
 [[package]]
 name = "protoc-gen-grpc-py"
