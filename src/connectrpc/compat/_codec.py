@@ -32,8 +32,11 @@ class ProtoBinaryCodec(Codec[Message, V]):
 class ProtoJSONCodec(Codec[Message, V]):
     """Codec for Protocol bytes | bytearrays JSON format."""
 
-    def __init__(self, name: str = "json") -> None:
+    def __init__(
+        self, name: str = "json", *, ignore_unknown_fields: bool = True
+    ) -> None:
         self._name = name
+        self._ignore_unknown_fields = ignore_unknown_fields
 
     def name(self) -> str:
         return self._name
@@ -43,7 +46,11 @@ class ProtoJSONCodec(Codec[Message, V]):
 
     def decode(self, data: bytes | bytearray, message_class: type[V]) -> V:
         message = message_class()
-        MessageFromJson(data, message)  # ty:ignore[invalid-argument-type] type is incorrect
+        MessageFromJson(
+            data,  # ty:ignore[invalid-argument-type] type is incorrect
+            message,
+            ignore_unknown_fields=self._ignore_unknown_fields,
+        )
         return message
 
 
@@ -62,6 +69,12 @@ def google_protobuf_binary_codec() -> Codec:
     return _proto_binary_codec
 
 
-def google_protobuf_json_codec() -> Codec:
-    """Return the Protocol Buffers JSON codec using google.protobuf."""
-    return _proto_json_codec
+def google_protobuf_json_codec(*, ignore_unknown_fields: bool = True) -> Codec:
+    """Return the Protocol Buffers JSON codec using google.protobuf.
+
+    Args:
+        ignore_unknown_fields: Whether to ignore unknown fields when decoding JSON messages. If not
+                  provided, defaults to True.
+
+    """
+    return ProtoJSONCodec(ignore_unknown_fields=ignore_unknown_fields)
