@@ -58,15 +58,15 @@ dev = [
   "pytest==9.1.1",
   "pytest-asyncio==1.4.0",
   "pytest-cov==7.1.0",
-  "pytest-timeout==2.4.0",
-  "pyvoy==0.5.0",
-  "ruff==0.16.2",
-  "tombi==1.2.10",
-  "ty==0.0.70",
+  "pytest-timeout==2.5.0",
+  "pyvoy==1.0.0",
+  "ruff==0.16.3",
+  "tombi==1.4.1",
+  "ty==0.0.72",
   "types-grpcio==1.83.0.20260730",
-  "types-protobuf==7.34.1.20260518",
+  "types-protobuf==7.34.1.20260816",
   "typing_extensions==4.16.0",
-  "uvicorn==0.52.1",
+  "uvicorn==0.52.3",
   "zstandard==0.25.0",
 
   # dev dependencies only used in subprojects. Optimal structure would include these
@@ -84,7 +84,7 @@ dev = [
   "protoc-gen-py==0.3.0",
 ]
 
-docs = ["mkdocstrings-python==2.0.5", "zensical==0.0.53"]
+docs = ["mkdocstrings-python==2.0.6", "zensical==0.0.55"]
 
 [build-system]
 requires = ["uv_build>=0.12.0,<0.13.0"]
@@ -99,7 +99,7 @@ filterwarnings = [
 ]
 strict = true
 testpaths = ["test"]
-timeout = "1800"  # 30 min
+timeout = 1800  # 30 min
 
 [tool.ruff]
 # Don't run ruff on generated code from external plugins.
@@ -203,7 +203,7 @@ members = [
   "connectrpc-grpcreflect",
   "connectrpc-otel",
   "example",
-  "protoc-gen-connectrpc"
+  "protoc-gen-connectrpc",
 ]
 
 [tool.uv.sources]
