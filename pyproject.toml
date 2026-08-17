@@ -99,7 +99,7 @@ filterwarnings = [
 ]
 strict = true
 testpaths = ["test"]
-timeout = "1800"  # 30 min
+timeout = 1800  # 30 min
 
 [tool.ruff]
 # Don't run ruff on generated code from external plugins.
