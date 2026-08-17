@@ -203,7 +203,7 @@ members = [
   "connectrpc-grpcreflect",
   "connectrpc-otel",
   "example",
-  "protoc-gen-connectrpc"
+  "protoc-gen-connectrpc",
 ]
 
 [tool.uv.sources]
