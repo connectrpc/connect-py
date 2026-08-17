@@ -78,9 +78,16 @@ class ProtoBinaryCodec(Codec[Message, V]):
 class ProtoJSONCodec(Codec[Message, V]):
     """Codec for the Protocol Buffers JSON format."""
 
-    def __init__(self, name: str = "json", registry: Registry | None = None) -> None:
+    def __init__(
+        self,
+        name: str = "json",
+        *,
+        registry: Registry | None = None,
+        ignore_unknown_fields: bool = True,
+    ) -> None:
         self._name = name
         self._registry = registry or DEFAULT_REGISTRY
+        self._ignore_unknown_fields = ignore_unknown_fields
 
     def name(self) -> str:
         return self._name
@@ -89,7 +96,11 @@ class ProtoJSONCodec(Codec[Message, V]):
         return message.to_json(registry=self._registry).encode()
 
     def decode(self, data: bytes | bytearray, message_class: type[V]) -> V:
-        return message_class.from_json(data, registry=self._registry)
+        return message_class.from_json(
+            data,
+            registry=self._registry,
+            ignore_unknown_fields=self._ignore_unknown_fields,
+        )
 
 
 _proto_binary_codec = ProtoBinaryCodec()
@@ -106,14 +117,22 @@ def proto_binary_codec() -> Codec:
     return _proto_binary_codec
 
 
-def proto_json_codec(registry: Registry | None = None) -> Codec:
+def proto_json_codec(
+    registry: Registry | None = None, *, ignore_unknown_fields: bool = True
+) -> Codec:
     """Return the Protocol Buffers JSON codec.
 
     Args:
         registry: An optional protobuf Registry to use for marshaling Any and extensions in messages.
                   If not provided, a default registry containing WKTs will be used.
+        ignore_unknown_fields: Whether to ignore unknown fields when decoding JSON messages. If not
+                  provided, defaults to True.
 
     """
-    if registry:
-        return ProtoJSONCodec(name=CODEC_NAME_JSON, registry=registry)
+    if registry or not ignore_unknown_fields:
+        return ProtoJSONCodec(
+            name=CODEC_NAME_JSON,
+            registry=registry,
+            ignore_unknown_fields=ignore_unknown_fields,
+        )
     return _proto_json_codec
