@@ -50,9 +50,9 @@ dev = [
   "asgiref==3.12.1",
   "brotli==1.2.0",
   "buf-bin==1.72.0",
-  "granian==2.8.1",
+  "granian==2.8.2",
   "grpcio-tools==1.83.0",
-  "gunicorn==26.0.0",
+  "gunicorn==26.1.0",
   "hypercorn==0.18.0",
   "poethepoet==0.48.0",
   "pytest==9.1.1",
@@ -60,13 +60,13 @@ dev = [
   "pytest-cov==7.1.0",
   "pytest-timeout==2.5.0",
   "pyvoy==1.0.0",
-  "ruff==0.16.3",
+  "ruff==0.16.4",
   "tombi==1.4.1",
-  "ty==0.0.72",
+  "ty==0.0.74",
   "types-grpcio==1.83.0.20260730",
-  "types-protobuf==7.34.1.20260816",
+  "types-protobuf==7.35.1.20260823",
   "typing_extensions==4.16.0",
-  "uvicorn==0.52.3",
+  "uvicorn==0.52.4",
   "zstandard==0.25.0",
 
   # dev dependencies only used in subprojects. Optimal structure would include these
@@ -84,7 +84,7 @@ dev = [
   "protoc-gen-py==0.3.0",
 ]
 
-docs = ["mkdocstrings-python==2.0.6", "zensical==0.0.55"]
+docs = ["mkdocstrings-python==2.0.7", "zensical==0.0.57"]
 
 [build-system]
 requires = ["uv_build>=0.12.0,<0.13.0"]
