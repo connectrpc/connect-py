@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import struct
 from http import HTTPStatus
 from typing import TYPE_CHECKING, cast
@@ -29,18 +30,20 @@ if TYPE_CHECKING:
 #
 # The wire protocol is provisional:
 #
-# - The client opens a WebSocket and sends a text message containing an
-#   HTTP/1.1-encoded request head (request line and headers, terminated by
-#   an empty line). Headers that a browser cannot set on the upgrade request
-#   (content-type, connect-timeout-ms, ...) go here.
+# - The client opens a WebSocket and sends a text message containing the
+#   JSON-encoded request head: {"path": "/pkg.Service/Method", "headers":
+#   {name: value}}, with an optional "method" defaulting to POST. Headers
+#   that a browser cannot set on the upgrade request (content-type,
+#   connect-timeout-ms, ...) go here.
 # - Request messages follow, one per WebSocket message. With the JSON codec
 #   (content-type application/json), each message is a text frame containing
 #   the JSON encoding of the message. With other codecs, each message is a
 #   binary frame containing the raw encoded payload. There is no
 #   envelope/length prefix in either case.
 # - The client half-closes the request stream with an empty text message.
-# - The server sends a text message containing an HTTP/1.1-encoded response
-#   head, then response messages framed the same way as request messages.
+# - The server sends a text message containing the JSON-encoded response
+#   head: {"status": 200, "headers": {name: value}}, then response messages
+#   framed the same way as request messages.
 # - The server signals the end of response messages with an empty text
 #   message followed by a text message containing the Connect end-stream
 #   JSON (metadata / error), and then closes the connection. The empty text
@@ -82,7 +85,7 @@ async def upgrade_websocket(
         return None
     try:
         http_method, path, head_headers = _parse_request_head(cast("str", head))
-    except ValueError as e:
+    except (TypeError, ValueError) as e:
         await _close(send, reason=str(e))
         return None
 
@@ -126,21 +129,32 @@ async def upgrade_websocket(
 
 
 def _parse_request_head(head: str) -> tuple[str, str, list[tuple[str, str]]]:
-    lines = head.split("\r\n")
-    request_line = lines[0].split(" ")
-    if len(request_line) != 3:  # method, path, version
-        msg = "malformed request line"
+    try:
+        parsed = json.loads(head)
+    except ValueError as e:
+        msg = "request head is not valid JSON"
+        raise ValueError(msg) from e
+    if not isinstance(parsed, dict):
+        msg = "request head is not a JSON object"
+        raise TypeError(msg)
+    path = parsed.get("path")
+    if not isinstance(path, str) or not path:
+        msg = "request head is missing path"
         raise ValueError(msg)
-    http_method, path, _http_version = request_line
+    http_method = parsed.get("method", "POST")
+    if not isinstance(http_method, str):
+        msg = "request head method is not a string"
+        raise TypeError(msg)
+    headers_json = parsed.get("headers", {})
+    if not isinstance(headers_json, dict):
+        msg = "request head headers is not a JSON object"
+        raise TypeError(msg)
     headers: list[tuple[str, str]] = []
-    for line in lines[1:]:
-        if not line:
-            break
-        name, sep, value = line.partition(":")
-        if not sep:
-            msg = "malformed header line"
-            raise ValueError(msg)
-        headers.append((name.strip().lower(), value.strip()))
+    for name, value in headers_json.items():
+        if not isinstance(value, str):
+            msg = "request head header value is not a string"
+            raise TypeError(msg)
+        headers.append((name.lower(), value))
     return http_method, path, headers
 
 
@@ -177,7 +191,7 @@ def _wrap_receive(receive: ASGIReceiveCallable) -> ASGIReceiveCallable:
 class _WebSocketSendAdapter:
     """Translate HTTP response events into WebSocket messages.
 
-    The response head is sent as an HTTP/1.1-encoded text message. Body
+    The response head is sent as a JSON-encoded text message. Body
     chunks are parsed as envelopes and each envelope payload is sent as its
     own WebSocket message, with the end-stream envelope preceded by an empty
     text marker. A non-200 response (an error before the stream started)
@@ -226,11 +240,7 @@ class _WebSocketSendAdapter:
 
 
 def _encode_response_head(status: int, headers: Iterable[tuple[bytes, bytes]]) -> str:
-    try:
-        phrase = HTTPStatus(status).phrase
-    except ValueError:
-        phrase = ""
-    lines = [f"HTTP/1.1 {status} {phrase}".rstrip()]
+    head_headers: dict[str, str] = {}
     for name_bytes, value_bytes in headers:
         name = name_bytes.decode()
         value = value_bytes.decode()
@@ -242,8 +252,11 @@ def _encode_response_head(status: int, headers: Iterable[tuple[bytes, bytes]]) -
                 CONNECT_UNARY_CONTENT_TYPE_PREFIX
                 + value[len(CONNECT_STREAMING_CONTENT_TYPE_PREFIX) :]
             )
-        lines.append(f"{name}: {value}")
-    return "\r\n".join(lines) + "\r\n\r\n"
+        if name in head_headers:
+            head_headers[name] = f"{head_headers[name]}, {value}"
+        else:
+            head_headers[name] = value
+    return json.dumps({"status": status, "headers": head_headers})
 
 
 async def _send_message(
