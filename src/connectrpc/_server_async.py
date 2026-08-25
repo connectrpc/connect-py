@@ -47,6 +47,7 @@ from ._server_shared import (
     method_info,
     method_url,
 )
+from ._server_websocket import upgrade_websocket
 from ._shared import decode_message, decompress
 from .code import Code
 from .errors import ConnectError
@@ -361,10 +362,6 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
     async def __call__(
         self, scope: Scope, receive: ASGIReceiveCallable, send: ASGISendCallable
     ) -> None:
-        if scope["type"] == "websocket":
-            msg = "connect does not support websockets"
-            raise RuntimeError(msg)
-
         if scope["type"] == "lifespan":
             await self._handle_lifespan(receive, send)
             return
@@ -377,7 +374,21 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
             self._resolved_endpoints = self._resolve_endpoints(
                 cast("_SVC", self._service)
             )
-        await self._handle_request(scope, receive, send, self._resolved_endpoints)
+
+        is_websocket = scope["type"] == "websocket"
+        if is_websocket:
+            # Adapt the connection to look like a Connect streaming HTTP
+            # request, with the request head coming from the first message.
+            # The rest of the control flow is unchanged.
+            upgraded = await upgrade_websocket(scope, receive, send)
+            if upgraded is None:
+                # Handshake failed; the connection was closed.
+                return
+            scope, receive, send = upgraded
+
+        await self._handle_request(
+            scope, receive, send, self._resolved_endpoints, is_websocket=is_websocket
+        )
 
     async def _handle_lifespan(
         self, receive: ASGIReceiveCallable, send: ASGISendCallable
@@ -419,6 +430,8 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
         receive: ASGIReceiveCallable,
         send: ASGISendCallable,
         endpoints: Mapping[str, Endpoint],
+        *,
+        is_websocket: bool = False,
     ) -> None:
         loop = current_loop()
         receiver = _RequestReceiver(receive, loop.event())
@@ -472,9 +485,12 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
                         codec_name = query_params.get("encoding", ("",))[0]
                     else:
                         query_params = _UNSET_QUERY_PARAMS
+                        # WebSocket requests use unary-style content types
+                        # (e.g. application/json) even for streams.
                         codec_name = protocol.codec_name_from_content_type(
                             headers.get("content-type", ""),
-                            stream=not isinstance(endpoint, EndpointUnary),
+                            stream=not isinstance(endpoint, EndpointUnary)
+                            and not is_websocket,
                         )
                     codec = self._codecs.get(codec_name)
 
@@ -516,7 +532,7 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
                     if not codec:
                         accept_post = (
                             "application/json, application/proto"
-                            if isinstance(endpoint, EndpointUnary)
+                            if isinstance(endpoint, EndpointUnary) or is_websocket
                             else "application/connect+json, application/connect+proto"
                         )
                         raise HTTPError(
@@ -528,9 +544,12 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
                         self._metadata_interceptors, ctx
                     )
                     # We resolve the response protocol before any fallible logic to
-                    # be able to return errors properly.
-                    if isinstance(endpoint, EndpointUnary) and isinstance(
-                        protocol, ConnectServerProtocol
+                    # be able to return errors properly. Over WebSocket, unary
+                    # RPCs also use the streaming message flow.
+                    if (
+                        isinstance(endpoint, EndpointUnary)
+                        and not is_websocket
+                        and isinstance(protocol, ConnectServerProtocol)
                     ):
                         unary = _UnaryResponse(
                             codec,
