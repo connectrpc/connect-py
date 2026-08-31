@@ -14,6 +14,9 @@ RES = TypeVar("RES")
 T = TypeVar("T")
 U = TypeVar("U")
 
+DEFAULT_READ_MAX_BYTES = 1024 * 1024 * 4  # 4 MB
+"""The default maximum size of a request message (4MB)."""
+
 
 @dataclass(kw_only=True, frozen=True, slots=True)
 class Endpoint(Generic[REQ, RES]):

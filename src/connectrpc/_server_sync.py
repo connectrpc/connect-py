@@ -30,6 +30,7 @@ from ._protocol_connect import (
 )
 from ._protocol_server import negotiate_server_protocol
 from ._server_shared import (
+    DEFAULT_READ_MAX_BYTES,
     EndpointBidiStreamSync,
     EndpointClientStreamSync,
     EndpointServerStreamSync,
@@ -156,7 +157,7 @@ class ConnectWSGIApplication(ABC):
         *,
         endpoints: Mapping[str, EndpointSync],
         interceptors: Iterable[InterceptorSync] = (),
-        read_max_bytes: int | None = None,
+        read_max_bytes: int | None = DEFAULT_READ_MAX_BYTES,
         compressions: Iterable[Compression] | None = None,
         codecs: Iterable[Codec] | None = None,
     ) -> None:
@@ -306,9 +307,30 @@ class ConnectWSGIApplication(ABC):
             content_length = environ.get("CONTENT_LENGTH")
             content_length = 0 if not content_length else int(content_length)
             if content_length > 0:
+                if (
+                    self._read_max_bytes is not None
+                    and content_length > self._read_max_bytes
+                ):
+                    raise ConnectError(
+                        Code.RESOURCE_EXHAUSTED,
+                        f"message is larger than configured max {self._read_max_bytes}",
+                    )
                 req_body = _read_body_with_content_length(environ, content_length)
             else:
-                req_body = b"".join(_read_body(environ))
+                chunks: list[bytes] = []
+                read_bytes = 0
+                for chunk in _read_body(environ):
+                    read_bytes += len(chunk)
+                    if (
+                        self._read_max_bytes is not None
+                        and read_bytes > self._read_max_bytes
+                    ):
+                        raise ConnectError(
+                            Code.RESOURCE_EXHAUSTED,
+                            f"message is larger than configured max {self._read_max_bytes}",
+                        )
+                    chunks.append(chunk)
+                req_body = b"".join(chunks)
 
             # Handle compression if specified
             compression_name = environ.get("HTTP_CONTENT_ENCODING", "identity").lower()

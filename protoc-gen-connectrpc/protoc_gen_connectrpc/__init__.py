@@ -67,6 +67,7 @@ _REQUEST_CONTEXT = _CONNECTRPC_REQUEST.ident("RequestContext", type_only=True)
 _CONNECTRPC_PROTOCOL = Module("connectrpc.protocol")
 _PROTOCOL_TYPE = _CONNECTRPC_PROTOCOL.ident("ProtocolType")
 _CONNECTRPC_SERVER = Module("connectrpc.server")
+_DEFAULT_READ_MAX_BYTES = _CONNECTRPC_SERVER.ident("DEFAULT_READ_MAX_BYTES")
 _ENDPOINT = _CONNECTRPC_SERVER.ident("Endpoint")
 _ENDPOINT_SYNC = _CONNECTRPC_SERVER.ident("EndpointSync")
 _CONNECT_ASGI_APPLICATION = _CONNECTRPC_SERVER.ident("ConnectASGIApplication")
@@ -198,7 +199,7 @@ def _generate_async_stubs(f: File, service: DescService, options: Options) -> No
             )
             f.print("*,")
             f.print("interceptors: ", _ITERABLE, "[", _INTERCEPTOR, "] = (),")
-            f.print("read_max_bytes: int | None = None,")
+            f.print("read_max_bytes: int | None = ", _DEFAULT_READ_MAX_BYTES, ",")
             f.print("compressions: ", _ITERABLE, "[", _COMPRESSION, "] | None = None,")
             f.print(
                 "codecs: ",
@@ -369,7 +370,7 @@ def _generate_sync_stubs(f: File, service: DescService, options: Options) -> Non
             f.print("self,")
             f.print("service: ", service_name, "Sync,")
             f.print("interceptors: ", _ITERABLE, "[", _INTERCEPTOR_SYNC, "] = (),")
-            f.print("read_max_bytes: int | None = None,")
+            f.print("read_max_bytes: int | None = ", _DEFAULT_READ_MAX_BYTES, ",")
             f.print("compressions: ", _ITERABLE, "[", _COMPRESSION, "] | None = None,")
             f.print(
                 "codecs: ", _ITERABLE, "[", _CODEC, "] | None = ", default_codecs, ","

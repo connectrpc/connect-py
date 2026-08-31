@@ -82,6 +82,14 @@ class EnvelopeReader(Generic[_RES]):
                 return
 
             self._next_message_length = int.from_bytes(self._buffer[1:5], "big")
+            if (
+                self._read_max_bytes is not None
+                and self._next_message_length > self._read_max_bytes
+            ):
+                raise ConnectError(
+                    Code.RESOURCE_EXHAUSTED,
+                    f"message is larger than configured max {self._read_max_bytes}",
+                )
 
     def handle_end_message(
         self, _prefix_byte: int, _message_data: bytes | bytearray, /

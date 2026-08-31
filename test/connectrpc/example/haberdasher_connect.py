@@ -12,7 +12,7 @@ from connectrpc.client import ConnectClient, ConnectClientSync
 from connectrpc.code import Code
 from connectrpc.errors import ConnectError
 from connectrpc.method import IdempotencyLevel, MethodInfo
-from connectrpc.server import ConnectASGIApplication, ConnectWSGIApplication, Endpoint, EndpointSync
+from connectrpc.server import ConnectASGIApplication, ConnectWSGIApplication, DEFAULT_READ_MAX_BYTES, Endpoint, EndpointSync
 from protobuf import DescService
 from protobuf.wkt import Empty
 
@@ -76,7 +76,7 @@ class HaberdasherASGIApplication(ConnectASGIApplication[Haberdasher]):
         service: Haberdasher | AsyncGenerator[Haberdasher],
         *,
         interceptors: Iterable[Interceptor] = (),
-        read_max_bytes: int | None = None,
+        read_max_bytes: int | None = DEFAULT_READ_MAX_BYTES,
         compressions: Iterable[Compression] | None = None,
         codecs: Iterable[Codec] | None = None,
     ) -> None:
@@ -344,7 +344,7 @@ class HaberdasherWSGIApplication(ConnectWSGIApplication):
         self,
         service: HaberdasherSync,
         interceptors: Iterable[InterceptorSync] = (),
-        read_max_bytes: int | None = None,
+        read_max_bytes: int | None = DEFAULT_READ_MAX_BYTES,
         compressions: Iterable[Compression] | None = None,
         codecs: Iterable[Codec] | None = None,
     ) -> None:
