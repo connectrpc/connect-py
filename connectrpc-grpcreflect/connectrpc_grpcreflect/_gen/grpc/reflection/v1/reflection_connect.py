@@ -12,7 +12,7 @@ from connectrpc.client import ConnectClient, ConnectClientSync
 from connectrpc.code import Code
 from connectrpc.errors import ConnectError
 from connectrpc.method import IdempotencyLevel, MethodInfo
-from connectrpc.server import ConnectASGIApplication, ConnectWSGIApplication, Endpoint, EndpointSync
+from connectrpc.server import ConnectASGIApplication, ConnectWSGIApplication, DEFAULT_READ_MAX_BYTES, Endpoint, EndpointSync
 from protobuf import DescService
 
 from . import reflection_pb
@@ -46,7 +46,7 @@ class ServerReflectionASGIApplication(ConnectASGIApplication[ServerReflection]):
         service: ServerReflection | AsyncGenerator[ServerReflection],
         *,
         interceptors: Iterable[Interceptor] = (),
-        read_max_bytes: int | None = None,
+        read_max_bytes: int | None = DEFAULT_READ_MAX_BYTES,
         compressions: Iterable[Compression] | None = None,
         codecs: Iterable[Codec] | None = None,
     ) -> None:
@@ -119,7 +119,7 @@ class ServerReflectionWSGIApplication(ConnectWSGIApplication):
         self,
         service: ServerReflectionSync,
         interceptors: Iterable[InterceptorSync] = (),
-        read_max_bytes: int | None = None,
+        read_max_bytes: int | None = DEFAULT_READ_MAX_BYTES,
         compressions: Iterable[Compression] | None = None,
         codecs: Iterable[Codec] | None = None,
     ) -> None:

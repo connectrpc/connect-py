@@ -26,6 +26,7 @@ from ._protocol import ConnectWireError, HTTPError, ServerProtocol
 from ._protocol_connect import CONNECT_UNARY_CONTENT_TYPE_PREFIX, ConnectServerProtocol
 from ._protocol_server import negotiate_server_protocol
 from ._server_shared import (
+    DEFAULT_READ_MAX_BYTES,
     EndpointBidiStream,
     EndpointClientStream,
     EndpointServerStream,
@@ -89,7 +90,7 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
         service: _SVC | AsyncGenerator[_SVC],
         endpoints: Callable[[_SVC], Mapping[str, Endpoint]],
         interceptors: Iterable[Interceptor] = (),
-        read_max_bytes: int | None = None,
+        read_max_bytes: int | None = DEFAULT_READ_MAX_BYTES,
         compressions: Iterable[Compression] | None = None,
         codecs: Iterable[Codec] | None = None,
     ) -> None:
@@ -342,7 +343,16 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
     ) -> _REQ:
         """Handle POST request with body."""
         # Get request body
-        chunks: list[bytes] = [chunk async for chunk in _read_body(receive)]
+        chunks: list[bytes] = []
+        read_bytes = 0
+        async for chunk in _read_body(receive):
+            read_bytes += len(chunk)
+            if self._read_max_bytes is not None and read_bytes > self._read_max_bytes:
+                raise ConnectError(
+                    Code.RESOURCE_EXHAUSTED,
+                    f"message is larger than configured max {self._read_max_bytes}",
+                )
+            chunks.append(chunk)
         req_body = b"".join(chunks)
 
         # Handle compression if specified

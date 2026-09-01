@@ -15,7 +15,7 @@ from connectrpc.compression.gzip import GzipCompression
 from connectrpc.errors import ConnectError
 from connectrpc.method import IdempotencyLevel, MethodInfo
 from connectrpc.protocol import ProtocolType
-from connectrpc.server import ConnectASGIApplication, ConnectWSGIApplication, Endpoint, EndpointSync
+from connectrpc.server import ConnectASGIApplication, ConnectWSGIApplication, DEFAULT_READ_MAX_BYTES, Endpoint, EndpointSync
 from google.protobuf.empty_pb2 import Empty
 from pyqwest import Client, SyncClient
 
@@ -79,7 +79,7 @@ class HaberdasherASGIApplication(ConnectASGIApplication[Haberdasher]):
         service: Haberdasher | AsyncGenerator[Haberdasher],
         *,
         interceptors: Iterable[Interceptor] = (),
-        read_max_bytes: int | None = None,
+        read_max_bytes: int | None = DEFAULT_READ_MAX_BYTES,
         compressions: Iterable[Compression] | None = None,
         codecs: Iterable[Codec] | None = _DEFAULT_CODECS,
     ) -> None:
@@ -367,7 +367,7 @@ class HaberdasherWSGIApplication(ConnectWSGIApplication):
         self,
         service: HaberdasherSync,
         interceptors: Iterable[InterceptorSync] = (),
-        read_max_bytes: int | None = None,
+        read_max_bytes: int | None = DEFAULT_READ_MAX_BYTES,
         compressions: Iterable[Compression] | None = None,
         codecs: Iterable[Codec] | None = _DEFAULT_CODECS,
     ) -> None:

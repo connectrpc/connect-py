@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import random
 import struct
 from typing import TYPE_CHECKING
 
@@ -11,6 +12,7 @@ from pyqwest.testing import ASGITransport, WSGITransport
 from connectrpc.code import Code
 from connectrpc.codec import proto_binary_codec, proto_json_codec
 from connectrpc.errors import ConnectError
+from connectrpc.server import DEFAULT_READ_MAX_BYTES
 
 from ._util import resolve_compression
 from .connectrpc.example.haberdasher_connect import (
@@ -289,16 +291,26 @@ async def test_roundtrip_response_stream_async(
     assert exc_info.value.message == "No more hats available"
 
 
+def _payload(compressible: bool) -> str:
+    if compressible:
+        return "X" * 1000
+    rng = random.Random(42)  # noqa: S311 # deterministic incompressible data
+    return "".join(chr(rng.randint(0x20, 0x7E)) for _ in range(1000))
+
+
+@pytest.mark.parametrize("compressible", [False, True])
 @pytest.mark.parametrize("client_bad", [False, True])
 @pytest.mark.parametrize("compression_name", ["gzip", "br", "zstd", "identity"])
-def test_message_limit_sync(client_bad: bool, compression_name: str) -> None:
+def test_message_limit_sync(
+    client_bad: bool, compression_name: str, compressible: bool
+) -> None:
     requests: list[Size] = []
     responses: list[Hat] = []
 
     good_size = Size(description="good")
-    bad_size = Size(description="X" * 1000)
+    bad_size = Size(description=_payload(compressible))
     good_hat = Hat(color="good")
-    bad_hat = Hat(color="X" * 1000)
+    bad_hat = Hat(color=_payload(compressible))
 
     class LargeHaberdasher(HaberdasherSync):
         def make_hat(self, request, _ctx):
@@ -354,17 +366,20 @@ def test_message_limit_sync(client_bad: bool, compression_name: str) -> None:
             assert len(responses) == 1
 
 
+@pytest.mark.parametrize("compressible", [False, True])
 @pytest.mark.parametrize("client_bad", [False, True])
 @pytest.mark.parametrize("compression_name", ["gzip", "br", "zstd", "identity"])
 @pytest.mark.asyncio
-async def test_message_limit_async(client_bad: bool, compression_name: str) -> None:
+async def test_message_limit_async(
+    client_bad: bool, compression_name: str, compressible: bool
+) -> None:
     requests: list[Size] = []
     responses: list[Hat] = []
 
     good_size = Size(description="good")
-    bad_size = Size(description="X" * 1000)
+    bad_size = Size(description=_payload(compressible))
     good_hat = Hat(color="good")
-    bad_hat = Hat(color="X" * 1000)
+    bad_hat = Hat(color=_payload(compressible))
 
     class LargeHaberdasher(Haberdasher):
         async def make_hat(self, request, _ctx):
@@ -420,6 +435,71 @@ async def test_message_limit_async(client_bad: bool, compression_name: str) -> N
         else:
             assert len(requests) == 2
             assert len(responses) == 1
+
+
+# The size of a description that results in exactly 4MB+1 on the wire.
+_BIG_DESCRIPTION_LENGTH = DEFAULT_READ_MAX_BYTES + 1 - 5
+
+
+@pytest.mark.parametrize("unlimited", [False, True])
+def test_message_limit_default_sync(unlimited: bool) -> None:
+    class EchoSizeHaberdasher(HaberdasherSync):
+        def make_hat(self, request, _ctx):
+            return Hat(size=len(request.description))
+
+    big_size = Size(description="X" * _BIG_DESCRIPTION_LENGTH)
+    assert len(big_size.to_binary()) == DEFAULT_READ_MAX_BYTES + 1
+    # We specifically want to test not setting vs setting to None
+    app = (
+        HaberdasherWSGIApplication(EchoSizeHaberdasher(), read_max_bytes=None)
+        if unlimited
+        else HaberdasherWSGIApplication(EchoSizeHaberdasher())
+    )
+    with HaberdasherClientSync(
+        "http://localhost", http_client=SyncClient(WSGITransport(app))
+    ) as client:
+        if unlimited:
+            response = client.make_hat(request=big_size)
+            assert response.size == _BIG_DESCRIPTION_LENGTH
+        else:
+            with pytest.raises(ConnectError) as exc_info:
+                client.make_hat(request=big_size)
+            assert exc_info.value.code == Code.RESOURCE_EXHAUSTED
+            assert (
+                exc_info.value.message
+                == f"message is larger than configured max {DEFAULT_READ_MAX_BYTES}"
+            )
+
+
+@pytest.mark.parametrize("unlimited", [False, True])
+@pytest.mark.asyncio
+async def test_message_limit_default_async(unlimited: bool) -> None:
+    class EchoSizeHaberdasher(Haberdasher):
+        async def make_hat(self, request, _ctx):
+            return Hat(size=len(request.description))
+
+    big_size = Size(description="X" * _BIG_DESCRIPTION_LENGTH)
+    assert len(big_size.to_binary()) == DEFAULT_READ_MAX_BYTES + 1
+    # We specifically want to test not setting vs setting to None
+    app = (
+        HaberdasherASGIApplication(EchoSizeHaberdasher(), read_max_bytes=None)
+        if unlimited
+        else HaberdasherASGIApplication(EchoSizeHaberdasher())
+    )
+    async with HaberdasherClient(
+        "http://localhost", http_client=Client(transport=ASGITransport(app))
+    ) as client:
+        if unlimited:
+            response = await client.make_hat(request=big_size)
+            assert response.size == _BIG_DESCRIPTION_LENGTH
+        else:
+            with pytest.raises(ConnectError) as exc_info:
+                await client.make_hat(request=big_size)
+            assert exc_info.value.code == Code.RESOURCE_EXHAUSTED
+            assert (
+                exc_info.value.message
+                == f"message is larger than configured max {DEFAULT_READ_MAX_BYTES}"
+            )
 
 
 @pytest.mark.asyncio
