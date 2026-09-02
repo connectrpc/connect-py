@@ -8,6 +8,7 @@ import pytest_asyncio
 from pyqwest import Client, SyncClient
 from pyqwest.testing import ASGITransport, WSGITransport
 
+from connectrpc.client import ResponseMetadata
 from connectrpc.code import Code
 from connectrpc.errors import ConnectError
 
@@ -400,6 +401,309 @@ def test_intercept_bidi_stream_sync(
     ]
     assert client_interceptor.result == ["Hello MakeVariousHats and goodbye"]
     assert server_interceptor.result == ["Hello MakeVariousHats and goodbye"]
+
+
+class _CountingHaberdasher(Haberdasher):
+    def __init__(self) -> None:
+        self.calls = 0
+
+    async def make_hat(self, request, _ctx):
+        self.calls += 1
+        return Hat(size=request.inches)
+
+    async def make_similar_hats(self, request, _ctx):
+        self.calls += 1
+        yield Hat(size=request.inches)
+
+
+class _CountingHaberdasherSync(HaberdasherSync):
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def make_hat(self, request, _ctx):
+        self.calls += 1
+        return Hat(size=request.inches)
+
+    def make_similar_hats(self, request, _ctx):
+        self.calls += 1
+        yield Hat(size=request.inches)
+
+
+class _PassthroughUnaryInterceptor:
+    async def intercept_unary(self, call_next, request, ctx):
+        return await call_next(request, ctx)
+
+    def intercept_unary_sync(self, call_next, request, ctx):
+        return call_next(request, ctx)
+
+
+_MAKE_HAT_URL = "http://localhost/connectrpc.example.Haberdasher/MakeHat"
+_MAKE_SIMILAR_HATS_URL = (
+    "http://localhost/connectrpc.example.Haberdasher/MakeSimilarHats"
+)
+# A one-byte envelope containing invalid JSON.
+_INVALID_STREAM_BODY = b"\x00" + (1).to_bytes(4, "big") + b"{"
+
+
+@pytest.mark.asyncio
+async def test_metadata_interceptor_unparseable_unary_async(
+    server_interceptor: RequestInterceptor,
+) -> None:
+    """Leading metadata interceptors are invoked even if the message can't be parsed."""
+    service = _CountingHaberdasher()
+    trailing_interceptor = RequestInterceptor()
+    app = HaberdasherASGIApplication(
+        service,
+        interceptors=(
+            server_interceptor,
+            _PassthroughUnaryInterceptor(),
+            trailing_interceptor,
+        ),
+    )
+    client = Client(transport=ASGITransport(app))
+
+    res = await client.post(
+        _MAKE_HAT_URL, content=b"{", headers={"content-type": "application/json"}
+    )
+
+    assert res.status != 200
+    assert service.calls == 0
+    assert len(server_interceptor.result) == 1
+    assert server_interceptor.result[0].startswith(
+        "Hello MakeHat and goodbye with error"
+    )
+    # A metadata interceptor after a message interceptor is invoked within the
+    # chain, so it never runs if the message can't be parsed.
+    assert trailing_interceptor.result == []
+
+
+def test_metadata_interceptor_unparseable_unary_sync(
+    server_interceptor: RequestInterceptor,
+) -> None:
+    """Leading metadata interceptors are invoked even if the message can't be parsed."""
+    service = _CountingHaberdasherSync()
+    trailing_interceptor = RequestInterceptor()
+    app = HaberdasherWSGIApplication(
+        service,
+        interceptors=(
+            server_interceptor,
+            _PassthroughUnaryInterceptor(),
+            trailing_interceptor,
+        ),
+    )
+    client = SyncClient(transport=WSGITransport(app))
+
+    res = client.post(
+        _MAKE_HAT_URL, content=b"{", headers={"content-type": "application/json"}
+    )
+
+    assert res.status != 200
+    assert service.calls == 0
+    assert len(server_interceptor.result) == 1
+    assert server_interceptor.result[0].startswith(
+        "Hello MakeHat and goodbye with error"
+    )
+    assert trailing_interceptor.result == []
+
+
+@pytest.mark.asyncio
+async def test_metadata_interceptor_unparseable_stream_async(
+    server_interceptor: RequestInterceptor,
+) -> None:
+    """Leading metadata interceptors are invoked even if a stream message can't be parsed."""
+    service = _CountingHaberdasher()
+    app = HaberdasherASGIApplication(service, interceptors=(server_interceptor,))
+    client = Client(transport=ASGITransport(app))
+
+    res = await client.post(
+        _MAKE_SIMILAR_HATS_URL,
+        content=_INVALID_STREAM_BODY,
+        headers={"content-type": "application/connect+json"},
+    )
+
+    assert res.status == 200
+    assert service.calls == 0
+    assert len(server_interceptor.result) == 1
+    assert server_interceptor.result[0].startswith(
+        "Hello MakeSimilarHats and goodbye with error"
+    )
+
+
+def test_metadata_interceptor_unparseable_stream_sync(
+    server_interceptor: RequestInterceptor,
+) -> None:
+    """Leading metadata interceptors are invoked even if a stream message can't be parsed."""
+    service = _CountingHaberdasherSync()
+    app = HaberdasherWSGIApplication(service, interceptors=(server_interceptor,))
+    client = SyncClient(transport=WSGITransport(app))
+
+    res = client.post(
+        _MAKE_SIMILAR_HATS_URL,
+        content=_INVALID_STREAM_BODY,
+        headers={"content-type": "application/connect+json"},
+    )
+
+    assert res.status == 200
+    assert service.calls == 0
+    assert len(server_interceptor.result) == 1
+    assert server_interceptor.result[0].startswith(
+        "Hello MakeSimilarHats and goodbye with error"
+    )
+
+
+@pytest.mark.asyncio
+async def test_metadata_interceptor_ordering_async() -> None:
+    """A leading metadata interceptor wraps message interceptors after it."""
+    events: list[str] = []
+
+    class EventMetadataInterceptor:
+        async def on_start(self, ctx):  # noqa: ARG002
+            events.append("metadata start")
+
+        async def on_end(self, _token, _ctx, _error):
+            events.append("metadata end")
+
+    class EventUnaryInterceptor:
+        async def intercept_unary(self, call_next, request, ctx):
+            events.append("unary before")
+            try:
+                return await call_next(request, ctx)
+            finally:
+                events.append("unary after")
+
+    class SimpleHaberdasher(Haberdasher):
+        async def make_hat(self, request, _ctx):
+            events.append("handler")
+            return Hat(size=request.inches)
+
+    app = HaberdasherASGIApplication(
+        SimpleHaberdasher(),
+        interceptors=(EventMetadataInterceptor(), EventUnaryInterceptor()),
+    )
+    async with HaberdasherClient(
+        "http://localhost", http_client=Client(transport=ASGITransport(app))
+    ) as client:
+        await client.make_hat(Size(inches=10))
+
+    assert events == [
+        "metadata start",
+        "unary before",
+        "handler",
+        "unary after",
+        "metadata end",
+    ]
+
+
+def test_metadata_interceptor_ordering_sync() -> None:
+    """A leading metadata interceptor wraps message interceptors after it."""
+    events: list[str] = []
+
+    class EventMetadataInterceptorSync:
+        def on_start_sync(self, _ctx):
+            events.append("metadata start")
+
+        def on_end_sync(self, _token, _ctx, _error):
+            events.append("metadata end")
+
+    class EventUnaryInterceptorSync:
+        def intercept_unary_sync(self, call_next, request, ctx):
+            events.append("unary before")
+            try:
+                return call_next(request, ctx)
+            finally:
+                events.append("unary after")
+
+    class SimpleHaberdasherSync(HaberdasherSync):
+        def make_hat(self, request, _ctx):
+            events.append("handler")
+            return Hat(size=request.inches)
+
+    app = HaberdasherWSGIApplication(
+        SimpleHaberdasherSync(),
+        interceptors=(EventMetadataInterceptorSync(), EventUnaryInterceptorSync()),
+    )
+    with HaberdasherClientSync(
+        "http://localhost", http_client=SyncClient(WSGITransport(app))
+    ) as client:
+        client.make_hat(Size(inches=10))
+
+    assert events == [
+        "metadata start",
+        "unary before",
+        "handler",
+        "unary after",
+        "metadata end",
+    ]
+
+
+class _ResponseMetadataInterceptor:
+    async def on_start(self, ctx):
+        return self.on_start_sync(ctx)
+
+    async def on_end(self, token, ctx, error) -> None:
+        self.on_end_sync(token, ctx, error)
+
+    def on_start_sync(self, _ctx) -> None:
+        return None
+
+    def on_end_sync(self, _token, ctx, _error) -> None:
+        ctx.response_headers.add("x-interceptor", "ran")
+        ctx.response_trailers.add("x-interceptor-trailer", "ran")
+
+
+@pytest.mark.asyncio
+async def test_metadata_interceptor_response_metadata_async() -> None:
+    """Response metadata set in on_end is still sent to the client."""
+
+    class SimpleHaberdasher(Haberdasher):
+        async def make_hat(self, request, _ctx):
+            return Hat(size=request.inches)
+
+        async def make_similar_hats(self, request, _ctx):
+            yield Hat(size=request.inches)
+
+    app = HaberdasherASGIApplication(
+        SimpleHaberdasher(), interceptors=(_ResponseMetadataInterceptor(),)
+    )
+    async with HaberdasherClient(
+        "http://localhost", http_client=Client(transport=ASGITransport(app))
+    ) as client:
+        with ResponseMetadata() as resp:
+            await client.make_hat(Size(inches=10))
+        assert resp.headers.get("x-interceptor") == "ran"
+        assert resp.trailers.get("x-interceptor-trailer") == "ran"
+
+        with ResponseMetadata() as resp:
+            async for _ in client.make_similar_hats(Size(inches=10)):
+                pass
+        assert resp.trailers.get("x-interceptor-trailer") == "ran"
+
+
+def test_metadata_interceptor_response_metadata_sync() -> None:
+    """Response metadata set in on_end is still sent to the client."""
+
+    class SimpleHaberdasherSync(HaberdasherSync):
+        def make_hat(self, request, _ctx):
+            return Hat(size=request.inches)
+
+        def make_similar_hats(self, request, _ctx):
+            yield Hat(size=request.inches)
+
+    app = HaberdasherWSGIApplication(
+        SimpleHaberdasherSync(), interceptors=(_ResponseMetadataInterceptor(),)
+    )
+    with HaberdasherClientSync(
+        "http://localhost", http_client=SyncClient(WSGITransport(app))
+    ) as client:
+        with ResponseMetadata() as resp:
+            client.make_hat(Size(inches=10))
+        assert resp.headers.get("x-interceptor") == "ran"
+        assert resp.trailers.get("x-interceptor-trailer") == "ran"
+
+        with ResponseMetadata() as resp:
+            for _ in client.make_similar_hats(Size(inches=10)):
+                pass
+        assert resp.trailers.get("x-interceptor-trailer") == "ran"
 
 
 def test_intercept_bidi_stream_sync_error(

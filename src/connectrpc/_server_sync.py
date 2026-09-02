@@ -18,9 +18,11 @@ from ._interceptor_sync import (
     ClientStreamInterceptorSync,
     InterceptorSync,
     MetadataInterceptorInvokerSync,
+    MetadataInterceptorsRunSync,
     MetadataInterceptorSync,
     ServerStreamInterceptorSync,
     UnaryInterceptorSync,
+    split_leading_metadata_interceptors,
 )
 from ._protocol import ConnectWireError, HTTPError, ServerProtocol
 from ._protocol_connect import (
@@ -175,6 +177,9 @@ class ConnectWSGIApplication(ABC):
 
         """
         super().__init__()
+        self._metadata_interceptors, interceptors = split_leading_metadata_interceptors(
+            interceptors
+        )
         if interceptors:
             interceptors = [
                 MetadataInterceptorInvokerSync(interceptor)
@@ -255,14 +260,30 @@ class ConnectWSGIApplication(ABC):
         ctx: RequestContext[_REQ, _RES],
         headers: Headers,
     ) -> Iterable[bytes]:
-        # Handle request based on method
-        if http_method == "GET":
-            request, codec = self._handle_get_request(environ, endpoint)
-        else:
-            request, codec = self._handle_post_request(environ, endpoint, headers)
+        metadata_run = MetadataInterceptorsRunSync(self._metadata_interceptors, ctx)
+        response: _RES | None = None
+        codec: Codec | None = None
+        error: Exception | None = None
+        try:
+            metadata_run.start()
+            # Handle request based on method
+            if http_method == "GET":
+                request, codec = self._handle_get_request(environ, endpoint)
+            else:
+                request, codec = self._handle_post_request(environ, endpoint, headers)
 
-        # Process request
-        response = endpoint.function(request, ctx)
+            # Process request
+            response = endpoint.function(request, ctx)
+        except Exception as e:  # noqa: BLE001 # re-raised after ending the run
+            error = e
+        finally:
+            # End the run before sending the response so on_end can still modify
+            # response metadata.
+            error = metadata_run.end(error)
+        if error is not None:
+            raise error
+        assert response is not None  # noqa: S101 # no error means function returned
+        assert codec is not None  # noqa: S101 # no error means request was parsed
 
         # Encode response
         res_bytes = codec.encode(response)
@@ -461,7 +482,9 @@ class ConnectWSGIApplication(ABC):
                 ],
             )
         writer = protocol.create_envelope_writer(codec, resp_compression)
+        metadata_run = MetadataInterceptorsRunSync(self._metadata_interceptors, ctx)
         try:
+            metadata_run.start()
             if not req_compression:
                 raise ConnectError(
                     Code.UNIMPLEMENTED, "Unrecognized request compression"
@@ -477,9 +500,15 @@ class ConnectWSGIApplication(ABC):
                 case _server_shared.EndpointUnarySync():
                     request = _consume_single_request(request_stream)
                     response = endpoint.function(request, ctx)
+                    # End the run before sending the response so on_end can still
+                    # modify response metadata.
+                    if (end_error := metadata_run.end(None)) is not None:
+                        raise end_error
                     response_stream = iter([response])
                 case _server_shared.EndpointClientStreamSync():
                     response = endpoint.function(request_stream, ctx)
+                    if (end_error := metadata_run.end(None)) is not None:
+                        raise end_error
                     response_stream = iter([response])
                 case _server_shared.EndpointServerStreamSync():
                     request = _consume_single_request(request_stream)
@@ -497,9 +526,14 @@ class ConnectWSGIApplication(ABC):
             if first_response is None:
                 # It's valid for a service method to return no messages, finish the response
                 # without error.
+                error = metadata_run.end(None)
                 return [
                     _end_response(
-                        writer.end(ctx.response_trailers, None), send_trailers
+                        writer.end(
+                            ctx.response_trailers,
+                            ConnectWireError.from_exception(error) if error else None,
+                        ),
+                        send_trailers,
                     )
                 ]
 
@@ -509,21 +543,29 @@ class ConnectWSGIApplication(ABC):
             # been called in time. So we return the response stream as a separate generator
             # function. This means some duplication of error handling.
             return _response_stream(
-                first_response, environ, response_stream, writer, send_trailers, ctx
+                first_response,
+                environ,
+                response_stream,
+                writer,
+                send_trailers,
+                ctx,
+                metadata_run,
             )
         except Exception as e:  # noqa: BLE001 # invoking user callback
             # Exception before any response message was returned. An error after the first
             # response message will be handled by _response_stream, so here we have a
             # full error-only response.
+            error = metadata_run.end(e)
+            assert error is not None  # noqa: S101 # end never discards an error
             _drain_request_body(environ)
-            _maybe_log_exception(environ, e)
+            _maybe_log_exception(environ, error)
             _send_stream_response_headers(
                 start_response, protocol, codec, resp_compression.name(), ctx
             )
             return [
                 _end_response(
                     writer.end(
-                        ctx.response_trailers, ConnectWireError.from_exception(e)
+                        ctx.response_trailers, ConnectWireError.from_exception(error)
                     ),
                     send_trailers,
                 )
@@ -608,6 +650,7 @@ def _response_stream(
     writer: EnvelopeWriter,
     send_trailers: Callable[[list[tuple[str, str]]], None] | None,
     ctx: RequestContext,
+    metadata_run: MetadataInterceptorsRunSync,
 ) -> Iterable[bytes]:
     error: Exception | None = None
     try:
@@ -619,6 +662,10 @@ def _response_stream(
     except Exception as e:  # noqa: BLE001 # invoking user callback
         error = e
         _drain_request_body(environ)
+    finally:
+        # End the run before ending the response so on_end can still modify
+        # response trailers. This is a no-op if the run already ended.
+        error = metadata_run.end(error)
 
     yield _end_response(
         writer.end(
