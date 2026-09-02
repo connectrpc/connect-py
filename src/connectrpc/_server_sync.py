@@ -334,29 +334,20 @@ class ConnectWSGIApplication(ABC):
 
             # Handle compression if specified
             compression_name = environ.get("HTTP_CONTENT_ENCODING", "identity").lower()
-            if compression_name != "identity":
-                compression = self._compressions.get(compression_name)
-                if not compression:
-                    raise ConnectError(
-                        Code.UNIMPLEMENTED,
-                        f"unknown compression: '{compression_name}': supported encodings are {', '.join(self._compressions.keys())}",
-                    )
-                try:
-                    req_body = compression.decompress(req_body)
-                except Exception as e:
-                    raise ConnectError(
-                        Code.INVALID_ARGUMENT,
-                        f"Failed to decompress request body: {e!s}",
-                    ) from e
-
-            if (
-                self._read_max_bytes is not None
-                and len(req_body) > self._read_max_bytes
-            ):
+            compression = self._compressions.get(compression_name)
+            if not compression:
                 raise ConnectError(
-                    Code.RESOURCE_EXHAUSTED,
-                    f"message is larger than configured max {self._read_max_bytes}",
+                    Code.UNIMPLEMENTED,
+                    f"unknown compression: '{compression_name}': supported encodings are {', '.join(self._compressions.keys())}",
                 )
+            try:
+                req_body = compression.decompress(req_body, self._read_max_bytes)
+            except ConnectError:
+                raise
+            except Exception as e:
+                raise ConnectError(
+                    Code.INVALID_ARGUMENT, f"Failed to decompress request body: {e!s}"
+                ) from e
 
             try:
                 return codec.decode(req_body, endpoint.method.input), codec
@@ -402,13 +393,15 @@ class ConnectWSGIApplication(ABC):
             # Handle compression if specified
             if "compression" in params:
                 compression_name = params["compression"][0]
-                compression = self._compressions.get(compression_name)
-                if not compression:
-                    raise ConnectError(
-                        Code.UNIMPLEMENTED,
-                        f"unknown compression: '{compression_name}': supported encodings are {', '.join(self._compressions.keys())}",
-                    )
-                message = compression.decompress(message)
+            else:
+                compression_name = "identity"
+            compression = self._compressions.get(compression_name)
+            if not compression:
+                raise ConnectError(
+                    Code.UNIMPLEMENTED,
+                    f"unknown compression: '{compression_name}': supported encodings are {', '.join(self._compressions.keys())}",
+                )
+            message = compression.decompress(message, self._read_max_bytes)
 
             codec_name = params.get("encoding", ("",))[0]
             codec = self._codecs.get(codec_name)
