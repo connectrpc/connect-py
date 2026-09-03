@@ -5,6 +5,7 @@ from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, Any, Generic, TypeVar
 
 from ._compression import Compression, IdentityCompression
+from ._shared import message_too_large_error
 from .code import Code
 from .errors import ConnectError
 
@@ -61,15 +62,9 @@ class EnvelopeReader(Generic[_RES]):
                             Code.INTERNAL,
                             "protocol error: sent compressed message without compression support",
                         )
-                    message_data = self._compression.decompress(message_data)
 
-                if (
-                    self._read_max_bytes is not None
-                    and len(message_data) > self._read_max_bytes
-                ):
-                    raise ConnectError(
-                        Code.RESOURCE_EXHAUSTED,
-                        f"message is larger than configured max {self._read_max_bytes}",
+                    message_data = self._compression.decompress(
+                        message_data, self._read_max_bytes
                     )
 
                 if self.handle_end_message(prefix_byte, message_data):
@@ -86,10 +81,7 @@ class EnvelopeReader(Generic[_RES]):
                 self._read_max_bytes is not None
                 and self._next_message_length > self._read_max_bytes
             ):
-                raise ConnectError(
-                    Code.RESOURCE_EXHAUSTED,
-                    f"message is larger than configured max {self._read_max_bytes}",
-                )
+                raise message_too_large_error(self._read_max_bytes)
 
     def handle_end_message(
         self, _prefix_byte: int, _message_data: bytes | bytearray, /

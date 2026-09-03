@@ -329,7 +329,7 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
 
         # Decompress and decode message
         if message:  # Don't decompress empty messages
-            message = compression.decompress(message)
+            message = compression.decompress(message, self._read_max_bytes)
 
         # Get the appropriate decoder for the endpoint
         return codec.decode(message, endpoint.method.input)
@@ -365,13 +365,7 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
             )
 
         if req_body:  # Don't decompress empty body
-            req_body = compression.decompress(req_body)
-
-        if self._read_max_bytes is not None and len(req_body) > self._read_max_bytes:
-            raise ConnectError(
-                Code.RESOURCE_EXHAUSTED,
-                f"message is larger than configured max {self._read_max_bytes}",
-            )
+            req_body = compression.decompress(req_body, self._read_max_bytes)
 
         return codec.decode(req_body, endpoint.method.input)
 

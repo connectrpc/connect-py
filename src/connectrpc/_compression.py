@@ -4,6 +4,7 @@ from typing import TYPE_CHECKING
 
 from connectrpc.compression.gzip import GzipCompression
 
+from ._shared import message_too_large_error
 from .compression import Compression
 
 if TYPE_CHECKING:
@@ -18,8 +19,12 @@ class IdentityCompression(Compression):
         """Return data as-is without compression."""
         return data if isinstance(data, bytes) else bytes(data)
 
-    def decompress(self, data: bytes | bytearray | memoryview) -> bytes:
+    def decompress(
+        self, data: bytes | bytearray | memoryview, read_max_bytes: int | None = None
+    ) -> bytes:
         """Return data as-is without decompression."""
+        if read_max_bytes is not None and len(data) > read_max_bytes:
+            raise message_too_large_error(read_max_bytes)
         return data if isinstance(data, bytes) else bytes(data)
 
 
