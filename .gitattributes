@@ -2,3 +2,4 @@
 
 **/gen/**/*.py inguist-generated=true
 **/_gen/**/*.py linguist-generated=true
+*_connect.py linguist-generated=true
