@@ -2,3 +2,5 @@
 
 **/gen/**/*.py inguist-generated=true
 **/_gen/**/*.py linguist-generated=true
+test/connectrpc/example/*.py linguist-generated=true
+
