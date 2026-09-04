@@ -18,9 +18,11 @@ from ._interceptor_async import (
     BidiStreamInterceptor,
     ClientStreamInterceptor,
     Interceptor,
+    MetadataInterceptorsRun,
     ServerStreamInterceptor,
     UnaryInterceptor,
     resolve_interceptors,
+    split_leading_metadata_interceptors,
 )
 from ._protocol import ConnectWireError, HTTPError, ServerProtocol
 from ._protocol_connect import CONNECT_UNARY_CONTENT_TYPE_PREFIX, ConnectServerProtocol
@@ -112,7 +114,9 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
         super().__init__()
         self._service = service
         self._endpoints = endpoints
-        self._interceptors = interceptors
+        self._metadata_interceptors, self._interceptors = (
+            split_leading_metadata_interceptors(interceptors)
+        )
         self._resolved_endpoints = None
         self._read_max_bytes = read_max_bytes
         self._compressions = resolve_compressions(compressions)
@@ -258,12 +262,27 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
         accept_encoding = headers.get("accept-encoding", "")
         compression = negotiate_compression(accept_encoding, self._compressions)
 
-        if http_method == "GET":
-            request = await self._read_get_request(endpoint, codec, query_params)
-        else:
-            request = await self._read_post_request(endpoint, receive, codec, headers)
-
-        response_data = await endpoint.function(request, ctx)
+        metadata_run = MetadataInterceptorsRun(self._metadata_interceptors, ctx)
+        response_data: _RES | None = None
+        error: Exception | None = None
+        try:
+            await metadata_run.start()
+            if http_method == "GET":
+                request = await self._read_get_request(endpoint, codec, query_params)
+            else:
+                request = await self._read_post_request(
+                    endpoint, receive, codec, headers
+                )
+            response_data = await endpoint.function(request, ctx)
+        except Exception as e:  # noqa: BLE001 # re-raised after ending the run
+            error = e
+        finally:
+            # End the run before sending the response so on_end can still modify
+            # response metadata.
+            error = await metadata_run.end(error)
+        if error is not None:
+            raise error
+        assert response_data is not None  # noqa: S101 # no error means function returned
 
         res_bytes = codec.encode(response_data)
         response_headers: list[tuple[bytes, bytes]] = [
@@ -385,9 +404,11 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
 
         writer = protocol.create_envelope_writer(codec, resp_compression)
 
+        metadata_run = MetadataInterceptorsRun(self._metadata_interceptors, ctx)
         error: Exception | None = None
         sent_headers = False
         try:
+            await metadata_run.start()
             if not req_compression:
                 raise ConnectError(
                     Code.UNIMPLEMENTED, "Unrecognized request compression"
@@ -407,9 +428,15 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
                 case EndpointUnary():
                     request = await _consume_single_request(request_stream)
                     response = await endpoint.function(request, ctx)
+                    # End the run before sending the response so on_end can still
+                    # modify response metadata.
+                    if (end_error := await metadata_run.end(None)) is not None:
+                        raise end_error
                     response_stream = _yield_single_response(response)
                 case EndpointClientStream():
                     response = await endpoint.function(request_stream, ctx)
+                    if (end_error := await metadata_run.end(None)) is not None:
+                        raise end_error
                     response_stream = _yield_single_response(response)
                 case EndpointServerStream():
                     request = await _consume_single_request(request_stream)
@@ -463,6 +490,9 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
         except Exception as e:  # noqa: BLE001 # invoking user callback
             error = e
         finally:
+            # End the run before ending the response so on_end can still modify
+            # response trailers. This is a no-op if the run already ended.
+            error = await metadata_run.end(error)
             end_message = writer.end(
                 ctx.response_trailers,
                 ConnectWireError.from_exception(error) if error else None,
