@@ -72,7 +72,7 @@ class ProtoBinaryCodec(Codec[Message, V]):
         return message.to_binary()
 
     def decode(self, data: bytes | bytearray, message_class: type[V]) -> V:
-        return message_class.from_binary(data)  # ty: ignore[invalid-argument-type] # TODO: Fix type in protobuf-py
+        return message_class.from_binary(data)
 
 
 class ProtoJSONCodec(Codec[Message, V]):
