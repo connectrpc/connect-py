@@ -60,11 +60,11 @@ dev = [
   "pytest-cov==7.1.0",
   "pytest-timeout==2.5.0",
   "pyvoy==1.0.1",
-  "ruff==0.16.5",
-  "tombi==1.5.0",
-  "ty==0.0.75",
+  "ruff==0.16.6",
+  "tombi==1.5.2",
+  "ty==0.0.78",
   "types-grpcio==1.83.0.20260730",
-  "types-protobuf==7.35.1.20260827",
+  "types-protobuf==7.35.1.20260906",
   "typing_extensions==4.16.0",
   "uvicorn==0.52.4",
   "zstandard==0.25.0",
@@ -80,11 +80,11 @@ dev = [
   "opentelemetry-instrumentation-wsgi==0.65b0",
   "opentelemetry-sdk==1.44.0",
   "protobuf>=5.28",
-  "protoc-gen-grpc-py==0.3.0",
-  "protoc-gen-py==0.3.0",
+  "protoc-gen-grpc-py==0.4.0",
+  "protoc-gen-py==0.4.0",
 ]
 
-docs = ["mkdocstrings-python==2.0.7", "zensical==0.0.57"]
+docs = ["mkdocstrings-python==2.0.8", "zensical==0.0.59"]
 
 [build-system]
 requires = ["uv_build>=0.12.0,<0.13.0"]
