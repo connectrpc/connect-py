@@ -151,7 +151,6 @@ class ElizaServiceClient(ConnectClient):
             timeout_ms=timeout_ms,
             use_get=use_get,
         )
-
     def converse(
         self,
         request: AsyncIterator[ConverseRequest],
@@ -176,7 +175,6 @@ class ElizaServiceClient(ConnectClient):
             headers=headers,
             timeout_ms=timeout_ms,
         )
-
     def introduce(
         self,
         request: IntroduceRequest,

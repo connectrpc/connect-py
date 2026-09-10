@@ -303,7 +303,6 @@ class ConformanceServiceClient(ConnectClient):
             headers=headers,
             timeout_ms=timeout_ms,
         )
-
     def server_stream(
         self,
         request: ServerStreamRequest,
@@ -345,7 +344,6 @@ class ConformanceServiceClient(ConnectClient):
             headers=headers,
             timeout_ms=timeout_ms,
         )
-
     async def client_stream(
         self,
         request: AsyncIterator[ClientStreamRequest],
@@ -385,7 +383,6 @@ class ConformanceServiceClient(ConnectClient):
             headers=headers,
             timeout_ms=timeout_ms,
         )
-
     def bidi_stream(
         self,
         request: AsyncIterator[BidiStreamRequest],
@@ -454,7 +451,6 @@ class ConformanceServiceClient(ConnectClient):
             headers=headers,
             timeout_ms=timeout_ms,
         )
-
     async def unimplemented(
         self,
         request: UnimplementedRequest,
@@ -478,7 +474,6 @@ class ConformanceServiceClient(ConnectClient):
             headers=headers,
             timeout_ms=timeout_ms,
         )
-
     async def idempotent_unary(
         self,
         request: IdempotentUnaryRequest,

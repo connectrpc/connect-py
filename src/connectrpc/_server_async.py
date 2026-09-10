@@ -170,7 +170,7 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
                         await send({"type": "lifespan.shutdown.complete"})
                         return None
 
-        if not self._resolved_endpoints:
+        if self._resolved_endpoints is None:
             if inspect.isasyncgen(self._service):
                 msg = "ASGI server does not support lifespan but async generator passed for service. Enable lifespan support."
                 raise RuntimeError(msg)

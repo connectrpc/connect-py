@@ -6,8 +6,10 @@ import pytest
 from pyqwest import Client
 from pyqwest.testing import ASGITransport
 
+from connectrpc.code import Code
 from connectrpc.errors import ConnectError
 
+from .connectrpc.example.empty_connect import NoMethods, NoMethodsASGIApplication
 from .connectrpc.example.haberdasher_connect import (
     Haberdasher,
     HaberdasherASGIApplication,
@@ -49,6 +51,26 @@ async def test_lifespan() -> None:
             assert hat.color == "blue"
 
     assert final_count == 5
+
+
+@pytest.mark.asyncio
+async def test_lifespan_empty_services() -> None:
+    class NoMethodsService(NoMethods):
+        pass
+
+    async def no_methods():
+        yield NoMethodsService()
+
+    app = NoMethodsASGIApplication(no_methods())
+    async with (
+        ASGITransport(app) as transport,
+        # No method to invoke, so we just send an unrelated request and make sure
+        # the error code matches expected.
+        HaberdasherClient("http://localhost", http_client=Client(transport)) as client,
+    ):
+        with pytest.raises(ConnectError) as exc_info:
+            await client.make_hat(Size(inches=10))
+    assert exc_info.value.code == Code.UNIMPLEMENTED
 
 
 @pytest.mark.asyncio

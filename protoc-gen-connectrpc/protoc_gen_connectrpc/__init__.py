@@ -147,6 +147,8 @@ def _generate_async_stubs(f: File, service: DescService, options: Options) -> No
     )
     with f.scope("class ", service_name, "(", _PROTOCOL, "):"):
         _print_docstring(f, service)
+        if not service.methods and options.protobuf == _ProtobufOption.GOOGLE:
+            f.print("pass")
         for method in service.methods:
             def_prefix, request_type, response_type = _async_signature(method, options)
             with f.scope(
@@ -266,7 +268,8 @@ def _generate_async_stubs(f: File, service: DescService, options: Options) -> No
 
         if options.protobuf == _ProtobufOption.GOOGLE:
             _print_google_compat_client_init(f, _INTERCEPTOR, _PYQWEST_CLIENT)
-
+        elif not service.methods:
+            f.print("pass")
         for method in service.methods:
             def_prefix, request_type, response_type = _async_signature(method, options)
 
@@ -324,7 +327,7 @@ def _generate_async_stubs(f: File, service: DescService, options: Options) -> No
                     if _supports_get(method):
                         f.print("use_get=use_get,")
                 f.print(")")
-            f.print()
+        f.print()
 
 
 def _generate_sync_stubs(f: File, service: DescService, options: Options) -> None:
@@ -334,6 +337,8 @@ def _generate_sync_stubs(f: File, service: DescService, options: Options) -> Non
     )
     with f.scope("class ", service_name, "Sync(", _PROTOCOL, "):"):
         _print_docstring(f, service)
+        if not service.methods and options.protobuf == _ProtobufOption.GOOGLE:
+            f.print("pass")
         for method in service.methods:
             request_type, response_type = _sync_signature(method, options)
             with f.scope(
@@ -432,7 +437,8 @@ def _generate_sync_stubs(f: File, service: DescService, options: Options) -> Non
 
         if options.protobuf == _ProtobufOption.GOOGLE:
             _print_google_compat_client_init(f, _INTERCEPTOR_SYNC, _PYQWEST_SYNC_CLIENT)
-
+        elif not service.methods:
+            f.print("pass")
         for method in service.methods:
             request_type, response_type = _sync_signature(method, options)
 

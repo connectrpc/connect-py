@@ -184,7 +184,6 @@ class HaberdasherClient(ConnectClient):
             timeout_ms=timeout_ms,
             use_get=use_get,
         )
-
     async def make_flexible_hat(
         self,
         request: AsyncIterator[Size],
@@ -207,7 +206,6 @@ class HaberdasherClient(ConnectClient):
             headers=headers,
             timeout_ms=timeout_ms,
         )
-
     def make_similar_hats(
         self,
         request: Size,
@@ -230,7 +228,6 @@ class HaberdasherClient(ConnectClient):
             headers=headers,
             timeout_ms=timeout_ms,
         )
-
     def make_various_hats(
         self,
         request: AsyncIterator[Size],
@@ -253,7 +250,6 @@ class HaberdasherClient(ConnectClient):
             headers=headers,
             timeout_ms=timeout_ms,
         )
-
     def list_parts(
         self,
         request: Empty,
@@ -276,7 +272,6 @@ class HaberdasherClient(ConnectClient):
             headers=headers,
             timeout_ms=timeout_ms,
         )
-
     async def do_nothing(
         self,
         request: Empty,

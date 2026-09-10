@@ -1,0 +1,6 @@
+syntax = "proto3";
+
+package connectrpc.example;
+
+// A service without any methods.
+service NoMethods {}
