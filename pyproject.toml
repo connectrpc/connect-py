@@ -49,7 +49,7 @@ dev = [
 
   "asgiref==3.12.1",
   "brotli==1.2.0",
-  "buf-bin==1.72.0",
+  "buf-bin==1.73.0",
   "granian==2.8.2",
   "grpcio-tools==1.83.1",
   "gunicorn==26.2.0",
@@ -60,9 +60,9 @@ dev = [
   "pytest-cov==7.1.0",
   "pytest-timeout==2.5.0",
   "pyvoy==1.0.1",
-  "ruff==0.16.6",
-  "tombi==1.5.2",
-  "ty==0.0.78",
+  "ruff==0.16.7",
+  "tombi==1.5.5",
+  "ty==0.0.80",
   "types-grpcio==1.83.0.20260730",
   "types-protobuf==7.35.1.20260906",
   "typing_extensions==4.16.0",
@@ -84,7 +84,7 @@ dev = [
   "protoc-gen-py==0.4.0",
 ]
 
-docs = ["mkdocstrings-python==2.0.8", "zensical==0.0.59"]
+docs = ["mkdocstrings-python==2.0.8", "zensical==0.0.62"]
 
 [build-system]
 requires = ["uv_build>=0.12.0,<0.13.0"]
