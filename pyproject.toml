@@ -31,6 +31,7 @@ classifiers = [
 dependencies = [
   "protobuf-py>=0.3.0",
   "pyqwest>=0.5.1",
+  "typing_extensions>=4.13.0",
 ]
 
 [project.urls]
