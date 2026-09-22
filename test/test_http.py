@@ -15,7 +15,7 @@ from pyqwest import (
 )
 from pyqwest.testing import ASGITransport, WSGITransport
 
-from connectrpc._server_sync import _LimitedInput
+from connectrpc._server_sync import _RequestBody
 from connectrpc.code import Code
 from connectrpc.codec import proto_json_codec
 from connectrpc.errors import ConnectError
@@ -194,19 +194,26 @@ def test_error_response_does_not_read_past_content_length() -> None:
     assert b"boom" in res.content
 
 
-def test_limited_input_stops_at_content_length() -> None:
-    """The stand-in for wsgi.input stops at the body, on each of its four methods."""
+def test_request_body_stops_at_content_length() -> None:
+    """The bounded reader stops at CONTENT_LENGTH, and passes through without one."""
     body = b"one\ntwo\nthree"
     unsent = b"the client never sends this"
 
-    def wrapped() -> _LimitedInput:
-        return _LimitedInput(io.BytesIO(body + unsent), len(body))
+    def from_environ(**extra: str) -> _RequestBody:
+        return _RequestBody.from_environ(
+            {"wsgi.input": io.BytesIO(body + unsent), **extra}
+        )
 
-    stream = wrapped()
-    assert stream.readline() == b"one\n"
-    assert stream.read(2) == b"tw"
-    assert list(stream) == [b"o\n", b"three"]
-    assert stream.read() == b""
+    bounded = from_environ(CONTENT_LENGTH=str(len(body)))
+    assert bounded.read(3) == b"one"
+    assert bounded.read() == body[3:]
+    assert bounded.read() == b""
 
-    assert wrapped().read() == body
-    assert wrapped().readlines() == [b"one\n", b"two\n", b"three"]
+    assert (
+        from_environ(CONTENT_LENGTH=str(len(body))).read(len(body) + len(unsent))
+        == body
+    )
+
+    # With no usable length there is nothing to bound by, so the stream is passed through.
+    assert from_environ().read() == body + unsent
+    assert from_environ(CONTENT_LENGTH="not a number").read() == body + unsent

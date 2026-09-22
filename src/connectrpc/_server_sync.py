@@ -110,14 +110,53 @@ def prepare_response_headers(
     return headers
 
 
-def _read_body_with_content_length(
-    environ: WSGIEnvironment, content_length: int
-) -> bytes:
-    input_stream: BytesIO = environ["wsgi.input"]
+class _RequestBody:
+    """The request body, and not one byte past it.
 
+    PEP 3333 allows a server to hand the application an input stream that does not end with
+    the body, and says the application must not read past CONTENT_LENGTH. The standard
+    library's wsgiref does exactly that: its wsgi.input is the socket, so a read past the body
+    blocks until the client sends more or hangs up, and a client waiting for the response does
+    neither. Reading the body through this, rather than from wsgi.input directly, keeps every
+    read in this module - the drain included - inside the body wherever the length is known.
+    """
+
+    __slots__ = ("_left", "_stream")
+
+    @classmethod
+    def from_environ(cls, environ: WSGIEnvironment) -> _RequestBody:
+        """Read the body of the request described by environ, bounded by CONTENT_LENGTH."""
+        content_length = environ.get("CONTENT_LENGTH")
+        left: int | None = None
+        if content_length:
+            try:
+                left = int(content_length)
+            except ValueError:
+                left = None
+        return cls(environ["wsgi.input"], left)
+
+    def __init__(self, stream: BytesIO, left: int | None) -> None:
+        self._stream = stream
+        self._left = left
+
+    def read(self, size: int = -1) -> bytes:
+        if self._left is None:
+            return self._stream.read(size)
+        if self._left <= 0:
+            return b""
+        if size < 0:
+            size = self._left
+        chunk = self._stream.read(min(size, self._left))
+        self._left -= len(chunk)
+        return chunk
+
+
+def _read_body_with_content_length(
+    request_body: _RequestBody, content_length: int
+) -> bytes:
     # Many app servers buffer the entire request before executing the app
     # so do an optimistic read before looping.
-    chunk = input_stream.read(content_length)
+    chunk = request_body.read(content_length)
     if len(chunk) == content_length:
         return chunk
 
@@ -125,7 +164,7 @@ def _read_body_with_content_length(
     chunks = [chunk]
     while bytes_read < content_length:
         to_read = content_length - bytes_read
-        chunk = input_stream.read(to_read)
+        chunk = request_body.read(to_read)
         if not chunk:
             break
         chunks.append(chunk)
@@ -138,74 +177,12 @@ def _read_body_with_content_length(
     return b"".join(chunks)
 
 
-def _read_body(environ: WSGIEnvironment) -> Iterator[bytes]:
-    input_stream: BytesIO = environ["wsgi.input"]
+def _read_body(request_body: _RequestBody) -> Iterator[bytes]:
     while True:
-        chunk = input_stream.read(_BODY_CHUNK_SIZE)
+        chunk = request_body.read(_BODY_CHUNK_SIZE)
         if not chunk:
             return
         yield chunk
-
-
-class _LimitedInput:
-    """The request body, and not one byte past it.
-
-    PEP 3333 allows a server to hand the application an input stream that does not end with
-    the body, and says the application must not read past CONTENT_LENGTH. The standard
-    library's wsgiref does exactly that: its wsgi.input is the socket, so a read past the body
-    blocks until the client sends more or hangs up, and a client waiting for the response does
-    neither. Wrapping the stream once per request keeps every read in this module - the drain
-    included - inside the body.
-
-    This stands in for wsgi.input for the rest of the request, so it offers the four
-    methods PEP 3333 asks of that stream, even though only read is used here.
-    """
-
-    __slots__ = ("_left", "_stream")
-
-    def __init__(self, stream: BytesIO, left: int) -> None:
-        self._stream = stream
-        self._left = left
-
-    def read(self, size: int = -1) -> bytes:
-        if self._left <= 0:
-            return b""
-        if size is None or size < 0:
-            size = self._left
-        chunk = self._stream.read(min(size, self._left))
-        self._left -= len(chunk)
-        return chunk
-
-    def readline(self, size: int = -1) -> bytes:
-        if self._left <= 0:
-            return b""
-        if size is None or size < 0:
-            size = self._left
-        line = self._stream.readline(min(size, self._left))
-        self._left -= len(line)
-        return line
-
-    def readlines(self, _hint: int = -1) -> list[bytes]:
-        return list(self)
-
-    def __iter__(self) -> Iterator[bytes]:
-        while True:
-            line = self.readline()
-            if not line:
-                return
-            yield line
-
-
-def _limit_request_body(environ: WSGIEnvironment) -> None:
-    """Bound wsgi.input by CONTENT_LENGTH, where the length is known."""
-    content_length = environ.get("CONTENT_LENGTH")
-    if not content_length:
-        return
-    try:
-        length = int(content_length)
-    except ValueError:
-        return
-    environ["wsgi.input"] = _LimitedInput(environ["wsgi.input"], length)
 
 
 class ConnectWSGIApplication(ABC):
@@ -262,8 +239,8 @@ class ConnectWSGIApplication(ABC):
         self, environ: WSGIEnvironment, start_response: StartResponse
     ) -> Iterable[bytes]:
         ctx: RequestContext | None = None
+        request_body = _RequestBody.from_environ(environ)
         try:
-            _limit_request_body(environ)
             path = environ["PATH_INFO"]
             if not path:
                 path = "/"
@@ -302,20 +279,34 @@ class ConnectWSGIApplication(ABC):
                 protocol, ConnectServerProtocol
             ):
                 return self._handle_unary(
-                    environ, start_response, http_method, endpoint, ctx, headers
+                    environ,
+                    request_body,
+                    start_response,
+                    http_method,
+                    endpoint,
+                    ctx,
+                    headers,
                 )
             return self._handle_stream(
-                environ, start_response, send_trailers, protocol, headers, endpoint, ctx
+                environ,
+                request_body,
+                start_response,
+                send_trailers,
+                protocol,
+                headers,
+                endpoint,
+                ctx,
             )
 
         except Exception as e:  # noqa: BLE001 # invoking user callback
-            _drain_request_body(environ)
+            _drain_request_body(environ, request_body)
             _maybe_log_exception(environ, e)
             return self._handle_error(e, ctx, start_response)
 
     def _handle_unary(
         self,
         environ: WSGIEnvironment,
+        request_body: _RequestBody,
         start_response: StartResponse,
         http_method: str,
         endpoint: EndpointUnarySync[_REQ, _RES],
@@ -332,7 +323,9 @@ class ConnectWSGIApplication(ABC):
             if http_method == "GET":
                 request, codec = self._handle_get_request(environ, endpoint)
             else:
-                request, codec = self._handle_post_request(environ, endpoint, headers)
+                request, codec = self._handle_post_request(
+                    environ, request_body, endpoint, headers
+                )
 
             # Process request
             response = endpoint.function(request, ctx)
@@ -372,6 +365,7 @@ class ConnectWSGIApplication(ABC):
     def _handle_post_request(
         self,
         environ: WSGIEnvironment,
+        request_body: _RequestBody,
         endpoint: _server_shared.EndpointSync[_REQ, _RES],
         request_headers: Headers,
     ) -> tuple[_REQ, Codec]:
@@ -398,11 +392,11 @@ class ConnectWSGIApplication(ABC):
                         Code.RESOURCE_EXHAUSTED,
                         f"message is larger than configured max {self._read_max_bytes}",
                     )
-                req_body = _read_body_with_content_length(environ, content_length)
+                req_body = _read_body_with_content_length(request_body, content_length)
             else:
                 chunks: list[bytes] = []
                 read_bytes = 0
-                for chunk in _read_body(environ):
+                for chunk in _read_body(request_body):
                     read_bytes += len(chunk)
                     if (
                         self._read_max_bytes is not None
@@ -511,6 +505,7 @@ class ConnectWSGIApplication(ABC):
     def _handle_stream(
         self,
         environ: WSGIEnvironment,
+        request_body: _RequestBody,
         start_response: StartResponse,
         send_trailers: Callable[[list[tuple[str, str]]], None] | None,
         protocol: ServerProtocol,
@@ -545,7 +540,7 @@ class ConnectWSGIApplication(ABC):
                     Code.UNIMPLEMENTED, "Unrecognized request compression"
                 )
             request_stream = _request_stream(
-                environ,
+                request_body,
                 endpoint.method.input,
                 codec,
                 req_compression,
@@ -600,6 +595,7 @@ class ConnectWSGIApplication(ABC):
             return _response_stream(
                 first_response,
                 environ,
+                request_body,
                 response_stream,
                 writer,
                 send_trailers,
@@ -612,7 +608,7 @@ class ConnectWSGIApplication(ABC):
             # full error-only response.
             error = metadata_run.end(e)
             assert error is not None  # noqa: S101 # end never discards an error
-            _drain_request_body(environ)
+            _drain_request_body(environ, request_body)
             _maybe_log_exception(environ, error)
             _send_stream_response_headers(
                 start_response, protocol, codec, resp_compression.name(), ctx
@@ -687,20 +683,21 @@ def _send_stream_response_headers(
 
 
 def _request_stream(
-    environ: WSGIEnvironment,
+    request_body: _RequestBody,
     request_class: type[_REQ],
     codec: Codec,
     compression: Compression,
     read_max_bytes: int | None = None,
 ) -> Iterator[_REQ]:
     reader = EnvelopeReader(request_class, codec, compression, read_max_bytes)
-    for chunk in _read_body(environ):
+    for chunk in _read_body(request_body):
         yield from reader.feed(chunk)
 
 
 def _response_stream(
     first_response: _RES,
     environ: WSGIEnvironment,
+    request_body: _RequestBody,
     response_stream: Iterator[_RES],
     writer: EnvelopeWriter,
     send_trailers: Callable[[list[tuple[str, str]]], None] | None,
@@ -716,7 +713,7 @@ def _response_stream(
             yield body
     except Exception as e:  # noqa: BLE001 # invoking user callback
         error = e
-        _drain_request_body(environ)
+        _drain_request_body(environ, request_body)
     finally:
         # End the run before ending the response so on_end can still modify
         # response trailers. This is a no-op if the run already ended.
@@ -778,12 +775,12 @@ def _apply_interceptors(
             return replace(endpoint, function=func)
 
 
-def _drain_request_body(environ: WSGIEnvironment) -> None:
+def _drain_request_body(environ: WSGIEnvironment, request_body: _RequestBody) -> None:
     if environ.get("SERVER_PROTOCOL", "").startswith("HTTP/1"):
         # In HTTP/1, the request body should be drained before returning. Generally it's
         # best for the application server to handle this, but gunicorn is a famous
         # server that doesn't do so, so we go ahead and do it ourselves.
-        for _ in _read_body(environ):
+        for _ in _read_body(request_body):
             pass
 
 
