@@ -167,7 +167,7 @@ class ConnectEnvelopeWriter(EnvelopeWriter):
             end_message["metadata"] = metadata
         if error:
             end_message["error"] = error.to_dict()
-        data = json.dumps(end_message).encode()
+        data = json.dumps(end_message, ensure_ascii=False).encode("utf-8")
         if self._compression:
             data = self._compression.compress(data)
         return struct.pack(">BI", self._prefix | 0b10, len(data)) + data
