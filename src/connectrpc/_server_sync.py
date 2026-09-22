@@ -147,6 +147,67 @@ def _read_body(environ: WSGIEnvironment) -> Iterator[bytes]:
         yield chunk
 
 
+class _LimitedInput:
+    """The request body, and not one byte past it.
+
+    PEP 3333 allows a server to hand the application an input stream that does not end with
+    the body, and says the application must not read past CONTENT_LENGTH. The standard
+    library's wsgiref does exactly that: its wsgi.input is the socket, so a read past the body
+    blocks until the client sends more or hangs up, and a client waiting for the response does
+    neither. Wrapping the stream once per request keeps every read in this module - the drain
+    included - inside the body.
+
+    This stands in for wsgi.input for the rest of the request, so it offers the four
+    methods PEP 3333 asks of that stream, even though only read is used here.
+    """
+
+    __slots__ = ("_left", "_stream")
+
+    def __init__(self, stream: BytesIO, left: int) -> None:
+        self._stream = stream
+        self._left = left
+
+    def read(self, size: int = -1) -> bytes:
+        if self._left <= 0:
+            return b""
+        if size is None or size < 0:
+            size = self._left
+        chunk = self._stream.read(min(size, self._left))
+        self._left -= len(chunk)
+        return chunk
+
+    def readline(self, size: int = -1) -> bytes:
+        if self._left <= 0:
+            return b""
+        if size is None or size < 0:
+            size = self._left
+        line = self._stream.readline(min(size, self._left))
+        self._left -= len(line)
+        return line
+
+    def readlines(self, _hint: int = -1) -> list[bytes]:
+        return list(self)
+
+    def __iter__(self) -> Iterator[bytes]:
+        while True:
+            line = self.readline()
+            if not line:
+                return
+            yield line
+
+
+def _limit_request_body(environ: WSGIEnvironment) -> None:
+    """Bound wsgi.input by CONTENT_LENGTH, where the length is known."""
+    content_length = environ.get("CONTENT_LENGTH")
+    if not content_length:
+        return
+    try:
+        length = int(content_length)
+    except ValueError:
+        return
+    environ["wsgi.input"] = _LimitedInput(environ["wsgi.input"], length)
+
+
 class ConnectWSGIApplication(ABC):
     """A WSGI application for the Connect protocol."""
 
@@ -202,6 +263,7 @@ class ConnectWSGIApplication(ABC):
     ) -> Iterable[bytes]:
         ctx: RequestContext | None = None
         try:
+            _limit_request_body(environ)
             path = environ["PATH_INFO"]
             if not path:
                 path = "/"

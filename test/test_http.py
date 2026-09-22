@@ -1,12 +1,24 @@
 from __future__ import annotations
 
+import io
 from typing import TYPE_CHECKING
 
 import pytest
-from pyqwest import Client, Request, SyncClient, SyncRequest, SyncTransport, Transport
+from pyqwest import (
+    Client,
+    HTTPVersion,
+    Request,
+    SyncClient,
+    SyncRequest,
+    SyncTransport,
+    Transport,
+)
 from pyqwest.testing import ASGITransport, WSGITransport
 
+from connectrpc._server_sync import _LimitedInput
+from connectrpc.code import Code
 from connectrpc.codec import proto_json_codec
+from connectrpc.errors import ConnectError
 
 from .connectrpc.example.haberdasher_connect import (
     Haberdasher,
@@ -139,3 +151,62 @@ async def test_json_charset_content_type_stream_async(header: str) -> None:
     async for hat in client.make_similar_hats(Size(inches=2)):
         hats.append(hat)
     assert hats == [Hat(size=2), Hat(size=3)]
+
+
+def test_error_response_does_not_read_past_content_length() -> None:
+    """A WSGI server may hand over an input stream that does not end with the body.
+
+    PEP 3333 says the application must not read past CONTENT_LENGTH, and wsgiref's wsgi.input
+    is the socket itself: a read past the body waits for bytes a client that is waiting for
+    the response will never send. This input raises instead of blocking, so the test fails
+    rather than hangs.
+    """
+    body = b"{}"
+
+    class SocketLikeInput(io.BytesIO):
+        def read(self, size: int | None = -1, /) -> bytes:
+            if self.tell() >= len(body):
+                msg = "read past CONTENT_LENGTH: a socket would block here"
+                raise AssertionError(msg)
+            return super().read(size)
+
+    class BoomHaberdasherSync(HaberdasherSync):
+        def make_hat(self, _request, _ctx):
+            raise ConnectError(Code.INVALID_ARGUMENT, "boom")
+
+    app = HaberdasherWSGIApplication(BoomHaberdasherSync())
+
+    def unbounded_input(environ, start_response):
+        environ["wsgi.input"] = SocketLikeInput(environ["wsgi.input"].read())
+        return app(environ, start_response)
+
+    transport = WSGITransport(unbounded_input, http_version=HTTPVersion.HTTP1)
+    client = SyncClient(transport=transport)
+
+    res = client.post(
+        "http://localhost/connectrpc.example.Haberdasher/MakeHat",
+        content=body,
+        headers={"content-type": "application/json", "content-length": str(len(body))},
+    )
+
+    assert transport.app_exception is None
+    assert res.status == 400
+    assert b"boom" in res.content
+
+
+def test_limited_input_stops_at_content_length() -> None:
+    """The stand-in for wsgi.input stops at the body, on each of its four methods."""
+    body = b"one\ntwo\nthree"
+    unsent = b"the client never sends this"
+
+    def wrapped() -> _LimitedInput:
+        return _LimitedInput(io.BytesIO(body + unsent), len(body))
+
+    stream = wrapped()
+    assert stream.readline() == b"one\n"
+    assert stream.read(2) == b"tw"
+    assert list(stream) == [b"o\n", b"three"]
+    assert stream.read() == b""
+
+    assert wrapped().read() == body
+    assert wrapped().readlines() == [b"one\n", b"two\n", b"three"]
