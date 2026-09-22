@@ -114,6 +114,7 @@ def test_roundtrip_sync_unknown_request_field(ignore_unknown_fields: bool) -> No
         assert response.status >= 400
         error = response.json()
         assert isinstance(error, dict)
+        assert isinstance(error["message"], str)
         assert "notAField" in error["message"]
         assert requests == []
 
@@ -150,6 +151,7 @@ async def test_roundtrip_async_unknown_request_field(
         assert response.status >= 400
         error = response.json()
         assert isinstance(error, dict)
+        assert isinstance(error["message"], str)
         assert "notAField" in error["message"]
         assert requests == []
 
