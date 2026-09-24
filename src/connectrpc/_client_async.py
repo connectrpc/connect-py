@@ -445,7 +445,6 @@ def _request_content(
     msgs: AsyncIterator[Any] | list[Any], codec: Codec, compression: Compression | None
 ) -> bytes | AsyncIterator[bytes]:
     if isinstance(msgs, list):
-        # A sized body goes out with the headers instead of waiting on the event loop.
         writer = ConnectEnvelopeWriter(codec, compression)
         return b"".join(writer.write(msg) for msg in msgs)
     return _streaming_request_content(msgs, codec, compression)

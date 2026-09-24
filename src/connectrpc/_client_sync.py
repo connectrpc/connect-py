@@ -455,7 +455,6 @@ def _request_content(
     msgs: Iterator[Any] | list[Any], codec: Codec, compression: Compression | None
 ) -> bytes | Iterator[bytes]:
     if isinstance(msgs, list):
-        # A sized body instead of a chunked stream, like a unary request.
         writer = ConnectEnvelopeWriter(codec, compression)
         return b"".join(writer.write(msg) for msg in msgs)
     return _streaming_request_content(msgs, codec, compression)
