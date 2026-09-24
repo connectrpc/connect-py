@@ -229,6 +229,8 @@ class ConnectClientSync:
     def execute_client_stream(
         self,
         *,
+        # This should not be changed to accept a list unless reworking logic that would
+        # concatenate them into a single payload that may cause backpressure issues.
         request: Iterator[REQ],
         method: MethodInfo[REQ, RES],
         headers: Headers | Mapping[str, str] | None = None,
@@ -271,6 +273,8 @@ class ConnectClientSync:
     def execute_bidi_stream(
         self,
         *,
+        # This should not be changed to accept a list unless reworking logic that would
+        # concatenate them into a single payload that may cause backpressure issues.
         request: Iterator[REQ],
         method: MethodInfo[REQ, RES],
         headers: Headers | Mapping[str, str] | None = None,
