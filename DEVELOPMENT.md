@@ -97,16 +97,4 @@ uv run poe docs-serve
 
 ## Contributing
 
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Run the full smoke check suite: `uv run poe check`
-5. Submit a pull request
-
-### Pull Request Guidelines
-
-- Ensure all tests pass
-- Add tests for new functionality
-- Update documentation as needed
-- Follow the existing code style
-- Write clear commit messages
+See [CONTRIBUTING.md](./CONTRIBUTING.md) for how to propose changes and submit a pull request.
