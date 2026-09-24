@@ -45,6 +45,8 @@ Install the runtime library:
 uv add connectrpc
 ```
 
+To serve under [trio](https://trio.readthedocs.io), for example with `hypercorn --worker-class trio`, install `connectrpc[trio]`.
+
 For codegen, install [`buf`](https://github.com/bufbuild/buf) and create `buf.gen.yaml`:
 
 ```yaml

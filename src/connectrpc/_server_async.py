@@ -5,7 +5,7 @@ import contextlib
 import functools
 import inspect
 from abc import ABC, abstractmethod
-from asyncio import CancelledError, Event, create_task, sleep
+from asyncio import CancelledError, Event, create_task, get_running_loop, sleep
 from dataclasses import replace
 from http import HTTPStatus
 from typing import TYPE_CHECKING, Generic, TypeVar, cast
@@ -398,15 +398,31 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
         headers: Headers,
         ctx: _server_shared.RequestContext,
     ) -> None:
+        if not _on_asyncio():
+            _require_anyio()
+            from ._server_anyio import handle_stream  # noqa: PLC0415
+
+            return await handle_stream(
+                compressions=self._compressions,
+                metadata_interceptors=self._metadata_interceptors,
+                read_max_bytes=self._read_max_bytes,
+                receive=receive,
+                send=send,
+                protocol=protocol,
+                endpoint=endpoint,
+                codec=codec,
+                headers=headers,
+                ctx=ctx,
+            )
+
         req_compression, resp_compression = protocol.negotiate_stream_compression(
             headers, self._compressions
         )
 
-        writer = protocol.create_envelope_writer(codec, resp_compression)
+        sender = _ResponseSender(send, protocol, codec, resp_compression, ctx)
 
         metadata_run = MetadataInterceptorsRun(self._metadata_interceptors, ctx)
         error: Exception | None = None
-        sent_headers = False
         try:
             await metadata_run.start()
             if not req_compression:
@@ -461,18 +477,7 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
                 async for message in response_stream:
                     if disconnect_detected is not None and disconnect_detected.is_set():
                         raise ConnectError(Code.CANCELED, "Client disconnected")
-                    # Don't send headers until the first message to allow logic a chance to add
-                    # response headers.
-                    if not sent_headers:
-                        await _send_stream_response_headers(
-                            send, protocol, codec, resp_compression.name(), ctx
-                        )
-                        sent_headers = True
-
-                    body = writer.write(message)
-                    await send(
-                        {"type": "http.response.body", "body": body, "more_body": True}
-                    )
+                    await sender.send_message(message)
             finally:
                 # Cancel the monitor first so a throwing generator finally-block
                 # doesn't leak the task.
@@ -480,11 +485,7 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
                     monitor_task.cancel()
                     with contextlib.suppress(CancelledError):
                         await monitor_task
-                # Explicitly close the stream so that any generator finally-blocks
-                # run promptly (Python defers async-generator cleanup to GC otherwise).
-                aclose = getattr(response_stream, "aclose", None)
-                if aclose is not None:
-                    await aclose()
+                await _aclose(response_stream)
         except CancelledError as e:
             raise ConnectError(Code.CANCELED, "Request was cancelled") from e
         except Exception as e:  # noqa: BLE001 # invoking user callback
@@ -493,36 +494,7 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
             # End the run before ending the response so on_end can still modify
             # response trailers. This is a no-op if the run already ended.
             error = await metadata_run.end(error)
-            end_message = writer.end(
-                ctx.response_trailers,
-                ConnectWireError.from_exception(error) if error else None,
-            )
-            if not sent_headers:
-                # Exception before any response message is returned
-                await _send_stream_response_headers(
-                    send, protocol, codec, resp_compression.name(), ctx
-                )
-            if isinstance(end_message, bytes):
-                await send(
-                    {
-                        "type": "http.response.body",
-                        "body": end_message,
-                        "more_body": False,
-                    }
-                )
-            else:
-                await send(
-                    {"type": "http.response.body", "body": b"", "more_body": False}
-                )
-                await send(
-                    {
-                        "type": "http.response.trailers",
-                        "headers": [
-                            (k.encode(), v.encode()) for k, v in end_message.allitems()
-                        ],
-                        "more_trailers": False,
-                    }
-                )
+            await sender.end(error)
             if error and not isinstance(error, ConnectError):
                 raise error
 
@@ -568,6 +540,23 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
         return resolved_endpoints
 
 
+def _on_asyncio() -> bool:
+    try:
+        get_running_loop()
+    except RuntimeError:
+        return False
+    return True
+
+
+def _require_anyio() -> None:
+    # Imported on first use so that applications on asyncio do not need anyio.
+    try:
+        import anyio  # noqa: F401, PLC0415
+    except ImportError as e:
+        msg = "Serving under trio requires anyio. Install connectrpc[trio]."
+        raise ImportError(msg, name=e.name) from e
+
+
 async def _send_stream_response_headers(
     send: ASGISendCallable,
     protocol: ServerProtocol,
@@ -590,6 +579,77 @@ async def _send_stream_response_headers(
             "trailers": protocol.uses_trailers(),
         }
     )
+
+
+class _ResponseSender:
+    """Sends the response to a streaming request."""
+
+    def __init__(
+        self,
+        send: ASGISendCallable,
+        protocol: ServerProtocol,
+        codec: Codec,
+        compression: Compression,
+        ctx: RequestContext,
+    ) -> None:
+        self._send = send
+        self._protocol = protocol
+        self._codec = codec
+        self._compression = compression
+        self._writer = protocol.create_envelope_writer(codec, compression)
+        self._ctx = ctx
+        self._sent_headers = False
+
+    async def send_message(self, message: object) -> None:
+        # Don't send headers until the first message to allow logic a chance to add
+        # response headers.
+        if not self._sent_headers:
+            await self._send_headers()
+            self._sent_headers = True
+
+        body = self._writer.write(message)
+        await self._send(
+            {"type": "http.response.body", "body": body, "more_body": True}
+        )
+
+    async def end(self, error: Exception | None) -> None:
+        end_message = self._writer.end(
+            self._ctx.response_trailers,
+            ConnectWireError.from_exception(error) if error else None,
+        )
+        if not self._sent_headers:
+            # Exception before any response message is returned
+            await self._send_headers()
+        if isinstance(end_message, bytes):
+            await self._send(
+                {"type": "http.response.body", "body": end_message, "more_body": False}
+            )
+        else:
+            await self._send(
+                {"type": "http.response.body", "body": b"", "more_body": False}
+            )
+            await self._send(
+                {
+                    "type": "http.response.trailers",
+                    "headers": [
+                        (k.encode(), v.encode()) for k, v in end_message.allitems()
+                    ],
+                    "more_trailers": False,
+                }
+            )
+
+    async def _send_headers(self) -> None:
+        await _send_stream_response_headers(
+            self._send, self._protocol, self._codec, self._compression.name(), self._ctx
+        )
+
+
+async def _aclose(stream: AsyncIterator[object]) -> None:
+    # Explicitly close the stream so that any generator finally-blocks
+    # run promptly (Python defers async-generator cleanup to GC otherwise).
+    aclose = getattr(stream, "aclose", None)
+    if aclose is not None:
+        await aclose()
 
 
 async def _request_stream(
