@@ -80,7 +80,17 @@ To release a new version, follow the guide in [RELEASE.md](./RELEASE.md).
 
 ## Documentation
 
-Documentation is contained in the [connectrpc/connectrpc.com](https://github.com/connectrpc/connectrpc.com) repository.
+User guides live in the [connectrpc/connectrpc.com](https://github.com/connectrpc/connectrpc.com) repository.
+
+The [API reference](https://connectrpc.github.io/connect-py/api/) is generated from docstrings, with pages in [`docs/`](./docs) and configuration in [`zensical.toml`](./zensical.toml):
+
+```bash
+# Build the API reference
+uv run poe docs-build
+
+# Serve it locally
+uv run poe docs-serve
+```
 
 ## Contributing
 
