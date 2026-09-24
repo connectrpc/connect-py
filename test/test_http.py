@@ -1,12 +1,24 @@
 from __future__ import annotations
 
+import io
 from typing import TYPE_CHECKING
 
 import pytest
-from pyqwest import Client, Request, SyncClient, SyncRequest, SyncTransport, Transport
+from pyqwest import (
+    Client,
+    HTTPVersion,
+    Request,
+    SyncClient,
+    SyncRequest,
+    SyncTransport,
+    Transport,
+)
 from pyqwest.testing import ASGITransport, WSGITransport
 
+from connectrpc._server_sync import _RequestBody
+from connectrpc.code import Code
 from connectrpc.codec import proto_json_codec
+from connectrpc.errors import ConnectError
 
 from .connectrpc.example.haberdasher_connect import (
     Haberdasher,
@@ -139,3 +151,61 @@ async def test_json_charset_content_type_stream_async(header: str) -> None:
     async for hat in client.make_similar_hats(Size(inches=2)):
         hats.append(hat)
     assert hats == [Hat(size=2), Hat(size=3)]
+
+
+def test_error_response_does_not_read_past_content_length() -> None:
+    body = b"{}"
+
+    class SocketLikeInput(io.BytesIO):
+        def read(self, size: int | None = -1, /) -> bytes:
+            if self.tell() >= len(body):
+                msg = "read past CONTENT_LENGTH"
+                raise AssertionError(msg)
+            return super().read(size)
+
+    class BoomHaberdasherSync(HaberdasherSync):
+        def make_hat(self, _request, _ctx):
+            raise ConnectError(Code.INVALID_ARGUMENT, "boom")
+
+    app = HaberdasherWSGIApplication(BoomHaberdasherSync())
+
+    def unbounded_input(environ, start_response):
+        environ["wsgi.input"] = SocketLikeInput(environ["wsgi.input"].read())
+        return app(environ, start_response)
+
+    transport = WSGITransport(unbounded_input, http_version=HTTPVersion.HTTP1)
+    client = SyncClient(transport=transport)
+
+    res = client.post(
+        "http://localhost/connectrpc.example.Haberdasher/MakeHat",
+        content=body,
+        headers={"content-type": "application/json", "content-length": str(len(body))},
+    )
+
+    assert transport.app_exception is None
+    assert res.status == 400
+    assert b"boom" in res.content
+
+
+def test_request_body_stops_at_content_length() -> None:
+    body = b"one\ntwo\nthree"
+    unsent = b"the client never sends this"
+
+    def from_environ(**extra: str) -> _RequestBody:
+        return _RequestBody.from_environ(
+            {"wsgi.input": io.BytesIO(body + unsent), **extra}
+        )
+
+    bounded = from_environ(CONTENT_LENGTH=str(len(body)))
+    assert bounded.read(3) == b"one"
+    assert bounded.read() == body[3:]
+    assert bounded.read() == b""
+
+    assert (
+        from_environ(CONTENT_LENGTH=str(len(body))).read(len(body) + len(unsent))
+        == body
+    )
+
+    # With no usable length there is nothing to bound by, so the stream is passed through.
+    assert from_environ().read() == body + unsent
+    assert from_environ(CONTENT_LENGTH="not a number").read() == body + unsent
