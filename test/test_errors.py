@@ -590,12 +590,7 @@ def test_sync_unhandled_exception_logged_stream() -> None:
     assert "Traceback" in logged_error
 
 
-def test_error_body_is_utf8() -> None:
-    """A non-ASCII error message travels as UTF-8, like every message body.
-
-    `json.dumps` escapes non-ASCII by default, which would make the one string a human is
-    most likely to read the only escaped thing in the response.
-    """
+def test_unicode_error_body() -> None:
     message = "重量 is out of range"
 
     class ErrorHaberdasherSync(HaberdasherSync):
@@ -615,13 +610,7 @@ def test_error_body_is_utf8() -> None:
     assert message.encode() in res.content
 
 
-def test_error_body_is_utf8_stream() -> None:
-    """The end-of-stream frame carries the message as UTF-8 too.
-
-    It is built in a different module from the unary error body, so the unary test above
-    does not cover it. The frame's length prefix is computed from the encoded bytes, so
-    a shorter body does not desynchronise the envelope.
-    """
+def test_unicode_error_body_utf8_stream() -> None:
     message = "重量 is out of range"
 
     class ErrorHaberdasherSync(HaberdasherSync):

@@ -180,8 +180,7 @@ class ConnectWireError:
         return data
 
     def to_json_bytes(self) -> bytes:
-        # ensure_ascii=False: the body is UTF-8, like every message body, and an error
-        # message is often the only place a human reads a non-ASCII string from.
+        # ensure_ascii=False to keep error messages readable when debugging
         return json.dumps(self.to_dict(), ensure_ascii=False).encode("utf-8")
 
 
