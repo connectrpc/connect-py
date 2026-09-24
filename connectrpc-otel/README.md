@@ -9,6 +9,7 @@ for requests with support for auto-instrumentation.
 from connectrpc_otel import OpenTelemetryInterceptor
 
 from eliza_connect import ElizaServiceWSGIApplication, ElizaServiceClientSync
+from eliza_pb import SayRequest
 
 from ._service import MyElizaService
 
@@ -21,6 +22,6 @@ def make_request():
     client = ElizaServiceClientSync(
         "http://localhost:8080", interceptors=[OpenTelemetryInterceptor(client=True)]
     )
-    resp = client.Say(SayRequest(sentence="Hello!"))
+    resp = client.say(SayRequest(sentence="Hello!"))
     print(resp)
 ```
