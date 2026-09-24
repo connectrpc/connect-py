@@ -24,19 +24,22 @@
 
 ## Development Workflow
 
-We use `poe` as a task runner. Available commands:
+We use `poe` as a task runner. Run `uv run poe` to list every task. Common ones:
 
 ```bash
-# Run all checks
+# Run smoke checks: lint, unit tests, and connectrpc-otel tests
 uv run poe check
 
 # Format code
 uv run poe format
 
-# Run tests
+# Run unit tests
 uv run poe test
 
-# Run conformance tests
+# Run connectrpc-grpcreflect tests (not part of `check`)
+uv run poe test-grpcreflect
+
+# Run conformance tests (not part of `check`)
 uv run poe test-conformance
 ```
 
