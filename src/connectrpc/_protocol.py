@@ -180,7 +180,8 @@ class ConnectWireError:
         return data
 
     def to_json_bytes(self) -> bytes:
-        return json.dumps(self.to_dict()).encode("utf-8")
+        # ensure_ascii=False to keep error messages readable when debugging
+        return json.dumps(self.to_dict(), ensure_ascii=False).encode("utf-8")
 
 
 class ServerProtocol(Protocol):

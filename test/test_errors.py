@@ -588,3 +588,43 @@ def test_sync_unhandled_exception_logged_stream() -> None:
     assert "Exception in WSGI application" in logged_error
     assert "TypeError: Something went wrong" in logged_error
     assert "Traceback" in logged_error
+
+
+def test_unicode_error_body() -> None:
+    message = "重量 is out of range"
+
+    class ErrorHaberdasherSync(HaberdasherSync):
+        def make_hat(self, _request, _ctx) -> NoReturn:
+            raise ConnectError(Code.INVALID_ARGUMENT, message)
+
+    transport = WSGITransport(HaberdasherWSGIApplication(ErrorHaberdasherSync()))
+    client = SyncClient(transport=transport)
+
+    res = client.post(
+        "http://localhost/connectrpc.example.Haberdasher/MakeHat",
+        content=b"{}",
+        headers={"content-type": "application/json"},
+    )
+
+    assert res.status == 400
+    assert message.encode() in res.content
+
+
+def test_unicode_error_body_utf8_stream() -> None:
+    message = "重量 is out of range"
+
+    class ErrorHaberdasherSync(HaberdasherSync):
+        def make_similar_hats(self, _request, _ctx) -> NoReturn:
+            raise ConnectError(Code.INVALID_ARGUMENT, message)
+
+    transport = WSGITransport(HaberdasherWSGIApplication(ErrorHaberdasherSync()))
+    client = SyncClient(transport=transport)
+
+    res = client.post(
+        "http://localhost/connectrpc.example.Haberdasher/MakeSimilarHats",
+        content=b"\x00" + (2).to_bytes(4, "big") + b"{}",
+        headers={"content-type": "application/connect+json"},
+    )
+
+    assert res.status == 200
+    assert message.encode() in res.content
