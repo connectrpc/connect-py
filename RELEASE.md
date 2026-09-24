@@ -29,3 +29,12 @@ Note the new version X.Y.Z in the updated files.
    - Edit the release notes. A summary and other categories should be added, in most cases, with the two categories ### Enhancements and ### Bugfixes. Feel free to collect multiple small changes to docs or GitHub config into one line, but try to tag every contributor. Make especially sure to credit new external contributors!
 
 6. Publish the release.
+
+## Releasing `connectrpc-otel` and `connectrpc-grpcreflect`
+
+These packages are versioned and released independently of `connectrpc`. Follow the steps above, with these differences:
+
+- Bump the version with `uv version --package connectrpc-otel --bump <patch|minor>` (or `--package connectrpc-grpcreflect`) instead of `poe bump`.
+- Title the PR "Prepare for connectrpc-otel vX.Y.Z" ([Example PR: #277](https://github.com/connectrpc/connect-py/pull/277)).
+- Tag the release `connectrpc-otel/vX.Y.Z` (or `connectrpc-grpcreflect/vX.Y.Z`) and title it "otel vX.Y.Z" (or "grpcreflect vX.Y.Z"). The tag prefix triggers that package's release workflow.
+- When generating release notes, set the package's previous tag as the "Previous tag", and leave "set as latest release" unchecked so the `connectrpc` release stays latest.
