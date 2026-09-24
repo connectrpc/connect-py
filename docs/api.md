@@ -32,3 +32,5 @@
             - ServerReflectionAlphaASGIApplication
             - ServerReflectionAlphaServiceSync
             - ServerReflectionAlphaWSGIApplication
+
+::: connectrpc_otel
