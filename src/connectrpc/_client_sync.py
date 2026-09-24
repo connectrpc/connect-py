@@ -229,6 +229,8 @@ class ConnectClientSync:
     def execute_client_stream(
         self,
         *,
+        # This should not be changed to accept a list unless reworking logic that would
+        # concatenate them into a single payload that may cause backpressure issues.
         request: Iterator[REQ],
         method: MethodInfo[REQ, RES],
         headers: Headers | Mapping[str, str] | None = None,
@@ -271,6 +273,8 @@ class ConnectClientSync:
     def execute_bidi_stream(
         self,
         *,
+        # This should not be changed to accept a list unless reworking logic that would
+        # concatenate them into a single payload that may cause backpressure issues.
         request: Iterator[REQ],
         method: MethodInfo[REQ, RES],
         headers: Headers | Mapping[str, str] | None = None,
@@ -292,7 +296,7 @@ class ConnectClientSync:
     def _send_request_unary(self, request: REQ, ctx: RequestContext[REQ, RES]) -> RES:
         if isinstance(self._protocol, GRPCClientProtocol):
             return _consume_single_response(
-                self._send_request_bidi_stream(iter([request]), ctx)
+                self._send_request_bidi_stream([request], ctx)
             )
 
         request_headers = HTTPHeaders(ctx.request_headers.allitems())
@@ -362,10 +366,10 @@ class ConnectClientSync:
     def _send_request_server_stream(
         self, request: REQ, ctx: RequestContext[REQ, RES], /
     ) -> Iterator[RES]:
-        return self._send_request_bidi_stream(iter([request]), ctx)
+        return self._send_request_bidi_stream([request], ctx)
 
     def _send_request_bidi_stream(
-        self, request: Iterator[REQ], ctx: RequestContext[REQ, RES], /
+        self, request: Iterator[REQ] | list[REQ], ctx: RequestContext[REQ, RES], /
     ) -> Iterator[RES]:
         request_headers = HTTPHeaders(ctx.request_headers.allitems())
         url = f"{self._address}/{ctx.method.service_name}/{ctx.method.name}"
@@ -378,7 +382,7 @@ class ConnectClientSync:
         reader: EnvelopeReader | None = None
         resp: SyncResponse | None = None
         try:
-            request_data = _streaming_request_content(
+            request_data = _request_content(
                 request, self._codec, self._send_compression
             )
 
@@ -449,6 +453,15 @@ class ConnectClientSync:
                     reader.handle_response_complete(resp, rst_err)
                 raise rst_err from e
             raise ConnectError(Code.UNAVAILABLE, str(e)) from e
+
+
+def _request_content(
+    msgs: Iterator[Any] | list[Any], codec: Codec, compression: Compression | None
+) -> bytes | Iterator[bytes]:
+    if isinstance(msgs, list):
+        writer = ConnectEnvelopeWriter(codec, compression)
+        return b"".join(writer.write(msg) for msg in msgs)
+    return _streaming_request_content(msgs, codec, compression)
 
 
 def _streaming_request_content(

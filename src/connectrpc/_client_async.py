@@ -229,6 +229,8 @@ class ConnectClient:
     async def execute_client_stream(
         self,
         *,
+        # This should not be changed to accept a list unless reworking logic that would
+        # concatenate them into a single payload that may cause backpressure issues.
         request: AsyncIterator[REQ],
         method: MethodInfo[REQ, RES],
         headers: Headers | Mapping[str, str] | None = None,
@@ -271,6 +273,8 @@ class ConnectClient:
     def execute_bidi_stream(
         self,
         *,
+        # This should not be changed to accept a list unless reworking logic that would
+        # concatenate them into a single payload that may cause backpressure issues.
         request: AsyncIterator[REQ],
         method: MethodInfo[REQ, RES],
         headers: Headers | Mapping[str, str] | None = None,
@@ -294,7 +298,7 @@ class ConnectClient:
     ) -> RES:
         if isinstance(self._protocol, GRPCClientProtocol):
             return await _consume_single_response(
-                self._send_request_bidi_stream(_yield_single_message(request), ctx)
+                self._send_request_bidi_stream([request], ctx)
             )
 
         request_headers = HTTPHeaders(ctx.request_headers.allitems())
@@ -368,10 +372,10 @@ class ConnectClient:
     def _send_request_server_stream(
         self, request: REQ, ctx: RequestContext[REQ, RES], /
     ) -> AsyncIterator[RES]:
-        return self._send_request_bidi_stream(_yield_single_message(request), ctx)
+        return self._send_request_bidi_stream([request], ctx)
 
     async def _send_request_bidi_stream(
-        self, request: AsyncIterator[REQ], ctx: RequestContext[REQ, RES], /
+        self, request: AsyncIterator[REQ] | list[REQ], ctx: RequestContext[REQ, RES], /
     ) -> AsyncIterator[RES]:
         request_headers = HTTPHeaders(ctx.request_headers.allitems())
         url = f"{self._address}/{ctx.method.service_name}/{ctx.method.name}"
@@ -383,7 +387,7 @@ class ConnectClient:
         reader: EnvelopeReader | None = None
         resp: Response | None = None
         try:
-            request_data = _streaming_request_content(
+            request_data = _request_content(
                 request, self._codec, self._send_compression
             )
 
@@ -441,16 +445,21 @@ class ConnectClient:
             raise ConnectError(Code.UNAVAILABLE, str(e)) from e
 
 
+def _request_content(
+    msgs: AsyncIterator[Any] | list[Any], codec: Codec, compression: Compression | None
+) -> bytes | AsyncIterator[bytes]:
+    if isinstance(msgs, list):
+        writer = ConnectEnvelopeWriter(codec, compression)
+        return b"".join(writer.write(msg) for msg in msgs)
+    return _streaming_request_content(msgs, codec, compression)
+
+
 async def _streaming_request_content(
     msgs: AsyncIterator[Any], codec: Codec, compression: Compression | None
 ) -> AsyncIterator[bytes]:
     writer = ConnectEnvelopeWriter(codec, compression)
     async for msg in msgs:
         yield writer.write(msg)
-
-
-async def _yield_single_message(message: REQ) -> AsyncIterator[REQ]:
-    yield message
 
 
 async def _consume_single_response(stream: AsyncIterator[RES]) -> RES:
