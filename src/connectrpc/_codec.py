@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Protocol, TypeVar
+from typing import Any, Protocol
 
 from protobuf import Message, Registry
 from protobuf.wkt import (
@@ -18,6 +18,7 @@ from protobuf.wkt import (
     type_pb,
     wrappers_pb,
 )
+from typing_extensions import TypeVar
 
 CODEC_NAME_PROTO = "proto"
 CODEC_NAME_JSON = "json"
@@ -40,8 +41,8 @@ DEFAULT_REGISTRY = Registry(
 )
 
 
-T_contra = TypeVar("T_contra", contravariant=True)
-U = TypeVar("U")
+T_contra = TypeVar("T_contra", contravariant=True, default=Any)
+U = TypeVar("U", default=Any)
 V = TypeVar("V", bound=Message)
 
 
