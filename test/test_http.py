@@ -154,19 +154,12 @@ async def test_json_charset_content_type_stream_async(header: str) -> None:
 
 
 def test_error_response_does_not_read_past_content_length() -> None:
-    """A WSGI server may hand over an input stream that does not end with the body.
-
-    PEP 3333 says the application must not read past CONTENT_LENGTH, and wsgiref's wsgi.input
-    is the socket itself: a read past the body waits for bytes a client that is waiting for
-    the response will never send. This input raises instead of blocking, so the test fails
-    rather than hangs.
-    """
     body = b"{}"
 
     class SocketLikeInput(io.BytesIO):
         def read(self, size: int | None = -1, /) -> bytes:
             if self.tell() >= len(body):
-                msg = "read past CONTENT_LENGTH: a socket would block here"
+                msg = "read past CONTENT_LENGTH"
                 raise AssertionError(msg)
             return super().read(size)
 
@@ -195,7 +188,6 @@ def test_error_response_does_not_read_past_content_length() -> None:
 
 
 def test_request_body_stops_at_content_length() -> None:
-    """The bounded reader stops at CONTENT_LENGTH, and passes through without one."""
     body = b"one\ntwo\nthree"
     unsent = b"the client never sends this"
 

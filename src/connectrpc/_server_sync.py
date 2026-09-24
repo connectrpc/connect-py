@@ -111,43 +111,35 @@ def prepare_response_headers(
 
 
 class _RequestBody:
-    """The request body, and not one byte past it.
+    """The request body, capped at content-length."""
 
-    PEP 3333 allows a server to hand the application an input stream that does not end with
-    the body, and says the application must not read past CONTENT_LENGTH. The standard
-    library's wsgiref does exactly that: its wsgi.input is the socket, so a read past the body
-    blocks until the client sends more or hangs up, and a client waiting for the response does
-    neither. Reading the body through this, rather than from wsgi.input directly, keeps every
-    read in this module - the drain included - inside the body wherever the length is known.
-    """
-
-    __slots__ = ("_left", "_stream")
+    __slots__ = ("_remaining", "_stream")
 
     @classmethod
     def from_environ(cls, environ: WSGIEnvironment) -> _RequestBody:
         """Read the body of the request described by environ, bounded by CONTENT_LENGTH."""
         content_length = environ.get("CONTENT_LENGTH")
-        left: int | None = None
+        remaining: int | None = None
         if content_length:
             try:
-                left = int(content_length)
+                remaining = int(content_length)
             except ValueError:
-                left = None
-        return cls(environ["wsgi.input"], left)
+                remaining = None
+        return cls(environ["wsgi.input"], remaining)
 
-    def __init__(self, stream: BytesIO, left: int | None) -> None:
+    def __init__(self, stream: BytesIO, remaining: int | None) -> None:
         self._stream = stream
-        self._left = left
+        self._remaining = remaining
 
     def read(self, size: int = -1) -> bytes:
-        if self._left is None:
+        if self._remaining is None:
             return self._stream.read(size)
-        if self._left <= 0:
+        if self._remaining <= 0:
             return b""
         if size < 0:
-            size = self._left
-        chunk = self._stream.read(min(size, self._left))
-        self._left -= len(chunk)
+            size = self._remaining
+        chunk = self._stream.read(min(size, self._remaining))
+        self._remaining -= len(chunk)
         return chunk
 
 
