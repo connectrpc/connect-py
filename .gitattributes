@@ -1,5 +1,5 @@
 * text=auto eol=lf
 
-**/gen/**/*.py inguist-generated=true
+**/gen/**/*.py linguist-generated=true
 **/_gen/**/*.py linguist-generated=true
-*_connect.py linguist-generated=true
+**/connectrpc/example/*_connect.py linguist-generated=true
