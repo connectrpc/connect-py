@@ -299,4 +299,5 @@ def url_to_server_address(address: str) -> str | None:
         scheme = "http"
         address = address[len("http://") :]
 
-    return host_to_server_address(address, scheme)
+    # The base URL may include a path prefix, which is not part of the address.
+    return host_to_server_address(address.partition("/")[0], scheme)
