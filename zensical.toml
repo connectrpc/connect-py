@@ -54,3 +54,5 @@ signature_crossrefs = true
 show_root_heading = true
 show_signature = false
 show_source = false
+show_submodules = true
+filters = "public"
