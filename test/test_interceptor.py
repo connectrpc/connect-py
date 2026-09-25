@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import itertools
 from typing import TYPE_CHECKING
 
@@ -23,6 +24,8 @@ from .connectrpc.example.haberdasher_connect import (
 from .connectrpc.example.haberdasher_pb import Hat, Size
 
 if TYPE_CHECKING:
+    from asgiref.typing import HTTPDisconnectEvent, HTTPRequestEvent, HTTPScope
+
     from connectrpc.request import RequestContext
 
 
@@ -634,6 +637,78 @@ def test_metadata_interceptor_ordering_sync() -> None:
         "unary after",
         "metadata end",
     ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("method", ["MakeSimilarHats", "MakeVariousHats"])
+async def test_metadata_interceptor_closes_stream_async(method: str) -> None:
+    """An early end of the response closes the handler's stream."""
+    events: list[str] = []
+
+    class EventMetadataInterceptor:
+        async def on_start(self, ctx):  # noqa: ARG002
+            events.append("metadata start")
+
+        async def on_end(self, _token, _ctx, _error):
+            events.append("metadata end")
+
+    class EndlessHaberdasher(Haberdasher):
+        async def make_similar_hats(self, request, _ctx):
+            try:
+                while True:
+                    yield Hat(size=request.inches)
+                    await asyncio.sleep(0)
+            finally:
+                await asyncio.sleep(0)
+                events.append("handler closed")
+
+        def make_various_hats(self, _request, ctx):
+            return self.make_similar_hats(Size(inches=10), ctx)
+
+    app = HaberdasherASGIApplication(
+        EndlessHaberdasher(),
+        interceptors=(_PassthroughUnaryInterceptor(), EventMetadataInterceptor()),
+    )
+    path = f"/connectrpc.example.Haberdasher/{method}"
+    scope: HTTPScope = {
+        "type": "http",
+        "asgi": {"spec_version": "2.0", "version": "3.0"},
+        "http_version": "1.1",
+        "method": "POST",
+        "scheme": "http",
+        "path": path,
+        "raw_path": path.encode(),
+        "query_string": b"",
+        "root_path": "",
+        "headers": [(b"content-type", b"application/connect+proto")],
+        "client": None,
+        "server": None,
+        "extensions": None,
+    }
+    request = Size(inches=10).to_binary()
+    body = b"\x00" + len(request).to_bytes(4, "big") + request
+    disconnected = asyncio.Event()
+    sent_request = False
+
+    async def receive() -> HTTPRequestEvent | HTTPDisconnectEvent:
+        nonlocal sent_request
+        if not sent_request:
+            sent_request = True
+            return {"type": "http.request", "body": body, "more_body": False}
+        await disconnected.wait()
+        return {"type": "http.disconnect"}
+
+    async def send(message) -> None:
+        if message["type"] == "http.response.body" and message["more_body"]:
+            disconnected.set()
+            if method == "MakeVariousHats":
+                # Only a server stream watches receive() for the disconnect; a bidi stream
+                # learns of it from a failed send.
+                raise ConnectError(Code.CANCELED, "Client disconnected")
+
+    await asyncio.wait_for(app(scope, receive, send), timeout=5.0)
+
+    assert events == ["metadata start", "handler closed", "metadata end"]
 
 
 class _ResponseMetadataInterceptor:

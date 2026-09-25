@@ -11,6 +11,7 @@
 Connect is the **easiest way to build modern APIs**.
 
 [Docs](https://connectrpc.com/docs/python/getting-started/) •
+[API reference](https://connectrpc.github.io/connect-py/api/) •
 [Example](https://github.com/connectrpc/connect-py/tree/main/example) •
 [New to Connect?](https://connectrpc.com/)
 

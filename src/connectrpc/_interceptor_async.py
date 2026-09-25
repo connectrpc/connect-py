@@ -220,8 +220,12 @@ class MetadataInterceptorInvoker(Generic[T]):
         token = await self._delegate.on_start(ctx)
         error: Exception | None = None
         try:
-            async for response in call_next(request, ctx):
-                yield response
+            responses = call_next(request, ctx)
+            try:
+                async for response in responses:
+                    yield response
+            finally:
+                await _aclose(responses)
         except Exception as e:
             error = e
             raise
@@ -237,13 +241,25 @@ class MetadataInterceptorInvoker(Generic[T]):
         token = await self._delegate.on_start(ctx)
         error: Exception | None = None
         try:
-            async for response in call_next(request, ctx):
-                yield response
+            responses = call_next(request, ctx)
+            try:
+                async for response in responses:
+                    yield response
+            finally:
+                await _aclose(responses)
         except Exception as e:
             error = e
             raise
         finally:
             await self._delegate.on_end(token, ctx, error)
+
+
+async def _aclose(stream: AsyncIterator[object]) -> None:
+    # A generator that wraps another does not close it when it is closed itself,
+    # which leaves the inner one's finally blocks to the garbage collector.
+    aclose = getattr(stream, "aclose", None)
+    if aclose is not None:
+        await aclose()
 
 
 class MetadataInterceptorsRun:

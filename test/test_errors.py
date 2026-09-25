@@ -311,6 +311,24 @@ _client_errors = [
         {"content-type": "application/json"},
         id="connect timeout header invalid",
     ),
+    pytest.param(
+        "POST",
+        "/connectrpc.example.Haberdasher/MakeHat",
+        {"Content-Type": "application/proto", "connect-timeout-ms": "-1"},
+        Size(inches=10).to_binary(),
+        HTTPStatus.BAD_REQUEST,
+        {"content-type": "application/json"},
+        id="connect timeout header negative",
+    ),
+    pytest.param(
+        "POST",
+        "/connectrpc.example.Haberdasher/MakeHat",
+        {"Content-Type": "application/grpc", "grpc-timeout": "-5m"},
+        b"",
+        HTTPStatus.BAD_REQUEST,
+        {"content-type": "application/json"},
+        id="grpc timeout header negative",
+    ),
 ]
 
 

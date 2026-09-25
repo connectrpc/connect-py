@@ -26,6 +26,7 @@ from pyqwest import Client, SyncClient
 from pyqwest.testing import ASGITransport, WSGITransport
 
 from connectrpc_otel import OpenTelemetryInterceptor
+from connectrpc_otel._interceptor import _split_address
 
 if TYPE_CHECKING:
     from asgiref.typing import ASGIApplication
@@ -547,3 +548,77 @@ async def test_non_standard_port(
     assert server_attrs is not None
     assert server_attrs["client.address"] == "123.456.7.89"
     assert server_attrs["client.port"] == 143
+
+
+@pytest.mark.asyncio
+async def test_base_url_with_path(
+    app: ElizaServiceASGIApplication | ElizaServiceWSGIApplication,
+    tracer_provider: TracerProvider,
+    span_exporter: InMemorySpanExporter,
+) -> None:
+    interceptor = OpenTelemetryInterceptor(tracer_provider=tracer_provider, client=True)
+    # The in-memory transports do not strip the path prefix, so the call fails with
+    # not_found after the client span records the address.
+    with pytest.raises(ConnectError):
+        if isinstance(app, ElizaServiceASGIApplication):
+            client = ElizaServiceClient(
+                "http://localhost:9123/prefix",
+                http_client=Client(transport=ASGITransport(app)),
+                interceptors=[interceptor],
+            )
+            await client.say(SayRequest(sentence="Hi"))
+        else:
+            client = ElizaServiceClientSync(
+                "http://localhost:9123/prefix",
+                http_client=SyncClient(transport=WSGITransport(app)),
+                interceptors=[interceptor],
+            )
+            await asyncio.to_thread(client.say, SayRequest(sentence="Hi"))
+
+    (span,) = span_exporter.get_finished_spans()
+    assert span.kind == SpanKind.CLIENT
+    attrs = span.attributes
+    assert attrs is not None
+    assert attrs["server.address"] == "localhost"
+    assert attrs["server.port"] == 9123
+
+
+@pytest.mark.asyncio
+async def test_invalid_host_header(
+    app: ElizaServiceASGIApplication | ElizaServiceWSGIApplication,
+    span_exporter: InMemorySpanExporter,
+) -> None:
+    url = "http://localhost/connectrpc.eliza.v1.ElizaService/Say"
+    headers = {"content-type": "application/json", "host": "example.com:abc"}
+    if isinstance(app, ElizaServiceASGIApplication):
+        res = await Client(transport=ASGITransport(app)).post(
+            url, headers=headers, content=b"{}"
+        )
+    else:
+        res = await asyncio.to_thread(
+            SyncClient(transport=WSGITransport(app)).post,
+            url,
+            headers=headers,
+            content=b"{}",
+        )
+
+    assert res.status == 200
+    (span,) = span_exporter.get_finished_spans()
+    attrs = span.attributes
+    assert attrs is not None
+    assert attrs["server.address"] == "example.com:abc"
+    assert "server.port" not in attrs
+
+
+@pytest.mark.parametrize(
+    ("address", "expected"),
+    [
+        ("localhost:80", ("localhost", 80)),
+        ("[::1]:8080", ("[::1]", 8080)),
+        ("[::1]", ("[::1]", None)),
+        ("localhost", ("localhost", None)),
+        ("example.com:abc", ("example.com:abc", None)),
+    ],
+)
+def test_split_address(address: str, expected: tuple[str, int | None]) -> None:
+    assert _split_address(address) == expected

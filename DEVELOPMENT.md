@@ -24,19 +24,22 @@
 
 ## Development Workflow
 
-We use `poe` as a task runner. Available commands:
+We use `poe` as a task runner. Run `uv run poe` to list every task. Common ones:
 
 ```bash
-# Run all checks
+# Run smoke checks: lint, unit tests, and connectrpc-otel tests
 uv run poe check
 
 # Format code
 uv run poe format
 
-# Run tests
+# Run unit tests
 uv run poe test
 
-# Run conformance tests
+# Run connectrpc-grpcreflect tests (not part of `check`)
+uv run poe test-grpcreflect
+
+# Run conformance tests (not part of `check`)
 uv run poe test-conformance
 ```
 
@@ -80,20 +83,18 @@ To release a new version, follow the guide in [RELEASE.md](./RELEASE.md).
 
 ## Documentation
 
-Documentation is contained in the [connectrpc/connectrpc.com](https://github.com/connectrpc/connectrpc.com) repository.
+User guides live in the [connectrpc/connectrpc.com](https://github.com/connectrpc/connectrpc.com) repository.
+
+The [API reference](https://connectrpc.github.io/connect-py/api/) is generated from docstrings, with pages in [`docs/`](./docs) and configuration in [`zensical.toml`](./zensical.toml):
+
+```bash
+# Build the API reference
+uv run poe docs-build
+
+# Serve it locally
+uv run poe docs-serve
+```
 
 ## Contributing
 
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Run the full smoke check suite: `uv run poe check`
-5. Submit a pull request
-
-### Pull Request Guidelines
-
-- Ensure all tests pass
-- Add tests for new functionality
-- Update documentation as needed
-- Follow the existing code style
-- Write clear commit messages
+See [CONTRIBUTING.md](./CONTRIBUTING.md) for how to propose changes and submit a pull request.
