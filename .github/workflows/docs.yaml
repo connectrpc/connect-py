@@ -20,6 +20,12 @@ permissions:
   pages: write
   id-token: write
 
+concurrency:
+  # Use a constant key for commits so deployments are queued in order.
+  # Cancel in-progress jobs for PRs only
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || 'deploy' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   build:
     environment:
