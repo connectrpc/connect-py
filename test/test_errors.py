@@ -35,6 +35,8 @@ from .connectrpc.example.haberdasher_connect import (
 from .connectrpc.example.haberdasher_pb import Hat, Size
 
 if TYPE_CHECKING:
+    from collections.abc import AsyncIterator, Iterator
+
     from connectrpc.request import RequestContext
 
 _errors = [
@@ -457,6 +459,90 @@ async def test_async_client_timeout(client_timeout_ms, call_timeout_ms) -> None:
     assert exc_info.value.code == Code.DEADLINE_EXCEEDED
     assert exc_info.value.message == "Request timed out"
     assert recorded_timeout_header == "200"
+
+
+@pytest.mark.parametrize("client_timeout_ms", [None, 5000])
+@pytest.mark.parametrize("call_timeout_ms", [0, -1])
+@pytest.mark.parametrize("stream", [False, True])
+def test_sync_client_expired_timeout(
+    client_timeout_ms, call_timeout_ms, stream
+) -> None:
+    called = False
+
+    class RecordingHaberdasher(HaberdasherSync):
+        def make_hat(self, _request, _ctx) -> Hat:
+            nonlocal called
+            called = True
+            return Hat()
+
+        def make_similar_hats(self, _request, _ctx) -> Iterator[Hat]:
+            nonlocal called
+            called = True
+            yield Hat()
+
+    app = HaberdasherWSGIApplication(RecordingHaberdasher())
+    with (
+        HaberdasherClientSync(
+            "http://localhost",
+            timeout_ms=client_timeout_ms,
+            http_client=SyncClient(WSGITransport(app)),
+        ) as client,
+        pytest.raises(ConnectError) as exc_info,
+    ):
+        if stream:
+            list(
+                client.make_similar_hats(
+                    request=Size(inches=10), timeout_ms=call_timeout_ms
+                )
+            )
+        else:
+            client.make_hat(request=Size(inches=10), timeout_ms=call_timeout_ms)
+
+    assert exc_info.value.code == Code.DEADLINE_EXCEEDED
+    assert exc_info.value.message == "Request timed out"
+    assert not called
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("client_timeout_ms", [None, 5000])
+@pytest.mark.parametrize("call_timeout_ms", [0, -1])
+@pytest.mark.parametrize("stream", [False, True])
+async def test_async_client_expired_timeout(
+    client_timeout_ms, call_timeout_ms, stream
+) -> None:
+    called = False
+
+    class RecordingHaberdasher(Haberdasher):
+        async def make_hat(self, _request, _ctx) -> Hat:
+            nonlocal called
+            called = True
+            return Hat()
+
+        async def make_similar_hats(self, _request, _ctx) -> AsyncIterator[Hat]:
+            nonlocal called
+            called = True
+            yield Hat()
+
+    app = HaberdasherASGIApplication(RecordingHaberdasher())
+    async with HaberdasherClient(
+        "http://localhost",
+        timeout_ms=client_timeout_ms,
+        http_client=Client(ASGITransport(app)),
+    ) as client:
+        with pytest.raises(ConnectError) as exc_info:
+            if stream:
+                async for _ in client.make_similar_hats(
+                    request=Size(inches=10), timeout_ms=call_timeout_ms
+                ):
+                    pass
+            else:
+                await client.make_hat(
+                    request=Size(inches=10), timeout_ms=call_timeout_ms
+                )
+
+    assert exc_info.value.code == Code.DEADLINE_EXCEEDED
+    assert exc_info.value.message == "Request timed out"
+    assert not called
 
 
 @pytest.mark.asyncio
