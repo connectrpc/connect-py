@@ -112,9 +112,10 @@ class OpenTelemetryInterceptor:
         }
 
         if sa := ctx.server_address:
-            addr, port = sa.rsplit(":", 1)
+            addr, port = _split_address(sa)
             shared_attrs[SERVER_ADDRESS] = addr
-            shared_attrs[SERVER_PORT] = int(port)
+            if port is not None:
+                shared_attrs[SERVER_PORT] = port
 
         cm = self._start_span(ctx, rpc_method, shared_attrs)
         span = cm.__enter__()
@@ -165,9 +166,10 @@ class OpenTelemetryInterceptor:
         attrs: dict[str, AttributeValue] = shared_attrs.copy()
 
         if ca := ctx.client_address:
-            addr, port = ca.rsplit(":", 1)
+            addr, port = _split_address(ca)
             attrs[CLIENT_ADDRESS] = addr
-            attrs[CLIENT_PORT] = int(port)
+            if port is not None:
+                attrs[CLIENT_PORT] = port
 
         with self._tracer.start_as_current_span(
             span_name, kind=span_kind, attributes=attrs, context=parent_otel_ctx
@@ -186,3 +188,11 @@ class OpenTelemetryInterceptor:
             if isinstance(error, ConnectError)
             else "unknown",
         }
+
+
+def _split_address(address: str) -> tuple[str, int | None]:
+    """Split an "address:port" string, returning no port if it has no valid one."""
+    host, _, port = address.rpartition(":")
+    if not host or not port.isdigit():
+        return address, None
+    return host, int(port)
