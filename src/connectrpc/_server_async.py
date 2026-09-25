@@ -21,6 +21,7 @@ from ._interceptor_async import (
     MetadataInterceptorsRun,
     ServerStreamInterceptor,
     UnaryInterceptor,
+    _aclose,
     resolve_interceptors,
     split_leading_metadata_interceptors,
 )
@@ -642,14 +643,6 @@ class _ResponseSender:
         await _send_stream_response_headers(
             self._send, self._protocol, self._codec, self._compression.name(), self._ctx
         )
-
-
-async def _aclose(stream: AsyncIterator[object]) -> None:
-    # Explicitly close the stream so that any generator finally-blocks
-    # run promptly (Python defers async-generator cleanup to GC otherwise).
-    aclose = getattr(stream, "aclose", None)
-    if aclose is not None:
-        await aclose()
 
 
 async def _request_stream(

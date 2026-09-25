@@ -10,9 +10,8 @@ import anyio
 import anyio.lowlevel
 
 from ._envelope import EnvelopeReader
-from ._interceptor_async import MetadataInterceptorsRun
+from ._interceptor_async import MetadataInterceptorsRun, _aclose
 from ._server_async import (
-    _aclose,
     _consume_single_request,
     _read_body,
     _ResponseSender,
