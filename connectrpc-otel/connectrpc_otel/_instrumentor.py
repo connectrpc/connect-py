@@ -23,6 +23,18 @@ R = TypeVar("R")
 
 
 class ConnectInstrumentor(BaseInstrumentor):
+    """Instrumentor that adds OpenTelemetry to all Connect clients and servers.
+
+    Once instrumented, every client and ASGI or WSGI application created
+    afterwards gets an [OpenTelemetryInterceptor][connectrpc_otel.OpenTelemetryInterceptor]
+    as its first interceptor, unless one was passed explicitly. It is registered
+    as an `opentelemetry_instrumentor` entry point, so `opentelemetry-instrument`
+    enables it automatically.
+
+    `instrument()` accepts optional `tracer_provider` and `meter_provider`
+    keyword arguments, which are passed to each interceptor.
+    """
+
     def instrumentation_dependencies(self) -> Collection[str]:
         return _instruments
 
