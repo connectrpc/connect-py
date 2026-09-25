@@ -218,10 +218,10 @@ trio = [
 
 [package.dev-dependencies]
 dev = [
-    { name = "anyio" },
     { name = "asgiref" },
     { name = "brotli" },
     { name = "buf-bin" },
+    { name = "connectrpc", extra = ["trio"] },
     { name = "connectrpc-grpcreflect" },
     { name = "connectrpc-otel" },
     { name = "example" },
@@ -244,7 +244,6 @@ dev = [
     { name = "pyvoy" },
     { name = "ruff" },
     { name = "tombi" },
-    { name = "trio" },
     { name = "ty" },
     { name = "types-grpcio" },
     { name = "types-protobuf" },
@@ -269,10 +268,10 @@ provides-extras = ["trio"]
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "anyio", specifier = "==4.14.1" },
     { name = "asgiref", specifier = "==3.12.1" },
     { name = "brotli", specifier = "==1.2.0" },
     { name = "buf-bin", specifier = "==1.73.0" },
+    { name = "connectrpc", extras = ["trio"], editable = "." },
     { name = "connectrpc-grpcreflect", editable = "connectrpc-grpcreflect" },
     { name = "connectrpc-otel", editable = "connectrpc-otel" },
     { name = "example", editable = "example" },
@@ -295,7 +294,6 @@ dev = [
     { name = "pyvoy", specifier = "==1.1.0" },
     { name = "ruff", specifier = "==0.16.8" },
     { name = "tombi", specifier = "==1.5.5" },
-    { name = "trio", specifier = "==0.34.0" },
     { name = "ty", specifier = "==0.0.82" },
     { name = "types-grpcio", specifier = "==1.83.0.20260730" },
     { name = "types-protobuf", specifier = "==7.35.1.20260906" },
