@@ -422,6 +422,7 @@ class ConnectClientSync:
                     if (t := ctx.timeout_ms) is not None and t <= 0:
                         raise TimeoutError
 
+                    reader.finish()
                     reader.handle_response_complete(resp)
                 else:
                     content = bytearray()

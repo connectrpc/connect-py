@@ -684,6 +684,7 @@ def _request_stream(
     reader = EnvelopeReader(request_class, codec, compression, read_max_bytes)
     for chunk in _read_body(request_body):
         yield from reader.feed(chunk)
+    reader.finish()
 
 
 def _response_stream(

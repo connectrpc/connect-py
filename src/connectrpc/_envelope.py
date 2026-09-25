@@ -39,13 +39,14 @@ class EnvelopeReader(Generic[_RES]):
         self._read_max_bytes = read_max_bytes
 
         self._next_message_length = None
+        self._ended = False
 
     def feed(self, data: bytes | memoryview | bytearray) -> Iterator[_RES]:
         self._buffer.extend(data)
         return self._read_messages()
 
     def _read_messages(self) -> Iterator[_RES]:
-        while self._buffer:
+        while self._buffer and not self._ended:
             if self._next_message_length is not None:
                 if len(self._buffer) < self._next_message_length + 5:
                     return
@@ -68,6 +69,7 @@ class EnvelopeReader(Generic[_RES]):
                     )
 
                 if self.handle_end_message(prefix_byte, message_data):
+                    self._ended = True
                     return
 
                 res = self._codec.decode(message_data, self._message_class)
@@ -83,6 +85,29 @@ class EnvelopeReader(Generic[_RES]):
             ):
                 raise message_too_large_error(self._read_max_bytes)
 
+    def finish(self) -> None:
+        """Raise if the body ended partway through a message or continued after the end message.
+
+        Call after the last call to [feed][].
+        """
+        if self._ended:
+            if self._buffer:
+                raise ConnectError(
+                    Code.INTERNAL,
+                    f"corrupt response: {len(self._buffer)} extra bytes after end of stream",
+                )
+            return
+        if self._next_message_length is not None:
+            raise ConnectError(
+                Code.INVALID_ARGUMENT,
+                f"protocol error: promised {self._next_message_length} bytes in enveloped message, got {len(self._buffer) - 5} bytes",
+            )
+        if self._buffer:
+            raise ConnectError(
+                Code.INVALID_ARGUMENT,
+                "protocol error: incomplete envelope: unexpected EOF",
+            )
+
     def handle_end_message(
         self, _prefix_byte: int, _message_data: bytes | bytearray, /
     ) -> bool:
@@ -94,7 +119,7 @@ class EnvelopeReader(Generic[_RES]):
         return False
 
     def handle_response_complete(
-        self, response: Response | SyncResponse, /, e: ConnectError | None = None
+        self, response: Response | SyncResponse, /, error: ConnectError | None = None
     ) -> None:
         """Handle any client finalization needed when the response is complete.
 

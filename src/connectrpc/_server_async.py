@@ -607,6 +607,7 @@ async def _request_stream(
                 # Check for cancellation each message. While this seems heavyweight,
                 # conformance tests require it.
                 await sleep(0)
+        reader.finish()
     except CancelledError as e:
         raise ConnectError(Code.CANCELED, "Request was cancelled") from e
 
