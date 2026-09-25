@@ -24,6 +24,7 @@ from ._protocol import ConnectWireError
 from ._protocol_connect import ConnectClientProtocol, ConnectEnvelopeWriter
 from ._protocol_grpc import GRPCClientProtocol, GRPCWebClientProtocol
 from ._response_metadata import handle_response_headers
+from ._shared import decode
 from .code import Code
 from .errors import ConnectError
 from .protocol import ProtocolType
@@ -352,7 +353,7 @@ class ConnectClient:
                     f"message is larger than configured max {self._read_max_bytes}",
                 )
             if resp.status == 200:
-                return self._codec.decode(resp.content, ctx.method.output)
+                return decode(self._codec, resp.content, ctx.method.output)
             raise ConnectWireError.from_response(resp).to_exception()
         except (TimeoutError, asyncio.TimeoutError) as e:
             raise ConnectError(Code.DEADLINE_EXCEEDED, "Request timed out") from e
