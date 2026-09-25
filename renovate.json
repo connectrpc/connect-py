@@ -5,9 +5,26 @@
   "lockFileMaintenance": {
     "enabled": true
   },
+  "customManagers": [
+    // The github-actions manager only reads literal `runs-on` labels, so
+    // match runner labels listed in a job matrix.
+    {
+      "customType": "regex",
+      "managerFilePatterns": ["/^\\.github/workflows/[^/]+\\.ya?ml$/"],
+      "matchStrings": [
+        "(?:os:|-)\\s+(?<depName>ubuntu|macos|windows)-(?<currentValue>[\\w.-]+)"
+      ],
+      "datasourceTemplate": "github-runners"
+    }
+  ],
   "packageRules": [
     {
       "matchManagers": ["github-actions"],
+      "separateMajorMinor": false,
+      "groupName": "GitHub Actions"
+    },
+    {
+      "matchDatasources": ["github-runners"],
       "separateMajorMinor": false,
       "groupName": "GitHub Actions"
     },
