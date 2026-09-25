@@ -191,7 +191,6 @@ dev = [
     { name = "ty" },
     { name = "types-grpcio" },
     { name = "types-protobuf" },
-    { name = "typing-extensions" },
     { name = "uvicorn" },
     { name = "zstandard" },
 ]
@@ -237,7 +236,6 @@ dev = [
     { name = "ty", specifier = "==0.0.82" },
     { name = "types-grpcio", specifier = "==1.83.0.20260730" },
     { name = "types-protobuf", specifier = "==7.35.1.20260906" },
-    { name = "typing-extensions", specifier = "==4.16.0" },
     { name = "uvicorn", specifier = "==0.53.0" },
     { name = "zstandard", specifier = "==0.25.0" },
 ]
