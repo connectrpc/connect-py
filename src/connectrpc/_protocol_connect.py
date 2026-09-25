@@ -104,12 +104,12 @@ class ConnectServerProtocol:
                     Code.INVALID_ARGUMENT,
                     f"Invalid timeout header: '{timeout_header} has >10 digits",
                 )
-            try:
-                timeout_ms = int(timeout_header)
-            except ValueError as e:
+            # int() also accepts a sign, whitespace, and underscores.
+            if not (timeout_header.isascii() and timeout_header.isdigit()):
                 raise ConnectError(
                     Code.INVALID_ARGUMENT, f"Invalid timeout header: '{timeout_header}'"
-                ) from e
+                )
+            timeout_ms = int(timeout_header)
         else:
             timeout_ms = None
 
