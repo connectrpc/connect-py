@@ -29,27 +29,17 @@ jobs:
         python:
           - "3.10"
           - "3.14"
-        coverage:
-          - "nocov"
         # Test oldest and newest on all OS's, but others only on one
         # to save CI load.
         include:
           - os: ubuntu-24.04
             python: "3.11"
-            coverage: "nocov"
             resolution: "lowest-direct"
           - os: ubuntu-24.04
             python: "3.12"
-            coverage: "nocov"
             resolution: "lowest-direct"
           - os: ubuntu-24.04
             python: "3.13"
-            coverage: "nocov"
-            resolution: "lowest-direct"
-          # Enable coverage on just one job
-          - os: ubuntu-24.04
-            python: "3.14"
-            coverage: "cov"
             resolution: "lowest-direct"
     env:
       # Shared env variables for all the tests
@@ -84,23 +74,18 @@ jobs:
           BUF_TOKEN: ${{ secrets.BUF_TOKEN }}
 
       - name: run python tests
-        run: uv run poe test ${{ matrix.coverage == 'cov' && '--cov=connectrpc --cov-report=xml' || '' }}
+        run: uv run poe test
 
       - name: run OTel tests
-        run: uv run poe test-otel ${{ matrix.coverage == 'cov' && '--cov=connectrpc_otel --cov-report=xml' || '' }}
+        run: uv run poe test-otel
 
       - name: run grpcreflect tests
-        run: uv run poe test-grpcreflect ${{ matrix.coverage == 'cov' && '--cov=connectrpc_grpcreflect --cov-report=xml' || '' }}
+        run: uv run poe test-grpcreflect
 
       - name: run conformance tests
         # TODO: Debug stdin/stdout issues on Windows
         if: ${{ !startsWith(matrix.os, 'windows-') }}
-        run: uv run poe test-conformance ${{ matrix.coverage == 'cov' && '--cov=connectrpc --cov-report=xml' || '' }}
-
-      - uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
-        if: ${{ matrix.coverage == 'cov' }}
-        with:
-          token: ${{ secrets.CODECOV_TOKEN }}
+        run: uv run poe test-conformance
 
   wheels:
     runs-on: ubuntu-26.04

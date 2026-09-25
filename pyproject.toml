@@ -58,7 +58,6 @@ dev = [
   "poethepoet==0.48.0",
   "pytest==9.1.1",
   "pytest-asyncio==1.4.0",
-  "pytest-cov==7.1.0",
   "pytest-timeout==2.5.0",
   "pyvoy==1.1.0",
   "ruff==0.16.8",
@@ -191,7 +190,7 @@ exclude = [
 
 [tool.ty.environment]
 # Conformance test files import generated code as `from gen.connectrpc...` and
-# sibling modules like `_util`/`_cov_embed`. Pytest and the launched server/client
+# sibling modules like `_util`. Pytest and the launched server/client
 # subprocesses put `conformance/test/` on sys.path; teach ty to do the same.
 extra-paths = ["conformance/test"]
 

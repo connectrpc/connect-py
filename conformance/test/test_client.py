@@ -3,13 +3,9 @@ from __future__ import annotations
 import subprocess
 import sys
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 import pytest
-from _util import VERSION_CONFORMANCE, coverage_env, maybe_patch_args_with_debug
-
-if TYPE_CHECKING:
-    from coverage import Coverage
+from _util import VERSION_CONFORMANCE, maybe_patch_args_with_debug
 
 _current_dir = Path(__file__).parent
 _client_py_path = str(_current_dir / "client.py")
@@ -37,7 +33,7 @@ if sys.platform == "darwin":
     _skipped_tests += ["--skip", "**/HTTPVersion:3/**"]
 
 
-def test_client_sync(cov: Coverage | None) -> None:
+def test_client_sync() -> None:
     args = maybe_patch_args_with_debug(
         [sys.executable, _client_py_path, "--mode", "sync"]
     )
@@ -60,13 +56,12 @@ def test_client_sync(cov: Coverage | None) -> None:
         capture_output=True,
         text=True,
         check=False,
-        env=coverage_env(cov),
     )
     if result.returncode != 0:
         pytest.fail(f"\n{result.stdout}\n{result.stderr}")
 
 
-def test_client_async(cov: Coverage | None) -> None:
+def test_client_async() -> None:
     args = maybe_patch_args_with_debug(
         [sys.executable, _client_py_path, "--mode", "async"]
     )
@@ -88,7 +83,6 @@ def test_client_async(cov: Coverage | None) -> None:
         capture_output=True,
         text=True,
         check=False,
-        env=coverage_env(cov),
     )
     if result.returncode != 0:
         pytest.fail(f"\n{result.stdout}\n{result.stderr}")

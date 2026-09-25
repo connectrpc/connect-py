@@ -10,7 +10,6 @@ import time
 import traceback
 from typing import TYPE_CHECKING, Literal, TypeVar, get_args
 
-import _cov_embed  # noqa: F401
 from _util import create_standard_streams
 from gen.connectrpc.conformance.v1 import client_compat_pb, service_pb
 from gen.connectrpc.conformance.v1.client_compat_pb import (

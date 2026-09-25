@@ -1,12 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-import os
 import sys
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from coverage import Coverage
 
 VERSION_CONFORMANCE = "v1.0.5"
 
@@ -35,22 +30,3 @@ def maybe_patch_args_with_debug(args: list[str]) -> list[str]:
         return _pydev_bundle.pydev_monkey.patch_args(args)
     except Exception:
         return args
-
-
-def coverage_env(cov: Coverage | None) -> dict[str, str] | None:
-    if cov is None:
-        return None
-    env: dict[str, str] = {**os.environ}
-    # cov.config.source only contains . but we need .. too.
-    # It should be fine to just hard-code this.
-    env["COV_CORE_SOURCE"] = os.pathsep.join((".", ".."))
-    if cov.config.config_file:
-        env["COV_CORE_CONFIG"] = cov.config.config_file
-    if cov.config.data_file:
-        env["COV_CORE_DATAFILE"] = cov.config.data_file
-    if cov.config.branch:
-        env["COV_CORE_BRANCH"] = "enabled"
-    if cov.config.context:
-        env["COV_CORE_CONTEXT"] = cov.config.context
-
-    return env
