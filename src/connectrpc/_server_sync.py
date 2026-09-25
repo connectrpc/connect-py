@@ -38,6 +38,7 @@ from ._server_shared import (
     EndpointServerStreamSync,
     EndpointUnarySync,
 )
+from ._shared import decode, decompress
 from .code import Code
 from .errors import ConnectError
 from .request import Headers, RequestContext
@@ -409,21 +410,8 @@ class ConnectWSGIApplication(ABC):
                     Code.UNIMPLEMENTED,
                     f"unknown compression: '{compression_name}': supported encodings are {', '.join(self._compressions.keys())}",
                 )
-            try:
-                req_body = compression.decompress(req_body, self._read_max_bytes)
-            except ConnectError:
-                raise
-            except Exception as e:
-                raise ConnectError(
-                    Code.INVALID_ARGUMENT, f"Failed to decompress request body: {e!s}"
-                ) from e
-
-            try:
-                return codec.decode(req_body, endpoint.method.input), codec
-            except Exception as e:
-                raise ConnectError(
-                    Code.INVALID_ARGUMENT, f"Failed to decode request body: {e!s}"
-                ) from e
+            req_body = decompress(compression, req_body, self._read_max_bytes)
+            return decode(codec, req_body, endpoint.method.input), codec
 
         except Exception as e:
             if not isinstance(e, ConnectError):
@@ -470,7 +458,7 @@ class ConnectWSGIApplication(ABC):
                     Code.UNIMPLEMENTED,
                     f"unknown compression: '{compression_name}': supported encodings are {', '.join(self._compressions.keys())}",
                 )
-            message = compression.decompress(message, self._read_max_bytes)
+            message = decompress(compression, message, self._read_max_bytes)
 
             codec_name = params.get("encoding", ("",))[0]
             codec = self._codecs.get(codec_name)
@@ -478,16 +466,7 @@ class ConnectWSGIApplication(ABC):
                 raise ConnectError(
                     Code.UNIMPLEMENTED, f"invalid message encoding: '{codec_name}'"
                 )
-            # Handle GET request with proto decoder
-            try:
-                # TODO - Use content type from queryparam
-                request = codec.decode(message, endpoint.method.input)
-            except Exception as e:
-                raise ConnectError(
-                    Code.INVALID_ARGUMENT, f"Failed to decode message: {e!s}"
-                ) from e
-            else:
-                return request, codec
+            return decode(codec, message, endpoint.method.input), codec
 
         except Exception as e:
             if not isinstance(e, ConnectError):
