@@ -21,8 +21,8 @@ permissions:
   id-token: write
 
 concurrency:
-  # Pages rejects a deployment while another is in progress, so deploys
-  # from main queue behind each other; PR builds cancel superseded runs.
+  # Use a constant key for commits so deployments are queued in order.
+  # Cancel in-progress jobs for PRs only
   group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || 'deploy' }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
