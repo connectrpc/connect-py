@@ -68,6 +68,10 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: "^1.26"
+          # The conformance runner is installed with `go run pkg@version`
+          # rather than from a go.mod, so key the cache on the file that pins
+          # its version.
+          cache-dependency-path: conformance/test/_util.py
 
       - run: uv sync --frozen
 
