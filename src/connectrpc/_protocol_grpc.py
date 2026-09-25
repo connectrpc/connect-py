@@ -124,16 +124,19 @@ class GRPCWebServerProtocol(GRPCServerProtocol):
 def _parse_timeout(timeout: str) -> int:
     # We normalize to int milliseconds matching connect's timeout header.
     value_to_ms = _lookup_timeout_unit(timeout[-1])
-    try:
-        value = int(timeout[:-1])
-    except ValueError as e:
-        msg = f"protocol error: invalid timeout '{timeout}'"
-        raise ValueError(msg) from e
+    digits = timeout[:-1]
+    # int() also accepts a sign, whitespace, and underscores.
+    if not (digits.isascii() and digits.isdigit()):
+        raise ConnectError(
+            Code.INVALID_ARGUMENT, f"protocol error: invalid timeout '{timeout}'"
+        )
+    value = int(digits)
 
     # timeout must be ASCII string of at most 8 digits
     if value > 99999999:
-        msg = f"protocol error: timeout '{timeout}' is too long"
-        raise ValueError(msg)
+        raise ConnectError(
+            Code.INVALID_ARGUMENT, f"protocol error: timeout '{timeout}' is too long"
+        )
 
     return int(value * value_to_ms)
 
@@ -153,8 +156,10 @@ def _lookup_timeout_unit(unit: str) -> float:
         case "n":
             return 1 / 1000 / 1000
         case _:
-            msg = f"protocol error: timeout has invalid unit '{unit}'"
-            raise ValueError(msg)
+            raise ConnectError(
+                Code.INVALID_ARGUMENT,
+                f"protocol error: timeout has invalid unit '{unit}'",
+            )
 
 
 class GRPCEnvelopeWriter(EnvelopeWriter):
