@@ -408,18 +408,18 @@ class ConnectClient:
                     compression = self._protocol.handle_response_compression(
                         resp.headers, self._response_compressions, stream=True
                     )
-                    reader = self._protocol.create_envelope_reader(
+                    with self._protocol.create_envelope_reader(
                         ctx.method.output,
                         self._codec,
                         compression,
                         self._read_max_bytes,
-                    )
-                    async for chunk in resp.content:
-                        for message in reader.feed(bytes(chunk)):
-                            yield message
-                            # Check for cancellation each message. While this seems heavyweight,
-                            # conformance tests require it.
-                            await sleep(0)
+                    ) as reader:
+                        async for chunk in resp.content:
+                            for message in reader.feed(bytes(chunk)):
+                                yield message
+                                # Check for cancellation each message. While this seems heavyweight,
+                                # conformance tests require it.
+                                await sleep(0)
                     reader.handle_response_complete(resp)
                 else:
                     content = bytearray()
