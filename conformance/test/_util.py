@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from coverage import Coverage
 
-VERSION_CONFORMANCE = "v1.0.5"
+VERSION_CONFORMANCE = "v1.0.6-0.20260904110711-a2aa62e0c939"
 
 
 async def create_standard_streams():

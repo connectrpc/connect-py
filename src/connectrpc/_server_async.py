@@ -601,12 +601,13 @@ async def _request_stream(
 ) -> AsyncIterator[_REQ]:
     reader = EnvelopeReader(request_class, codec, compression, read_max_bytes)
     try:
-        async for chunk in _read_body(receive):
-            for message in reader.feed(chunk):
-                yield message
-                # Check for cancellation each message. While this seems heavyweight,
-                # conformance tests require it.
-                await sleep(0)
+        with reader.reading():
+            async for chunk in _read_body(receive):
+                for message in reader.feed(chunk):
+                    yield message
+                    # Check for cancellation each message. While this seems heavyweight,
+                    # conformance tests require it.
+                    await sleep(0)
     except CancelledError as e:
         raise ConnectError(Code.CANCELED, "Request was cancelled") from e
 

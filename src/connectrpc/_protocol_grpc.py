@@ -344,7 +344,7 @@ class GRPCEnvelopeReader(EnvelopeReader[RES]):
         return response.trailers
 
     def handle_response_complete(
-        self, response: Response | SyncResponse, e: ConnectError | None = None
+        self, response: Response | SyncResponse, error: ConnectError | None = None
     ) -> None:
         # Get the actual HTTP trailers
         trailers = self.get_response_trailers(response)
@@ -355,18 +355,20 @@ class GRPCEnvelopeReader(EnvelopeReader[RES]):
         if grpc_status is None:
             # If there was a body message, we do not read response headers
             if self._read_message:
-                raise e or ConnectError(Code.INTERNAL, "missing grpc-status trailer")
+                raise error or ConnectError(
+                    Code.INTERNAL, "missing grpc-status trailer"
+                )
             trailers = response.headers
 
         handle_response_trailers(trailers)
 
         grpc_status = trailers.get("grpc-status")
         if grpc_status is None:
-            raise e or ConnectError(Code.INTERNAL, "missing grpc-status trailer")
+            raise error or ConnectError(Code.INTERNAL, "missing grpc-status trailer")
 
-        # e is present for RST_STREAM. We prioritize its code while reading message and details
+        # error is present for RST_STREAM. We prioritize its code while reading message and details
         # from trailers when available.
-        code = e.code if e else None
+        code = error.code if error else None
         if grpc_status != "0":
             message = trailers.get("grpc-message", "")
             if grpc_status_details := trailers.get("grpc-status-details-bin"):

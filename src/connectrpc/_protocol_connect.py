@@ -328,3 +328,13 @@ class ConnectEnvelopeReader(EnvelopeReader[RES]):
             # and streaming.
             raise ConnectWireError.from_dict(error, 500, Code.UNKNOWN).to_exception()
         return True
+
+    def handle_response_complete(
+        self,
+        _response: pyqwest.Response | pyqwest.SyncResponse,
+        /,
+        error: ConnectError | None = None,
+    ) -> None:
+        # A stream reset is reported by the caller.
+        if error is None and not self._ended:
+            raise ConnectError(Code.INTERNAL, "protocol error: unexpected EOF")

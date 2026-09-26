@@ -411,21 +411,20 @@ class ConnectClientSync:
                         compression,
                         self._read_max_bytes,
                     )
-                    try:
-                        for chunk in resp.content:
-                            yield from reader.feed(chunk)
-                    except ConnectError as e:
-                        stream_error = e
-                        raise
-                    # For sync, we rely on the HTTP client to handle timeout, but
-                    # currently the one we use for gRPC does not propagate RST_STREAM
-                    # correctly which is used for server timeouts. We go ahead and check
-                    # the timeout ourselves too.
-                    # https://github.com/hyperium/hyper/issues/3681#issuecomment-3734084436
-                    if (t := ctx.timeout_ms) is not None and t <= 0:
-                        raise TimeoutError
-
-                    reader.handle_response_complete(resp)
+                    with reader.reading(resp):
+                        try:
+                            for chunk in resp.content:
+                                yield from reader.feed(chunk)
+                        except ConnectError as e:
+                            stream_error = e
+                            raise
+                        # For sync, we rely on the HTTP client to handle timeout, but
+                        # currently the one we use for gRPC does not propagate RST_STREAM
+                        # correctly which is used for server timeouts. We go ahead and check
+                        # the timeout ourselves too.
+                        # https://github.com/hyperium/hyper/issues/3681#issuecomment-3734084436
+                        if (t := ctx.timeout_ms) is not None and t <= 0:
+                            raise TimeoutError
                 else:
                     content = bytearray()
                     for chunk in resp.content:
