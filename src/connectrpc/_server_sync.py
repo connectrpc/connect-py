@@ -528,8 +528,10 @@ class ConnectWSGIApplication(ABC):
         try:
             metadata_run.start()
             if not req_compression:
+                compression_name = headers.get(protocol.compression_header_name())
                 raise ConnectError(
-                    Code.UNIMPLEMENTED, "Unrecognized request compression"
+                    Code.UNIMPLEMENTED,
+                    f"unknown compression: '{compression_name}': supported encodings are {', '.join(self._compressions.keys())}",
                 )
             request_stream = _request_stream(
                 request_body,

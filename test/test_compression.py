@@ -7,13 +7,16 @@ import pytest
 from pyqwest import Client, SyncClient
 from pyqwest.testing import ASGITransport, WSGITransport
 
-from connectrpc._compression import IdentityCompression
+from connectrpc._compression import IdentityCompression, resolve_compressions
+from connectrpc._protocol_connect import ConnectServerProtocol
 from connectrpc.client import ResponseMetadata
 from connectrpc.code import Code
 from connectrpc.compression.brotli import BrotliCompression
 from connectrpc.compression.gzip import GzipCompression
 from connectrpc.compression.zstd import ZstdCompression
 from connectrpc.errors import ConnectError
+from connectrpc.protocol import ProtocolType
+from connectrpc.request import Headers
 
 from ._util import resolve_compression
 from .connectrpc.example.haberdasher_connect import (
@@ -97,6 +100,97 @@ def test_server_compressions_sync(compressions: tuple[str], encoding: str) -> No
     assert res.size == 10
     assert res.color == "blue"
     assert meta.headers.get("content-encoding") == encoding
+
+
+_protocols = [ProtocolType.CONNECT, ProtocolType.GRPC, ProtocolType.GRPC_WEB]
+_streams = [pytest.param(False, id="unary"), pytest.param(True, id="stream")]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("protocol", _protocols)
+@pytest.mark.parametrize("stream", _streams)
+async def test_unknown_request_compression_async(
+    protocol: ProtocolType, stream: bool
+) -> None:
+    class SimpleHaberdasher(Haberdasher):
+        async def make_hat(self, _request, _ctx):
+            return Hat(size=10, color="blue")
+
+        async def make_similar_hats(self, _request, _ctx):
+            yield Hat(size=10, color="blue")
+
+    # The server only supports the default gzip.
+    app = HaberdasherASGIApplication(SimpleHaberdasher())
+    client = HaberdasherClient(
+        "http://localhost",
+        protocol=protocol,
+        http_client=Client(ASGITransport(app)),
+        send_compression=ZstdCompression(),
+    )
+    with pytest.raises(ConnectError) as exc_info:
+        if stream:
+            async for _ in client.make_similar_hats(Size(inches=10)):
+                pass
+        else:
+            await client.make_hat(Size(inches=10))
+    assert exc_info.value.code == Code.UNIMPLEMENTED
+    assert (
+        exc_info.value.message
+        == "unknown compression: 'zstd': supported encodings are gzip, identity"
+    )
+
+
+@pytest.mark.parametrize("protocol", _protocols)
+@pytest.mark.parametrize("stream", _streams)
+def test_unknown_request_compression_sync(protocol: ProtocolType, stream: bool) -> None:
+    class SimpleHaberdasher(HaberdasherSync):
+        def make_hat(self, _request, _ctx):
+            return Hat(size=10, color="blue")
+
+        def make_similar_hats(self, _request, _ctx):
+            yield Hat(size=10, color="blue")
+
+    # The server only supports the default gzip.
+    app = HaberdasherWSGIApplication(SimpleHaberdasher())
+    client = HaberdasherClientSync(
+        "http://localhost",
+        protocol=protocol,
+        http_client=SyncClient(WSGITransport(app)),
+        send_compression=ZstdCompression(),
+    )
+    with pytest.raises(ConnectError) as exc_info:
+        if stream:
+            for _ in client.make_similar_hats(Size(inches=10)):
+                pass
+        else:
+            client.make_hat(Size(inches=10))
+    assert exc_info.value.code == Code.UNIMPLEMENTED
+    assert (
+        exc_info.value.message
+        == "unknown compression: 'zstd': supported encodings are gzip, identity"
+    )
+
+
+@pytest.mark.parametrize(
+    ("header", "expected"),
+    [
+        pytest.param(None, "identity", id="absent"),
+        pytest.param("", "identity", id="empty"),
+        pytest.param("identity", "identity", id="identity"),
+        pytest.param("gzip", "gzip", id="gzip"),
+        pytest.param("zstd", None, id="unknown"),
+    ],
+)
+def test_connect_stream_request_compression(
+    header: str | None, expected: str | None
+) -> None:
+    headers = Headers()
+    if header is not None:
+        headers["connect-content-encoding"] = header
+    compression, _ = ConnectServerProtocol().negotiate_stream_compression(
+        headers, resolve_compressions(None)
+    )
+    assert (compression.name() if compression else None) == expected
 
 
 class TestIdentityCompression:
