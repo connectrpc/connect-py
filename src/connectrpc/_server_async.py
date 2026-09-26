@@ -26,6 +26,7 @@ from ._interceptor_async import (
 )
 from ._protocol import ConnectWireError, HTTPError, ServerProtocol
 from ._protocol_connect import CONNECT_UNARY_CONTENT_TYPE_PREFIX, ConnectServerProtocol
+from ._protocol_grpc import GRPCServerProtocol
 from ._protocol_server import negotiate_server_protocol
 from ._server_shared import (
     DEFAULT_READ_MAX_BYTES,
@@ -181,6 +182,7 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
         endpoints = self._resolved_endpoints
 
         ctx: RequestContext | None = None
+        protocol: ServerProtocol | None = None
         try:
             path = scope["path"]
             endpoint = endpoints.get(path)
@@ -238,7 +240,7 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
                     ctx,
                 )
         except Exception as e:
-            await self._handle_error(e, ctx, send)
+            await self._handle_error(e, ctx, protocol, send)
             if not isinstance(e, (ConnectError, HTTPError)):
                 raise
             return None
@@ -527,12 +529,38 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
                 raise error
 
     async def _handle_error(
-        self, exc: Exception, ctx: RequestContext | None, send: ASGISendCallable
+        self,
+        exc: Exception,
+        ctx: RequestContext | None,
+        protocol: ServerProtocol | None,
+        send: ASGISendCallable,
     ) -> None:
         """Handle errors that occur during request processing."""
         headers: list[tuple[bytes, bytes]]
         body: bytes
         status: int
+        if isinstance(protocol, GRPCServerProtocol) and not isinstance(exc, HTTPError):
+            # gRPC clients read the status from trailers, so this is a trailers-only
+            # response: HTTP 200 with the gRPC status in the headers.
+            grpc_headers = protocol.trailers_only_headers(
+                ctx.response_trailers if ctx else Headers(),
+                ConnectWireError.from_exception(exc),
+            )
+            if ctx:
+                for key, value in ctx.response_headers.allitems():
+                    grpc_headers.add(key, value)
+            await send(
+                {
+                    "type": "http.response.start",
+                    "status": 200,
+                    "headers": [
+                        (k.encode(), v.encode()) for k, v in grpc_headers.allitems()
+                    ],
+                    "trailers": False,
+                }
+            )
+            await send({"type": "http.response.body", "body": b"", "more_body": False})
+            return
         if isinstance(exc, HTTPError):
             status = exc.status.value
             headers = [(k.encode("utf-8"), v.encode("utf-8")) for k, v in exc.headers]
