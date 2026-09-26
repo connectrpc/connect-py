@@ -402,13 +402,12 @@ class ConnectClientSync:
                     compression = self._protocol.handle_response_compression(
                         resp.headers, self._response_compressions, stream=True
                     )
-                    reader = self._protocol.create_envelope_reader(
+                    with self._protocol.create_envelope_reader(
                         ctx.method.output,
                         self._codec,
                         compression,
                         self._read_max_bytes,
-                    )
-                    with reader.reading(resp):
+                    ) as reader:
                         try:
                             for chunk in resp.content:
                                 yield from reader.feed(chunk)
@@ -422,6 +421,7 @@ class ConnectClientSync:
                         # https://github.com/hyperium/hyper/issues/3681#issuecomment-3734084436
                         if (t := ctx.timeout_ms) is not None and t <= 0:
                             raise TimeoutError
+                    reader.handle_response_complete(resp)
                 else:
                     content = bytearray()
                     for chunk in resp.content:

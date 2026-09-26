@@ -681,8 +681,7 @@ def _request_stream(
     compression: Compression,
     read_max_bytes: int | None = None,
 ) -> Iterator[_REQ]:
-    reader = EnvelopeReader(request_class, codec, compression, read_max_bytes)
-    with reader.reading():
+    with EnvelopeReader(request_class, codec, compression, read_max_bytes) as reader:
         for chunk in _read_body(request_body):
             yield from reader.feed(chunk)
 

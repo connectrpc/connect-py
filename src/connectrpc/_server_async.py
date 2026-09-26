@@ -599,9 +599,10 @@ async def _request_stream(
     compression: Compression,
     read_max_bytes: int | None = None,
 ) -> AsyncIterator[_REQ]:
-    reader = EnvelopeReader(request_class, codec, compression, read_max_bytes)
     try:
-        with reader.reading():
+        with EnvelopeReader(
+            request_class, codec, compression, read_max_bytes
+        ) as reader:
             async for chunk in _read_body(receive):
                 for message in reader.feed(chunk):
                     yield message
