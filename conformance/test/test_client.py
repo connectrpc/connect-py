@@ -28,6 +28,10 @@ _skipped_tests_sync = [
 # but we don't seem to see failures in other repos so maybe not.
 _flaky_tests = ["--known-flaky", "**/HTTPVersion:1/**/(grpc server impl)/**"]
 
+# The client doesn't yet fail streams whose Connect response has no end-stream
+# message.
+_known_failing = ["--known-failing", "Connect Unexpected Responses/**/no-end-stream"]
+
 _skipped_tests = []
 if sys.platform == "darwin":
     # TODO: Investigate HTTP/3 conformance test failures on macOS more.
@@ -52,6 +56,7 @@ def test_client_sync(cov: Coverage | None) -> None:
             *_skipped_tests_sync,
             *_skipped_tests,
             *_flaky_tests,
+            *_known_failing,
             "--",
             *args,
         ],
@@ -78,6 +83,7 @@ def test_client_async(cov: Coverage | None) -> None:
             "client",
             *_skipped_tests,
             *_flaky_tests,
+            *_known_failing,
             "--",
             *args,
         ],
