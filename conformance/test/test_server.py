@@ -62,6 +62,8 @@ def test_server_sync(server: str, cov: Coverage) -> None:
             _config_path,
             "--mode",
             "server",
+            # Print an HTTP trace with timings for each failing case.
+            "--trace",
             *opts,
             *_known_flaky,
             "--",
@@ -96,6 +98,8 @@ def test_server_async(server: str, cov: Coverage) -> None:
             _config_path,
             "--mode",
             "server",
+            # Print an HTTP trace with timings for each failing case.
+            "--trace",
             *opts,
             *_known_flaky,
             "--",
