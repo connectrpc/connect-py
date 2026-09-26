@@ -23,8 +23,8 @@ jobs:
       matrix:
         resolution: ["highest", "lowest-direct"]
         os:
-          - macos-15
-          - ubuntu-24.04
+          - macos-26
+          - ubuntu-26.04
           - windows-2025
         python:
           - "3.10"
@@ -34,20 +34,20 @@ jobs:
         # Test oldest and newest on all OS's, but others only on one
         # to save CI load.
         include:
-          - os: ubuntu-24.04
+          - os: ubuntu-26.04
             python: "3.11"
             coverage: "nocov"
             resolution: "lowest-direct"
-          - os: ubuntu-24.04
+          - os: ubuntu-26.04
             python: "3.12"
             coverage: "nocov"
             resolution: "lowest-direct"
-          - os: ubuntu-24.04
+          - os: ubuntu-26.04
             python: "3.13"
             coverage: "nocov"
             resolution: "lowest-direct"
           # Enable coverage on just one job
-          - os: ubuntu-24.04
+          - os: ubuntu-26.04
             python: "3.14"
             coverage: "cov"
             resolution: "lowest-direct"
