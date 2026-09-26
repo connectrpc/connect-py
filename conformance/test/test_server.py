@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 import pytest
-from _util import VERSION_CONFORMANCE, coverage_env, maybe_patch_args_with_debug
+from _util import CONFORMANCE_RUNNER, coverage_env, maybe_patch_args_with_debug
 
 if TYPE_CHECKING:
     from coverage import Coverage
@@ -30,18 +30,6 @@ def macos_raise_ulimit():
     resource.setrlimit(resource.RLIMIT_NOFILE, (16384, 16384))
 
 
-# There is a relatively low time limit for the server to respond with a resource error
-# for this test. In resource limited environments such as CI, it doesn't seem to be enough,
-# notably it is the first message that will take the longest to process as it also sets up
-# the request. We can consider raising this delay in the runner to see if it helps.
-#
-# https://github.com/connectrpc/conformance/blob/main/internal/app/connectconformance/testsuites/data/server_message_size.yaml#L46
-_known_flaky = [
-    "--known-flaky",
-    "Server Message Size/HTTPVersion:1/**/first-request-exceeds-server-limit",
-]
-
-
 @pytest.mark.parametrize("server", ["gunicorn", "pyvoy"])
 def test_server_sync(server: str, cov: Coverage) -> None:
     args = maybe_patch_args_with_debug(
@@ -55,15 +43,12 @@ def test_server_sync(server: str, cov: Coverage) -> None:
 
     result = subprocess.run(
         [
-            "go",
-            "run",
-            f"connectrpc.com/conformance/cmd/connectconformance@{VERSION_CONFORMANCE}",
+            *CONFORMANCE_RUNNER,
             "--conf",
             _config_path,
             "--mode",
             "server",
             *opts,
-            *_known_flaky,
             "--",
             *args,
         ],
@@ -88,16 +73,13 @@ def test_server_async(server: str, cov: Coverage) -> None:
             opts = ["--skip", "**/HTTPVersion:2/**", "--skip", "**/HTTPVersion:3/**"]
     result = subprocess.run(
         [
-            "go",
-            "run",
-            f"connectrpc.com/conformance/cmd/connectconformance@{VERSION_CONFORMANCE}",
+            *CONFORMANCE_RUNNER,
             "-v",
             "--conf",
             _config_path,
             "--mode",
             "server",
             *opts,
-            *_known_flaky,
             "--",
             *args,
         ],

@@ -92,6 +92,16 @@ jobs:
       - name: run grpcreflect tests
         run: uv run poe test-grpcreflect ${{ matrix.coverage == 'cov' && '--cov=connectrpc_grpcreflect --cov-report=xml' || '' }}
 
+      - name: build conformance runner from connectrpc/conformance#1144
+        if: ${{ !startsWith(matrix.os, 'windows-') }}
+        run: |
+          git init -q "$RUNNER_TEMP/conformance"
+          cd "$RUNNER_TEMP/conformance"
+          git fetch -q --depth 1 https://github.com/connectrpc/conformance.git 524ad87db9e84aa35a0206ca1d43973b233d1b06
+          git checkout -q FETCH_HEAD
+          go build -o "$RUNNER_TEMP/connectconformance" ./cmd/connectconformance
+          echo "CONFORMANCE_RUNNER=$RUNNER_TEMP/connectconformance" >> "$GITHUB_ENV"
+
       - name: run conformance tests
         # TODO: Debug stdin/stdout issues on Windows
         if: ${{ !startsWith(matrix.os, 'windows-') }}

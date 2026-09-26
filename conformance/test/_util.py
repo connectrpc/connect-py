@@ -10,6 +10,18 @@ if TYPE_CHECKING:
 
 VERSION_CONFORMANCE = "v1.0.5"
 
+# CONFORMANCE_RUNNER is the command that runs the conformance runner: the
+# binary at $CONFORMANCE_RUNNER if set, otherwise VERSION_CONFORMANCE via `go run`.
+CONFORMANCE_RUNNER = (
+    [runner]
+    if (runner := os.environ.get("CONFORMANCE_RUNNER"))
+    else [
+        "go",
+        "run",
+        f"connectrpc.com/conformance/cmd/connectconformance@{VERSION_CONFORMANCE}",
+    ]
+)
+
 
 async def create_standard_streams():
     loop = asyncio.get_event_loop()

@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 import pytest
-from _util import VERSION_CONFORMANCE, coverage_env, maybe_patch_args_with_debug
+from _util import CONFORMANCE_RUNNER, coverage_env, maybe_patch_args_with_debug
 
 if TYPE_CHECKING:
     from coverage import Coverage
@@ -44,9 +44,7 @@ def test_client_sync(cov: Coverage | None) -> None:
 
     result = subprocess.run(
         [
-            "go",
-            "run",
-            f"connectrpc.com/conformance/cmd/connectconformance@{VERSION_CONFORMANCE}",
+            *CONFORMANCE_RUNNER,
             "--conf",
             _config_path,
             "--mode",
@@ -73,9 +71,7 @@ def test_client_async(cov: Coverage | None) -> None:
 
     result = subprocess.run(
         [
-            "go",
-            "run",
-            f"connectrpc.com/conformance/cmd/connectconformance@{VERSION_CONFORMANCE}",
+            *CONFORMANCE_RUNNER,
             "--conf",
             _config_path,
             "--mode",
