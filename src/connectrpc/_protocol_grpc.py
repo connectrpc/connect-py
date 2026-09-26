@@ -49,6 +49,8 @@ _DEFAULT_GRPC_USER_AGENT = f"grpc-python-connect/{__version__} ({sys.version})"
 
 
 class GRPCServerProtocol:
+    _content_type = GRPC_CONTENT_TYPE_DEFAULT
+
     def create_request_context(
         self,
         method: MethodInfo[REQ, RES],
@@ -102,8 +104,18 @@ class GRPCServerProtocol:
         resp_compression = negotiate_compression(accept_compression, compressions)
         return req_compression, resp_compression
 
+    def trailers_only_headers(
+        self, user_trailers: Headers, error: ConnectWireError
+    ) -> Headers:
+        """Return the headers of a trailers-only response that reports error."""
+        headers = _status_trailers(user_trailers, error)
+        headers["content-type"] = self._content_type
+        return headers
+
 
 class GRPCWebServerProtocol(GRPCServerProtocol):
+    _content_type = GRPC_WEB_CONTENT_TYPE_DEFAULT
+
     def uses_trailers(self) -> bool:
         return False
 
@@ -162,29 +174,31 @@ def _lookup_timeout_unit(unit: str) -> float:
             )
 
 
+def _status_trailers(user_trailers: Headers, error: ConnectWireError | None) -> Headers:
+    trailers = Headers(list(user_trailers.allitems()))
+    if error:
+        status = _connect_status_to_grpc[error.code]
+        trailers["grpc-status"] = status
+        message = error.message
+        if message:
+            message = urllib.parse.quote(message, safe="")
+            trailers["grpc-message"] = message
+        if error.details:
+            grpc_status = Status(
+                code=int(status),
+                message=error.message,
+                details=[d._any for d in error.details],
+            )
+            grpc_status_bin = b64encode(grpc_status.to_binary()).decode().rstrip("=")
+            trailers["grpc-status-details-bin"] = grpc_status_bin
+    else:
+        trailers["grpc-status"] = "0"
+    return trailers
+
+
 class GRPCEnvelopeWriter(EnvelopeWriter):
     def end(self, user_trailers: Headers, error: ConnectWireError | None) -> Headers:
-        trailers = Headers(list(user_trailers.allitems()))
-        if error:
-            status = _connect_status_to_grpc[error.code]
-            trailers["grpc-status"] = status
-            message = error.message
-            if message:
-                message = urllib.parse.quote(message, safe="")
-                trailers["grpc-message"] = message
-            if error.details:
-                grpc_status = Status(
-                    code=int(status),
-                    message=error.message,
-                    details=[d._any for d in error.details],
-                )
-                grpc_status_bin = (
-                    b64encode(grpc_status.to_binary()).decode().rstrip("=")
-                )
-                trailers["grpc-status-details-bin"] = grpc_status_bin
-        else:
-            trailers["grpc-status"] = "0"
-        return trailers
+        return _status_trailers(user_trailers, error)
 
 
 class GRPCWebEnvelopeWriter(GRPCEnvelopeWriter):
