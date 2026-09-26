@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
+from urllib.parse import urlencode
 
 import brotli as brotli_lib
 import pytest
@@ -9,6 +10,7 @@ from pyqwest.testing import ASGITransport, WSGITransport
 
 from connectrpc._compression import IdentityCompression, resolve_compressions
 from connectrpc._protocol_connect import ConnectServerProtocol
+from connectrpc._protocol_grpc import GRPCServerProtocol
 from connectrpc.client import ResponseMetadata
 from connectrpc.code import Code
 from connectrpc.compression.brotli import BrotliCompression
@@ -30,6 +32,7 @@ from .connectrpc.example.haberdasher_connect import (
 from .connectrpc.example.haberdasher_pb import Hat, Size
 
 if TYPE_CHECKING:
+    from connectrpc._protocol import ServerProtocol
     from connectrpc.compression import Compression
 
 
@@ -172,6 +175,13 @@ def test_unknown_request_compression_sync(protocol: ProtocolType, stream: bool) 
 
 
 @pytest.mark.parametrize(
+    ("protocol", "header_name"),
+    [
+        pytest.param(ConnectServerProtocol(), "connect-content-encoding", id="connect"),
+        pytest.param(GRPCServerProtocol(), "grpc-encoding", id="grpc"),
+    ],
+)
+@pytest.mark.parametrize(
     ("header", "expected"),
     [
         pytest.param(None, "identity", id="absent"),
@@ -181,16 +191,77 @@ def test_unknown_request_compression_sync(protocol: ProtocolType, stream: bool) 
         pytest.param("zstd", None, id="unknown"),
     ],
 )
-def test_connect_stream_request_compression(
-    header: str | None, expected: str | None
+def test_stream_request_compression(
+    protocol: ServerProtocol, header_name: str, header: str | None, expected: str | None
 ) -> None:
     headers = Headers()
     if header is not None:
-        headers["connect-content-encoding"] = header
-    compression, _ = ConnectServerProtocol().negotiate_stream_compression(
+        headers[header_name] = header
+    compression, _ = protocol.negotiate_stream_compression(
         headers, resolve_compressions(None)
     )
     assert (compression.name() if compression else None) == expected
+
+
+# An empty compression means identity, as in connect-go.
+_empty_compression_requests = [
+    pytest.param(
+        "POST",
+        "",
+        {"content-type": "application/json", "content-encoding": ""},
+        b'{"inches": 10}',
+        id="post",
+    ),
+    pytest.param(
+        "GET",
+        "?"
+        + urlencode(
+            {"encoding": "json", "compression": "", "message": '{"inches": 10}'}
+        ),
+        {},
+        b"",
+        id="get",
+    ),
+]
+
+
+@pytest.mark.parametrize(
+    ("method", "query", "headers", "body"), _empty_compression_requests
+)
+def test_empty_request_compression_sync(method, query, headers, body) -> None:
+    class SimpleHaberdasher(HaberdasherSync):
+        def make_hat(self, request, _ctx):
+            return Hat(size=request.inches, color="blue")
+
+    transport = WSGITransport(HaberdasherWSGIApplication(SimpleHaberdasher()))
+    res = SyncClient(transport).execute(
+        method=method,
+        url=f"http://localhost/connectrpc.example.Haberdasher/MakeHat{query}",
+        headers=headers,
+        content=body,
+    )
+    assert res.status == 200
+    assert res.json() == {"size": 10, "color": "blue"}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("method", "query", "headers", "body"), _empty_compression_requests
+)
+async def test_empty_request_compression_async(method, query, headers, body) -> None:
+    class SimpleHaberdasher(Haberdasher):
+        async def make_hat(self, request, _ctx):
+            return Hat(size=request.inches, color="blue")
+
+    transport = ASGITransport(HaberdasherASGIApplication(SimpleHaberdasher()))
+    res = await Client(transport).execute(
+        method=method,
+        url=f"http://localhost/connectrpc.example.Haberdasher/MakeHat{query}",
+        headers=headers,
+        content=body,
+    )
+    assert res.status == 200
+    assert res.json() == {"size": 10, "color": "blue"}
 
 
 class TestIdentityCompression:
