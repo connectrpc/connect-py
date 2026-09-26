@@ -343,16 +343,15 @@ class ConnectClient:
                 resp.headers, self._response_compressions, stream=False
             )
 
+            if (
+                self._read_max_bytes is not None
+                and len(resp.content) > self._read_max_bytes
+            ):
+                raise ConnectError(
+                    Code.RESOURCE_EXHAUSTED,
+                    f"message is larger than configured max {self._read_max_bytes}",
+                )
             if resp.status == 200:
-                if (
-                    self._read_max_bytes is not None
-                    and len(resp.content) > self._read_max_bytes
-                ):
-                    raise ConnectError(
-                        Code.RESOURCE_EXHAUSTED,
-                        f"message is larger than configured max {self._read_max_bytes}",
-                    )
-
                 return self._codec.decode(resp.content, ctx.method.output)
             raise ConnectWireError.from_response(resp).to_exception()
         except (TimeoutError, asyncio.TimeoutError) as e:
