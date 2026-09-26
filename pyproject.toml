@@ -40,11 +40,18 @@ Homepage = "https://github.com/connectrpc/connect-py"
 Issues = "https://github.com/connectrpc/connect-py/issues"
 Repository = "https://github.com/connectrpc/connect-py"
 
+[project.optional-dependencies]
+trio = [
+  "anyio>=4.10",
+  "trio>=0.32",
+]
+
 [dependency-groups]
 dev = [
   # Install all packages to be available in docs building, etc.
   "connectrpc-grpcreflect",
   "connectrpc-otel",
+  "connectrpc[trio]",
   "example",
   "protoc-gen-connectrpc",
 
