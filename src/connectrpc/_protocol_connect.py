@@ -143,13 +143,12 @@ class ConnectServerProtocol:
 
     def negotiate_stream_compression(
         self, headers: Headers, compressions: dict[str, Compression]
-    ) -> tuple[Compression, Compression]:
-        req_compression_name = headers.get(
-            CONNECT_STREAMING_HEADER_COMPRESSION, "identity"
+    ) -> tuple[Compression | None, Compression]:
+        # An empty header means identity too, as in connect-go.
+        req_compression_name = (
+            headers.get(CONNECT_STREAMING_HEADER_COMPRESSION) or "identity"
         )
-        req_compression = (
-            compressions.get(req_compression_name) or IdentityCompression()
-        )
+        req_compression = compressions.get(req_compression_name)
         accept_compression = headers.get(
             CONNECT_STREAMING_HEADER_ACCEPT_COMPRESSION, ""
         )

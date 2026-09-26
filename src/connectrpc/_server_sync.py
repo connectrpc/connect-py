@@ -402,7 +402,9 @@ class ConnectWSGIApplication(ABC):
                 req_body = b"".join(chunks)
 
             # Handle compression if specified
-            compression_name = environ.get("HTTP_CONTENT_ENCODING", "identity").lower()
+            compression_name = (
+                environ.get("HTTP_CONTENT_ENCODING") or "identity"
+            ).lower()
             compression = self._compressions.get(compression_name)
             if not compression:
                 raise ConnectError(
@@ -460,10 +462,7 @@ class ConnectWSGIApplication(ABC):
                 message = message.encode("utf-8")
 
             # Handle compression if specified
-            if "compression" in params:
-                compression_name = params["compression"][0]
-            else:
-                compression_name = "identity"
+            compression_name = params.get("compression", [""])[0] or "identity"
             compression = self._compressions.get(compression_name)
             if not compression:
                 raise ConnectError(
@@ -528,8 +527,10 @@ class ConnectWSGIApplication(ABC):
         try:
             metadata_run.start()
             if not req_compression:
+                compression_name = headers.get(protocol.compression_header_name())
                 raise ConnectError(
-                    Code.UNIMPLEMENTED, "Unrecognized request compression"
+                    Code.UNIMPLEMENTED,
+                    f"unknown compression: '{compression_name}': supported encodings are {', '.join(self._compressions.keys())}",
                 )
             request_stream = _request_stream(
                 request_body,

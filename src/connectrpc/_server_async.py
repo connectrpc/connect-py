@@ -338,7 +338,7 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
             message = message.encode("utf-8")
 
         # Handle compression
-        compression_name = params.get("compression", ["identity"])[0]
+        compression_name = params.get("compression", [""])[0] or "identity"
         compression = self._compressions.get(compression_name)
         if not compression:
             raise ConnectError(
@@ -375,7 +375,7 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
         req_body = b"".join(chunks)
 
         # Handle compression if specified
-        compression_name = headers.get("content-encoding", "identity").lower()
+        compression_name = (headers.get("content-encoding") or "identity").lower()
         compression = self._compressions.get(compression_name)
         if not compression:
             raise ConnectError(
@@ -410,8 +410,10 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
         try:
             await metadata_run.start()
             if not req_compression:
+                compression_name = headers.get(protocol.compression_header_name())
                 raise ConnectError(
-                    Code.UNIMPLEMENTED, "Unrecognized request compression"
+                    Code.UNIMPLEMENTED,
+                    f"unknown compression: '{compression_name}': supported encodings are {', '.join(self._compressions.keys())}",
                 )
             request_stream = _request_stream(
                 receive,
