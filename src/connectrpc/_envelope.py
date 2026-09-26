@@ -5,7 +5,7 @@ from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, Any, Generic, TypeVar
 
 from ._compression import Compression, IdentityCompression
-from ._shared import message_too_large_error
+from ._shared import decode, decompress, message_too_large_error
 from .code import Code
 from .errors import ConnectError
 
@@ -63,14 +63,14 @@ class EnvelopeReader(Generic[_RES]):
                             "protocol error: sent compressed message without compression support",
                         )
 
-                    message_data = self._compression.decompress(
-                        message_data, self._read_max_bytes
+                    message_data = decompress(
+                        self._compression, message_data, self._read_max_bytes
                     )
 
                 if self.handle_end_message(prefix_byte, message_data):
                     return
 
-                res = self._codec.decode(message_data, self._message_class)
+                res = decode(self._codec, message_data, self._message_class)
                 yield res
 
             if len(self._buffer) < 5:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import threading
 from http import HTTPStatus
 from typing import TYPE_CHECKING, NoReturn
@@ -646,3 +647,75 @@ def test_unicode_error_body_utf8_stream() -> None:
 
     assert res.status == 200
     assert message.encode() in res.content
+
+
+def _envelope(flags: int, payload: bytes) -> bytes:
+    return bytes([flags]) + len(payload).to_bytes(4, "big") + payload
+
+
+_malformed_requests = [
+    pytest.param(
+        "MakeHat",
+        {"content-type": "application/proto"},
+        b"\xff\xff\xff",
+        id="unary message",
+    ),
+    pytest.param(
+        "MakeHat",
+        {"content-type": "application/proto", "content-encoding": "gzip"},
+        b"not gzip",
+        id="unary compression",
+    ),
+    pytest.param(
+        "MakeSimilarHats",
+        {"content-type": "application/connect+proto"},
+        _envelope(0, b"\xff\xff\xff"),
+        id="stream message",
+    ),
+    pytest.param(
+        "MakeSimilarHats",
+        {
+            "content-type": "application/connect+proto",
+            "connect-content-encoding": "gzip",
+        },
+        _envelope(1, b"not gzip"),
+        id="stream compression",
+    ),
+]
+
+
+def _error_code(status: int, content: bytes) -> str:
+    if status == 200:
+        # A stream that fails before any response message has only the end message.
+        return json.loads(content[5:])["error"]["code"]
+    return json.loads(content)["code"]
+
+
+@pytest.mark.parametrize(("method", "headers", "body"), _malformed_requests)
+def test_sync_malformed_request(method, headers, body) -> None:
+    class ValidHaberdasherSync(HaberdasherSync): ...
+
+    transport = WSGITransport(HaberdasherWSGIApplication(ValidHaberdasherSync()))
+    res = SyncClient(transport).post(
+        f"http://localhost/connectrpc.example.Haberdasher/{method}",
+        content=body,
+        headers=headers,
+    )
+
+    assert _error_code(res.status, res.content) == "invalid_argument"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("method", "headers", "body"), _malformed_requests)
+async def test_async_malformed_request(method, headers, body) -> None:
+    class ValidHaberdasher(Haberdasher): ...
+
+    transport = ASGITransport(HaberdasherASGIApplication(ValidHaberdasher()))
+    res = await Client(transport).post(
+        f"http://localhost/connectrpc.example.Haberdasher/{method}",
+        content=body,
+        headers=headers,
+    )
+
+    assert _error_code(res.status, res.content) == "invalid_argument"
+    assert transport.app_exception is None
