@@ -411,14 +411,13 @@ class ConnectClient:
                         compression,
                         self._read_max_bytes,
                     )
-                    async for chunk in resp.content:
-                        for message in reader.feed(bytes(chunk)):
-                            yield message
-                            # Check for cancellation each message. While this seems heavyweight,
-                            # conformance tests require it.
-                            await sleep(0)
-                    reader.finish()
-                    reader.handle_response_complete(resp)
+                    with reader.reading(resp):
+                        async for chunk in resp.content:
+                            for message in reader.feed(bytes(chunk)):
+                                yield message
+                                # Check for cancellation each message. While this seems heavyweight,
+                                # conformance tests require it.
+                                await sleep(0)
                 else:
                     content = bytearray()
                     async for chunk in resp.content:

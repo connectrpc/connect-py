@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import struct
 from abc import ABC, abstractmethod
+from contextlib import contextmanager
 from typing import TYPE_CHECKING, Any, Generic, TypeVar
 
 from ._compression import Compression, IdentityCompression
@@ -13,6 +14,7 @@ if TYPE_CHECKING:
     from collections.abc import Iterator
 
     from pyqwest import Response, SyncResponse
+    from typing_extensions import Self
 
     from ._codec import Codec
     from ._protocol import ConnectWireError
@@ -85,11 +87,22 @@ class EnvelopeReader(Generic[_RES]):
             ):
                 raise message_too_large_error(self._read_max_bytes)
 
-    def finish(self) -> None:
-        """Raise if the body ended partway through a message or continued after the end message.
+    @contextmanager
+    def reading(
+        self, response: Response | SyncResponse | None = None
+    ) -> Iterator[Self]:
+        """Validate the end of the stream when the block exits without an exception.
 
-        Call after the last call to [feed][].
+        Raises if the body ended partway through a message or continued after
+        the end message, then calls [handle_response_complete][] with the
+        response, if any.
         """
+        yield self
+        self._check_ended()
+        if response is not None:
+            self.handle_response_complete(response)
+
+    def _check_ended(self) -> None:
         if self._ended:
             if self._buffer:
                 raise ConnectError(
