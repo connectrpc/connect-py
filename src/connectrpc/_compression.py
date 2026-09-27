@@ -60,9 +60,11 @@ def negotiate_compression(
 def unknown_compression_error(
     name: str, compressions: dict[str, Compression]
 ) -> ConnectError:
-    # identity is always accepted, so only list it when nothing else is.
-    supported = [n for n in compressions if n != "identity"] or ["identity"]
-    return ConnectError(
-        Code.UNIMPLEMENTED,
-        f"unknown compression: '{name}': supported encodings are {', '.join(supported)}",
+    # identity is always accepted and is not a compression, so it is not listed.
+    supported = [n for n in compressions if n != "identity"]
+    detail = (
+        f"supported encodings are {', '.join(supported)}"
+        if supported
+        else "compression is not supported"
     )
+    return ConnectError(Code.UNIMPLEMENTED, f"unknown compression: '{name}': {detail}")

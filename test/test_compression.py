@@ -179,24 +179,23 @@ def test_unknown_request_compression_sync(protocol: ProtocolType, stream: bool) 
 
 
 @pytest.mark.parametrize(
-    ("compressions", "supported"),
+    ("compressions", "detail"),
     [
-        pytest.param(None, "gzip", id="default"),
-        pytest.param((), "identity", id="none"),
+        pytest.param(None, "supported encodings are gzip", id="default"),
+        pytest.param((), "compression is not supported", id="none"),
         pytest.param(
-            (ZstdCompression(), GzipCompression()), "zstd, gzip", id="multiple"
+            (ZstdCompression(), GzipCompression()),
+            "supported encodings are zstd, gzip",
+            id="multiple",
         ),
     ],
 )
 def test_unknown_compression_error(
-    compressions: tuple[Compression, ...] | None, supported: str
+    compressions: tuple[Compression, ...] | None, detail: str
 ) -> None:
     error = unknown_compression_error("foo", resolve_compressions(compressions))
     assert error.code == Code.UNIMPLEMENTED
-    assert (
-        error.message
-        == f"unknown compression: 'foo': supported encodings are {supported}"
-    )
+    assert error.message == f"unknown compression: 'foo': {detail}"
 
 
 class _XorCompression:
