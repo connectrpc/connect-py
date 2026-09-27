@@ -11,6 +11,7 @@ from pyqwest.testing import ASGITransport, WSGITransport
 from connectrpc._compression import (
     IdentityCompression,
     resolve_compressions,
+    resolve_request_compression,
     unknown_compression_error,
 )
 from connectrpc._protocol_connect import ConnectServerProtocol
@@ -262,6 +263,21 @@ def test_mixed_case_request_compression_sync(stream: bool) -> None:
     else:
         hats = [client.make_hat(Size(inches=10))]
     assert hats == [Hat(size=10, color="blue")]
+
+
+@pytest.mark.parametrize(
+    ("name", "expected"),
+    [
+        pytest.param("", "identity", id="empty"),
+        pytest.param("identity", "identity", id="identity"),
+        pytest.param("gzip", "gzip", id="gzip"),
+        pytest.param("GZIP", None, id="exact-match"),
+        pytest.param("zstd", None, id="unknown"),
+    ],
+)
+def test_resolve_request_compression(name: str, expected: str | None) -> None:
+    compression = resolve_request_compression(name, resolve_compressions(None))
+    assert (compression.name() if compression else None) == expected
 
 
 @pytest.mark.parametrize(

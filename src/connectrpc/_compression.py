@@ -57,6 +57,17 @@ def negotiate_compression(
     return _identity
 
 
+def resolve_request_compression(
+    name: str, compressions: dict[str, Compression]
+) -> Compression | None:
+    """Return the compression for a request's encoding, or None if unsupported.
+
+    Every request path resolves the name here: an empty name means identity, as
+    in connect-go, and names match exactly.
+    """
+    return compressions.get(name or "identity")
+
+
 def unknown_compression_error(
     name: str, compressions: dict[str, Compression]
 ) -> ConnectError:
