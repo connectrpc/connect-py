@@ -312,18 +312,34 @@ class ConnectWSGIApplication(ABC):
         ctx: RequestContext[_REQ, _RES],
         headers: Headers,
     ) -> Iterable[bytes]:
+        if http_method == "GET":
+            query_params = parse_qs(
+                environ.get("QUERY_STRING", ""), keep_blank_values=True
+            )
+            codec_name = query_params.get("encoding", ("",))[0]
+        else:
+            query_params = {}
+            codec_name = codec_name_from_content_type(
+                headers.get("content-type", ""), stream=False
+            )
+        codec = self._codecs.get(codec_name)
+        if not codec:
+            raise HTTPError(
+                HTTPStatus.UNSUPPORTED_MEDIA_TYPE,
+                [("Accept-Post", "application/json, application/proto")],
+            )
+
         metadata_run = MetadataInterceptorsRunSync(self._metadata_interceptors, ctx)
         response: _RES | None = None
-        codec: Codec | None = None
         error: Exception | None = None
         try:
             metadata_run.start()
             # Handle request based on method
             if http_method == "GET":
-                request, codec = self._handle_get_request(environ, endpoint)
+                request = self._handle_get_request(query_params, endpoint, codec)
             else:
-                request, codec = self._handle_post_request(
-                    environ, request_body, endpoint, headers
+                request = self._handle_post_request(
+                    environ, request_body, endpoint, codec
                 )
 
             # Process request
@@ -337,7 +353,6 @@ class ConnectWSGIApplication(ABC):
         if error is not None:
             raise error
         assert response is not None  # noqa: S101 # no error means function returned
-        assert codec is not None  # noqa: S101 # no error means request was parsed
 
         # Encode response
         res_bytes = codec.encode(response)
@@ -366,19 +381,9 @@ class ConnectWSGIApplication(ABC):
         environ: WSGIEnvironment,
         request_body: _RequestBody,
         endpoint: _server_shared.EndpointSync[_REQ, _RES],
-        request_headers: Headers,
-    ) -> tuple[_REQ, Codec]:
+        codec: Codec,
+    ) -> _REQ:
         """Handle POST request with body."""
-        codec_name = codec_name_from_content_type(
-            request_headers.get("content-type", ""), stream=False
-        )
-        codec = self._codecs.get(codec_name)
-        if not codec:
-            raise HTTPError(
-                HTTPStatus.UNSUPPORTED_MEDIA_TYPE,
-                [("Accept-Post", "application/json, application/proto")],
-            )
-
         try:
             content_length = environ.get("CONTENT_LENGTH")
             content_length = 0 if not content_length else int(content_length)
@@ -414,7 +419,7 @@ class ConnectWSGIApplication(ABC):
             if not compression:
                 raise unknown_compression_error(compression_name, self._compressions)
             req_body = decompress(compression, req_body, self._read_max_bytes)
-            return decode_message(codec, req_body, endpoint.method.input), codec
+            return decode_message(codec, req_body, endpoint.method.input)
 
         except Exception as e:
             if not isinstance(e, ConnectError):
@@ -425,13 +430,13 @@ class ConnectWSGIApplication(ABC):
             raise
 
     def _handle_get_request(
-        self, environ: WSGIEnvironment, endpoint: EndpointUnarySync[_REQ, _RES]
-    ) -> tuple[_REQ, Codec]:
+        self,
+        params: dict[str, list[str]],
+        endpoint: EndpointUnarySync[_REQ, _RES],
+        codec: Codec,
+    ) -> _REQ:
         """Handle GET request with query parameters."""
         try:
-            query_string = environ.get("QUERY_STRING", "")
-            params = parse_qs(query_string, keep_blank_values=True)
-
             if "message" not in params:
                 raise ConnectError(
                     Code.INVALID_ARGUMENT,
@@ -457,13 +462,7 @@ class ConnectWSGIApplication(ABC):
                 raise unknown_compression_error(compression_name, self._compressions)
             message = decompress(compression, message, self._read_max_bytes)
 
-            codec_name = params.get("encoding", ("",))[0]
-            codec = self._codecs.get(codec_name)
-            if not codec:
-                raise ConnectError(
-                    Code.UNIMPLEMENTED, f"invalid message encoding: '{codec_name}'"
-                )
-            return decode_message(codec, message, endpoint.method.input), codec
+            return decode_message(codec, message, endpoint.method.input)
 
         except Exception as e:
             if not isinstance(e, ConnectError):
