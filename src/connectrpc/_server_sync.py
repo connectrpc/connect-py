@@ -11,7 +11,11 @@ from urllib.parse import parse_qs
 
 from . import _server_shared
 from ._codec import Codec, get_default_codecs
-from ._compression import negotiate_compression, resolve_compressions
+from ._compression import (
+    negotiate_compression,
+    resolve_compressions,
+    unknown_compression_error,
+)
 from ._envelope import EnvelopeReader, EnvelopeWriter
 from ._interceptor_sync import (
     BidiStreamInterceptorSync,
@@ -405,10 +409,7 @@ class ConnectWSGIApplication(ABC):
             compression_name = environ.get("HTTP_CONTENT_ENCODING") or "identity"
             compression = self._compressions.get(compression_name)
             if not compression:
-                raise ConnectError(
-                    Code.UNIMPLEMENTED,
-                    f"unknown compression: '{compression_name}': supported encodings are {', '.join(self._compressions.keys())}",
-                )
+                raise unknown_compression_error(compression_name, self._compressions)
             try:
                 req_body = compression.decompress(req_body, self._read_max_bytes)
             except ConnectError:
@@ -463,10 +464,7 @@ class ConnectWSGIApplication(ABC):
             compression_name = params.get("compression", [""])[0] or "identity"
             compression = self._compressions.get(compression_name)
             if not compression:
-                raise ConnectError(
-                    Code.UNIMPLEMENTED,
-                    f"unknown compression: '{compression_name}': supported encodings are {', '.join(self._compressions.keys())}",
-                )
+                raise unknown_compression_error(compression_name, self._compressions)
             message = compression.decompress(message, self._read_max_bytes)
 
             codec_name = params.get("encoding", ("",))[0]
@@ -525,10 +523,9 @@ class ConnectWSGIApplication(ABC):
         try:
             metadata_run.start()
             if not req_compression:
-                compression_name = headers.get(protocol.compression_header_name())
-                raise ConnectError(
-                    Code.UNIMPLEMENTED,
-                    f"unknown compression: '{compression_name}': supported encodings are {', '.join(self._compressions.keys())}",
+                raise unknown_compression_error(
+                    headers.get(protocol.compression_header_name(), ""),
+                    self._compressions,
                 )
             request_stream = _request_stream(
                 request_body,

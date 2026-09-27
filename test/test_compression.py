@@ -8,7 +8,11 @@ import pytest
 from pyqwest import Client, SyncClient
 from pyqwest.testing import ASGITransport, WSGITransport
 
-from connectrpc._compression import IdentityCompression, resolve_compressions
+from connectrpc._compression import (
+    IdentityCompression,
+    resolve_compressions,
+    unknown_compression_error,
+)
 from connectrpc._protocol_connect import ConnectServerProtocol
 from connectrpc._protocol_grpc import GRPCServerProtocol
 from connectrpc.client import ResponseMetadata
@@ -139,7 +143,7 @@ async def test_unknown_request_compression_async(
     assert exc_info.value.code == Code.UNIMPLEMENTED
     assert (
         exc_info.value.message
-        == "unknown compression: 'zstd': supported encodings are gzip, identity"
+        == "unknown compression: 'zstd': supported encodings are gzip"
     )
 
 
@@ -170,7 +174,28 @@ def test_unknown_request_compression_sync(protocol: ProtocolType, stream: bool) 
     assert exc_info.value.code == Code.UNIMPLEMENTED
     assert (
         exc_info.value.message
-        == "unknown compression: 'zstd': supported encodings are gzip, identity"
+        == "unknown compression: 'zstd': supported encodings are gzip"
+    )
+
+
+@pytest.mark.parametrize(
+    ("compressions", "supported"),
+    [
+        pytest.param(None, "gzip", id="default"),
+        pytest.param((), "identity", id="none"),
+        pytest.param(
+            (ZstdCompression(), GzipCompression()), "zstd, gzip", id="multiple"
+        ),
+    ],
+)
+def test_unknown_compression_error(
+    compressions: tuple[Compression, ...] | None, supported: str
+) -> None:
+    error = unknown_compression_error("foo", resolve_compressions(compressions))
+    assert error.code == Code.UNIMPLEMENTED
+    assert (
+        error.message
+        == f"unknown compression: 'foo': supported encodings are {supported}"
     )
 
 
