@@ -402,9 +402,7 @@ class ConnectWSGIApplication(ABC):
                 req_body = b"".join(chunks)
 
             # Handle compression if specified
-            compression_name = (
-                environ.get("HTTP_CONTENT_ENCODING") or "identity"
-            ).lower()
+            compression_name = environ.get("HTTP_CONTENT_ENCODING") or "identity"
             compression = self._compressions.get(compression_name)
             if not compression:
                 raise ConnectError(

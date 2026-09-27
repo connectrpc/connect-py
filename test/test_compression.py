@@ -174,6 +174,72 @@ def test_unknown_request_compression_sync(protocol: ProtocolType, stream: bool) 
     )
 
 
+class _XorCompression:
+    """A toy compression registered under a name that is not all lowercase."""
+
+    def name(self) -> str:
+        return "Xor"
+
+    def compress(self, data: bytes | bytearray | memoryview) -> bytes:
+        return bytes(b ^ 0x5A for b in data)
+
+    def decompress(
+        self,
+        data: bytes | bytearray | memoryview,
+        read_max_bytes: int | None = None,  # noqa: ARG002
+    ) -> bytes:
+        return bytes(b ^ 0x5A for b in data)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("stream", _streams)
+async def test_mixed_case_request_compression_async(stream: bool) -> None:
+    class SimpleHaberdasher(Haberdasher):
+        async def make_hat(self, request, _ctx):
+            return Hat(size=request.inches, color="blue")
+
+        async def make_similar_hats(self, request, _ctx):
+            yield Hat(size=request.inches, color="blue")
+
+    app = HaberdasherASGIApplication(
+        SimpleHaberdasher(), compressions=[_XorCompression()]
+    )
+    client = HaberdasherClient(
+        "http://localhost",
+        http_client=Client(ASGITransport(app)),
+        send_compression=_XorCompression(),
+    )
+    if stream:
+        hats = [hat async for hat in client.make_similar_hats(Size(inches=10))]
+    else:
+        hats = [await client.make_hat(Size(inches=10))]
+    assert hats == [Hat(size=10, color="blue")]
+
+
+@pytest.mark.parametrize("stream", _streams)
+def test_mixed_case_request_compression_sync(stream: bool) -> None:
+    class SimpleHaberdasher(HaberdasherSync):
+        def make_hat(self, request, _ctx):
+            return Hat(size=request.inches, color="blue")
+
+        def make_similar_hats(self, request, _ctx):
+            yield Hat(size=request.inches, color="blue")
+
+    app = HaberdasherWSGIApplication(
+        SimpleHaberdasher(), compressions=[_XorCompression()]
+    )
+    client = HaberdasherClientSync(
+        "http://localhost",
+        http_client=SyncClient(WSGITransport(app)),
+        send_compression=_XorCompression(),
+    )
+    if stream:
+        hats = list(client.make_similar_hats(Size(inches=10)))
+    else:
+        hats = [client.make_hat(Size(inches=10))]
+    assert hats == [Hat(size=10, color="blue")]
+
+
 @pytest.mark.parametrize(
     ("protocol", "header_name"),
     [
