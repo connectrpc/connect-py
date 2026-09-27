@@ -1,15 +1,19 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, TypeVar
+import functools
+from typing import TYPE_CHECKING, TypeVar, cast
 
 from .code import Code
 from .errors import ConnectError
 
 if TYPE_CHECKING:
+    from collections.abc import Callable, Sequence
+
     from ._codec import Codec
     from .compression import Compression
 
 _T = TypeVar("_T")
+F = TypeVar("F", bound="Callable")
 
 
 def message_too_large_error(read_max_bytes: int) -> ConnectError:
@@ -41,3 +45,13 @@ def decode_message(
         raise
     except Exception as e:
         raise ConnectError(Code.INVALID_ARGUMENT, f"unmarshal message: {e}") from e
+
+
+def chain_interceptors(
+    call: F, interceptors: Sequence[object], kind: type, method_name: str
+) -> F:
+    """Wrap call in each interceptor of the given kind, the first outermost."""
+    for interceptor in reversed(interceptors):
+        if isinstance(interceptor, kind):
+            call = cast("F", functools.partial(getattr(interceptor, method_name), call))
+    return call
