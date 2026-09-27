@@ -15,13 +15,13 @@ from .code import Code
 from .errors import ConnectError, ErrorDetail
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping, Sequence
+    from collections.abc import Sequence
 
-    from pyqwest import FullResponse, Headers as HTTPHeaders
+    from pyqwest import FullResponse
 
     from ._codec import Codec
     from ._compression import Compression
-    from ._envelope import EnvelopeReader, EnvelopeWriter
+    from ._envelope import EnvelopeWriter
     from .method import MethodInfo
     from .request import Headers, RequestContext
 
@@ -222,52 +222,6 @@ class ServerProtocol(Protocol):
         self, headers: Headers, compressions: dict[str, Compression]
     ) -> tuple[Compression | None, Compression]:
         """Negotiates request and response compression based on headers."""
-        ...
-
-
-class ClientProtocol(Protocol):
-    def create_request_context(
-        self,
-        *,
-        method: MethodInfo[REQ, RES],
-        address: str,
-        http_method: str,
-        user_headers: Headers | Mapping[str, str] | None,
-        timeout_ms: int | None,
-        codec: Codec,
-        stream: bool,
-        accept_compression: str,
-        send_compression: Compression | None,
-    ) -> RequestContext[REQ, RES]:
-        """Create a RequestContext for the given method and headers."""
-        ...
-
-    def validate_response(
-        self, request_codec_name: str, status_code: int, response_content_type: str
-    ) -> None:
-        """Validate a unary response."""
-        ...
-
-    def validate_stream_response(
-        self, request_codec_name: str, response_content_type: str
-    ) -> None:
-        """Validate a streaming response."""
-        ...
-
-    def handle_response_compression(
-        self, headers: HTTPHeaders, *, stream: bool
-    ) -> Compression:
-        """Handle response compression based on the response headers."""
-        ...
-
-    def create_envelope_reader(
-        self,
-        message_class: type[RES],
-        codec: Codec,
-        compression: Compression,
-        read_max_bytes: int | None,
-    ) -> EnvelopeReader[RES]:
-        """Create the EnvelopeReader to read response messages."""
         ...
 
 
