@@ -15,6 +15,7 @@ from ._codec import Codec, get_default_codecs
 from ._compression import (
     negotiate_compression,
     resolve_compressions,
+    resolve_request_compression,
     unknown_compression_error,
 )
 from ._envelope import EnvelopeReader
@@ -342,8 +343,8 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
             message = message.encode("utf-8")
 
         # Handle compression
-        compression_name = params.get("compression", [""])[0] or "identity"
-        compression = self._compressions.get(compression_name)
+        compression_name = params.get("compression", [""])[0]
+        compression = resolve_request_compression(compression_name, self._compressions)
         if not compression:
             raise unknown_compression_error(compression_name, self._compressions)
 
@@ -376,8 +377,8 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
         req_body = b"".join(chunks)
 
         # Handle compression if specified
-        compression_name = headers.get("content-encoding") or "identity"
-        compression = self._compressions.get(compression_name)
+        compression_name = headers.get("content-encoding", "")
+        compression = resolve_request_compression(compression_name, self._compressions)
         if not compression:
             raise unknown_compression_error(compression_name, self._compressions)
 

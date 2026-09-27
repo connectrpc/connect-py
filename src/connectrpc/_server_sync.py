@@ -14,6 +14,7 @@ from ._codec import Codec, get_default_codecs
 from ._compression import (
     negotiate_compression,
     resolve_compressions,
+    resolve_request_compression,
     unknown_compression_error,
 )
 from ._envelope import EnvelopeReader, EnvelopeWriter
@@ -406,8 +407,10 @@ class ConnectWSGIApplication(ABC):
                 req_body = b"".join(chunks)
 
             # Handle compression if specified
-            compression_name = environ.get("HTTP_CONTENT_ENCODING") or "identity"
-            compression = self._compressions.get(compression_name)
+            compression_name = environ.get("HTTP_CONTENT_ENCODING", "")
+            compression = resolve_request_compression(
+                compression_name, self._compressions
+            )
             if not compression:
                 raise unknown_compression_error(compression_name, self._compressions)
             try:
@@ -461,8 +464,10 @@ class ConnectWSGIApplication(ABC):
                 message = message.encode("utf-8")
 
             # Handle compression if specified
-            compression_name = params.get("compression", [""])[0] or "identity"
-            compression = self._compressions.get(compression_name)
+            compression_name = params.get("compression", [""])[0]
+            compression = resolve_request_compression(
+                compression_name, self._compressions
+            )
             if not compression:
                 raise unknown_compression_error(compression_name, self._compressions)
             message = compression.decompress(message, self._read_max_bytes)

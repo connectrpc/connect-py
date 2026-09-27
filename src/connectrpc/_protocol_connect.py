@@ -6,7 +6,11 @@ from http import HTTPStatus
 from typing import TYPE_CHECKING, Any, TypeVar
 
 from ._codec import CODEC_NAME_JSON, Codec
-from ._compression import IdentityCompression, negotiate_compression
+from ._compression import (
+    IdentityCompression,
+    negotiate_compression,
+    resolve_request_compression,
+)
 from ._envelope import EnvelopeReader, EnvelopeWriter
 from ._protocol import (
     ConnectWireError,
@@ -144,11 +148,9 @@ class ConnectServerProtocol:
     def negotiate_stream_compression(
         self, headers: Headers, compressions: dict[str, Compression]
     ) -> tuple[Compression | None, Compression]:
-        # An empty header means identity too, as in connect-go.
-        req_compression_name = (
-            headers.get(CONNECT_STREAMING_HEADER_COMPRESSION) or "identity"
+        req_compression = resolve_request_compression(
+            headers.get(CONNECT_STREAMING_HEADER_COMPRESSION, ""), compressions
         )
-        req_compression = compressions.get(req_compression_name)
         accept_compression = headers.get(
             CONNECT_STREAMING_HEADER_ACCEPT_COMPRESSION, ""
         )

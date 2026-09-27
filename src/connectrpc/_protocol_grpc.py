@@ -9,7 +9,11 @@ from typing import TYPE_CHECKING, Any, TypeVar
 
 from pyqwest import Headers as HTTPHeaders
 
-from ._compression import IdentityCompression, negotiate_compression
+from ._compression import (
+    IdentityCompression,
+    negotiate_compression,
+    resolve_request_compression,
+)
 from ._envelope import EnvelopeReader, EnvelopeWriter
 from ._gen.google.rpc.status_pb import Status
 from ._protocol import (
@@ -96,8 +100,9 @@ class GRPCServerProtocol:
     def negotiate_stream_compression(
         self, headers: Headers, compressions: dict[str, Compression]
     ) -> tuple[Compression | None, Compression]:
-        req_compression_name = headers.get(GRPC_HEADER_COMPRESSION) or "identity"
-        req_compression = compressions.get(req_compression_name)
+        req_compression = resolve_request_compression(
+            headers.get(GRPC_HEADER_COMPRESSION, ""), compressions
+        )
         accept_compression = headers.get(GRPC_HEADER_ACCEPT_COMPRESSION, "")
         resp_compression = negotiate_compression(accept_compression, compressions)
         return req_compression, resp_compression
