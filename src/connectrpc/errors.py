@@ -105,11 +105,9 @@ class ConnectError(Exception):
         self._code = code
         self._message = message
 
-        self._details = (
-            [m if isinstance(m, ErrorDetail) else ErrorDetail(m) for m in details]
-            if details
-            else ()
-        )
+        self._details = [
+            m if isinstance(m, ErrorDetail) else ErrorDetail(m) for m in details
+        ]
 
     @property
     def code(self) -> Code:
