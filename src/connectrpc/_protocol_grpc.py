@@ -105,11 +105,17 @@ class GRPCServerProtocol:
         return req_compression, resp_compression
 
     def trailers_only_headers(
-        self, user_trailers: Headers, error: ConnectWireError
+        self, ctx: RequestContext | None, exc: Exception
     ) -> Headers:
-        """Return the headers of a trailers-only response that reports error."""
-        headers = _status_trailers(user_trailers, error)
+        """Return the headers of a trailers-only response that reports exc."""
+        headers = _status_trailers(
+            ctx.response_trailers if ctx else Headers(),
+            ConnectWireError.from_exception(exc),
+        )
         headers["content-type"] = self._content_type
+        if ctx:
+            for key, value in ctx.response_headers.allitems():
+                headers.add(key, value)
         return headers
 
 

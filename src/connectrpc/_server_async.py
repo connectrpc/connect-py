@@ -542,13 +542,7 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
         if isinstance(protocol, GRPCServerProtocol) and not isinstance(exc, HTTPError):
             # gRPC clients read the status from trailers, so this is a trailers-only
             # response: HTTP 200 with the gRPC status in the headers.
-            grpc_headers = protocol.trailers_only_headers(
-                ctx.response_trailers if ctx else Headers(),
-                ConnectWireError.from_exception(exc),
-            )
-            if ctx:
-                for key, value in ctx.response_headers.allitems():
-                    grpc_headers.add(key, value)
+            grpc_headers = protocol.trailers_only_headers(ctx, exc)
             await send(
                 {
                     "type": "http.response.start",
