@@ -42,7 +42,7 @@ from ._server_shared import (
     EndpointServerStreamSync,
     EndpointUnarySync,
 )
-from ._shared import decode, decompress
+from ._shared import decode_message, decompress
 from .code import Code
 from .errors import ConnectError
 from .request import Headers, RequestContext
@@ -412,7 +412,7 @@ class ConnectWSGIApplication(ABC):
             if not compression:
                 raise unknown_compression_error(compression_name, self._compressions)
             req_body = decompress(compression, req_body, self._read_max_bytes)
-            return decode(codec, req_body, endpoint.method.input), codec
+            return decode_message(codec, req_body, endpoint.method.input), codec
 
         except Exception as e:
             if not isinstance(e, ConnectError):
@@ -461,7 +461,7 @@ class ConnectWSGIApplication(ABC):
                 raise ConnectError(
                     Code.UNIMPLEMENTED, f"invalid message encoding: '{codec_name}'"
                 )
-            return decode(codec, message, endpoint.method.input), codec
+            return decode_message(codec, message, endpoint.method.input), codec
 
         except Exception as e:
             if not isinstance(e, ConnectError):

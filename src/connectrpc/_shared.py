@@ -31,7 +31,9 @@ def decompress(
         raise ConnectError(Code.INVALID_ARGUMENT, f"decompress: {e}") from e
 
 
-def decode(codec: Codec, data: bytes | bytearray, message_class: type[_T]) -> _T:
+def decode_message(
+    codec: Codec, data: bytes | bytearray, message_class: type[_T]
+) -> _T:
     """Decode a message from the peer, reporting malformed data as invalid_argument."""
     try:
         return codec.decode(data, message_class)

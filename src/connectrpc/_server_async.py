@@ -38,7 +38,7 @@ from ._server_shared import (
     EndpointServerStream,
     EndpointUnary,
 )
-from ._shared import decode, decompress
+from ._shared import decode_message, decompress
 from .code import Code
 from .errors import ConnectError
 from .request import Headers, RequestContext
@@ -353,7 +353,7 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
             message = decompress(compression, message, self._read_max_bytes)
 
         # Get the appropriate decoder for the endpoint
-        return decode(codec, message, endpoint.method.input)
+        return decode_message(codec, message, endpoint.method.input)
 
     async def _read_post_request(
         self,
@@ -385,7 +385,7 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
         if req_body:  # Don't decompress empty body
             req_body = decompress(compression, req_body, self._read_max_bytes)
 
-        return decode(codec, req_body, endpoint.method.input)
+        return decode_message(codec, req_body, endpoint.method.input)
 
     async def _handle_stream(
         self,

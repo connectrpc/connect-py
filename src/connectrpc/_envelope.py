@@ -5,7 +5,7 @@ from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, Any, Generic, TypeVar
 
 from ._compression import Compression, IdentityCompression
-from ._shared import decode, decompress, message_too_large_error
+from ._shared import decode_message, decompress, message_too_large_error
 from .code import Code
 from .errors import ConnectError
 
@@ -74,7 +74,7 @@ class EnvelopeReader(Generic[_RES]):
                     self._ended = True
                     return
 
-                res = decode(self._codec, message_data, self._message_class)
+                res = decode_message(self._codec, message_data, self._message_class)
                 yield res
 
             if len(self._buffer) < 5:
