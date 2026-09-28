@@ -211,6 +211,39 @@ async def test_file_containing_method(reflection_client: ReflectionClient) -> No
 
 
 @pytest.mark.asyncio
+async def test_file_containing_field_or_oneof(
+    reflection_client: ReflectionClient,
+) -> None:
+    field_res, nested_field_res, oneof_res = await _responses(
+        reflection_client,
+        [
+            ServerReflectionRequest(
+                message_request=Oneof(
+                    "file_containing_symbol", "connectrpc.example.Hat.color"
+                )
+            ),
+            ServerReflectionRequest(
+                message_request=Oneof(
+                    "file_containing_symbol", "connectrpc.example.Hat.Part.id"
+                )
+            ),
+            ServerReflectionRequest(
+                message_request=Oneof(
+                    "file_containing_symbol", "connectrpc.example.Hat._name"
+                )
+            ),
+        ],
+    )
+
+    assert _file_names(field_res) == [
+        "connectrpc/example/haberdasher.proto",
+        "google/protobuf/empty.proto",
+    ]
+    assert _file_names(nested_field_res) == ["connectrpc/example/haberdasher.proto"]
+    assert _file_names(oneof_res) == ["connectrpc/example/haberdasher.proto"]
+
+
+@pytest.mark.asyncio
 async def test_dependencies_sent_once(reflection_client: ReflectionClient) -> None:
     first, second = await _responses(
         reflection_client,
@@ -251,10 +284,15 @@ async def test_not_found(reflection_client: ReflectionClient) -> None:
                     "all_extension_numbers_of_type", "missing.Message"
                 )
             ),
+            ServerReflectionRequest(
+                message_request=Oneof(
+                    "file_containing_symbol", "connectrpc.example.Hat.missing"
+                )
+            ),
         ],
     )
 
-    assert len(responses) == 3
+    assert len(responses) == 4
     for res in responses:
         assert res.message_response is not None
         assert res.message_response.field == "error_response"
