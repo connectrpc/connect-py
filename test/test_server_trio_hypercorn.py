@@ -20,6 +20,9 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import pytest
+
+pytest.importorskip("trio")
+
 import trio
 import trio.lowlevel
 from hypercorn.config import Config
