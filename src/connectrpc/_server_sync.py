@@ -11,7 +11,11 @@ from urllib.parse import parse_qs
 
 from . import _server_shared
 from ._codec import Codec, get_default_codecs
-from ._compression import negotiate_compression, resolve_compressions
+from ._compression import (
+    negotiate_compression,
+    resolve_compressions,
+    unknown_compression_error,
+)
 from ._envelope import EnvelopeReader, EnvelopeWriter
 from ._interceptor_sync import (
     BidiStreamInterceptorSync,
@@ -30,6 +34,7 @@ from ._protocol_connect import (
     ConnectServerProtocol,
     codec_name_from_content_type,
 )
+from ._protocol_grpc import GRPCServerProtocol
 from ._protocol_server import negotiate_server_protocol
 from ._server_shared import (
     DEFAULT_READ_MAX_BYTES,
@@ -38,6 +43,7 @@ from ._server_shared import (
     EndpointServerStreamSync,
     EndpointUnarySync,
 )
+from ._shared import decode_message, decompress
 from .code import Code
 from .errors import ConnectError
 from .request import Headers, RequestContext
@@ -231,6 +237,7 @@ class ConnectWSGIApplication(ABC):
         self, environ: WSGIEnvironment, start_response: StartResponse
     ) -> Iterable[bytes]:
         ctx: RequestContext | None = None
+        protocol: ServerProtocol | None = None
         request_body = _RequestBody.from_environ(environ)
         try:
             path = environ["PATH_INFO"]
@@ -293,7 +300,7 @@ class ConnectWSGIApplication(ABC):
         except Exception as e:  # noqa: BLE001 # invoking user callback
             _drain_request_body(environ, request_body)
             _maybe_log_exception(environ, e)
-            return self._handle_error(e, ctx, start_response)
+            return self._handle_error(e, ctx, protocol, start_response)
 
     def _handle_unary(
         self,
@@ -402,28 +409,12 @@ class ConnectWSGIApplication(ABC):
                 req_body = b"".join(chunks)
 
             # Handle compression if specified
-            compression_name = environ.get("HTTP_CONTENT_ENCODING", "identity").lower()
+            compression_name = environ.get("HTTP_CONTENT_ENCODING") or "identity"
             compression = self._compressions.get(compression_name)
             if not compression:
-                raise ConnectError(
-                    Code.UNIMPLEMENTED,
-                    f"unknown compression: '{compression_name}': supported encodings are {', '.join(self._compressions.keys())}",
-                )
-            try:
-                req_body = compression.decompress(req_body, self._read_max_bytes)
-            except ConnectError:
-                raise
-            except Exception as e:
-                raise ConnectError(
-                    Code.INVALID_ARGUMENT, f"Failed to decompress request body: {e!s}"
-                ) from e
-
-            try:
-                return codec.decode(req_body, endpoint.method.input), codec
-            except Exception as e:
-                raise ConnectError(
-                    Code.INVALID_ARGUMENT, f"Failed to decode request body: {e!s}"
-                ) from e
+                raise unknown_compression_error(compression_name, self._compressions)
+            req_body = decompress(compression, req_body, self._read_max_bytes)
+            return decode_message(codec, req_body, endpoint.method.input), codec
 
         except Exception as e:
             if not isinstance(e, ConnectError):
@@ -460,17 +451,11 @@ class ConnectWSGIApplication(ABC):
                 message = message.encode("utf-8")
 
             # Handle compression if specified
-            if "compression" in params:
-                compression_name = params["compression"][0]
-            else:
-                compression_name = "identity"
+            compression_name = params.get("compression", [""])[0] or "identity"
             compression = self._compressions.get(compression_name)
             if not compression:
-                raise ConnectError(
-                    Code.UNIMPLEMENTED,
-                    f"unknown compression: '{compression_name}': supported encodings are {', '.join(self._compressions.keys())}",
-                )
-            message = compression.decompress(message, self._read_max_bytes)
+                raise unknown_compression_error(compression_name, self._compressions)
+            message = decompress(compression, message, self._read_max_bytes)
 
             codec_name = params.get("encoding", ("",))[0]
             codec = self._codecs.get(codec_name)
@@ -478,16 +463,7 @@ class ConnectWSGIApplication(ABC):
                 raise ConnectError(
                     Code.UNIMPLEMENTED, f"invalid message encoding: '{codec_name}'"
                 )
-            # Handle GET request with proto decoder
-            try:
-                # TODO - Use content type from queryparam
-                request = codec.decode(message, endpoint.method.input)
-            except Exception as e:
-                raise ConnectError(
-                    Code.INVALID_ARGUMENT, f"Failed to decode message: {e!s}"
-                ) from e
-            else:
-                return request, codec
+            return decode_message(codec, message, endpoint.method.input), codec
 
         except Exception as e:
             if not isinstance(e, ConnectError):
@@ -528,8 +504,9 @@ class ConnectWSGIApplication(ABC):
         try:
             metadata_run.start()
             if not req_compression:
-                raise ConnectError(
-                    Code.UNIMPLEMENTED, "Unrecognized request compression"
+                raise unknown_compression_error(
+                    headers.get(protocol.compression_header_name(), ""),
+                    self._compressions,
                 )
             request_stream = _request_stream(
                 request_body,
@@ -615,12 +592,22 @@ class ConnectWSGIApplication(ABC):
             ]
 
     def _handle_error(
-        self, exc: Exception, ctx: RequestContext | None, start_response: StartResponse
+        self,
+        exc: Exception,
+        ctx: RequestContext | None,
+        protocol: ServerProtocol | None,
+        start_response: StartResponse,
     ) -> Iterable[bytes]:
         """Handle and log errors with detailed information."""
         headers: list[tuple[str, str]]
         body: list[bytes]
         status: str
+        if isinstance(protocol, GRPCServerProtocol) and not isinstance(exc, HTTPError):
+            # gRPC clients read the status from trailers, so this is a trailers-only
+            # response: HTTP 200 with the gRPC status in the headers.
+            grpc_headers = protocol.trailers_only_headers(ctx, exc)
+            start_response("200 OK", list(grpc_headers.allitems()))
+            return []
         if isinstance(exc, HTTPError):
             headers = exc.headers
             body = []
@@ -681,9 +668,9 @@ def _request_stream(
     compression: Compression,
     read_max_bytes: int | None = None,
 ) -> Iterator[_REQ]:
-    reader = EnvelopeReader(request_class, codec, compression, read_max_bytes)
-    for chunk in _read_body(request_body):
-        yield from reader.feed(chunk)
+    with EnvelopeReader(request_class, codec, compression, read_max_bytes) as reader:
+        for chunk in _read_body(request_body):
+            yield from reader.feed(chunk)
 
 
 def _response_stream(

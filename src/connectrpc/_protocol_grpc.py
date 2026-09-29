@@ -49,6 +49,8 @@ _DEFAULT_GRPC_USER_AGENT = f"grpc-python-connect/{__version__} ({sys.version})"
 
 
 class GRPCServerProtocol:
+    _content_type = GRPC_CONTENT_TYPE_DEFAULT
+
     def create_request_context(
         self,
         method: MethodInfo[REQ, RES],
@@ -96,14 +98,30 @@ class GRPCServerProtocol:
     def negotiate_stream_compression(
         self, headers: Headers, compressions: dict[str, Compression]
     ) -> tuple[Compression | None, Compression]:
-        req_compression_name = headers.get(GRPC_HEADER_COMPRESSION, "identity")
+        req_compression_name = headers.get(GRPC_HEADER_COMPRESSION) or "identity"
         req_compression = compressions.get(req_compression_name)
         accept_compression = headers.get(GRPC_HEADER_ACCEPT_COMPRESSION, "")
         resp_compression = negotiate_compression(accept_compression, compressions)
         return req_compression, resp_compression
 
+    def trailers_only_headers(
+        self, ctx: RequestContext | None, exc: Exception
+    ) -> Headers:
+        """Return the headers of a trailers-only response that reports exc."""
+        headers = _status_trailers(
+            ctx.response_trailers if ctx else Headers(),
+            ConnectWireError.from_exception(exc),
+        )
+        headers["content-type"] = self._content_type
+        if ctx:
+            for key, value in ctx.response_headers.allitems():
+                headers.add(key, value)
+        return headers
+
 
 class GRPCWebServerProtocol(GRPCServerProtocol):
+    _content_type = GRPC_WEB_CONTENT_TYPE_DEFAULT
+
     def uses_trailers(self) -> bool:
         return False
 
@@ -162,29 +180,31 @@ def _lookup_timeout_unit(unit: str) -> float:
             )
 
 
+def _status_trailers(user_trailers: Headers, error: ConnectWireError | None) -> Headers:
+    trailers = Headers(list(user_trailers.allitems()))
+    if error:
+        status = _connect_status_to_grpc[error.code]
+        trailers["grpc-status"] = status
+        message = error.message
+        if message:
+            message = urllib.parse.quote(message, safe="")
+            trailers["grpc-message"] = message
+        if error.details:
+            grpc_status = Status(
+                code=int(status),
+                message=error.message,
+                details=[d._any for d in error.details],
+            )
+            grpc_status_bin = b64encode(grpc_status.to_binary()).decode().rstrip("=")
+            trailers["grpc-status-details-bin"] = grpc_status_bin
+    else:
+        trailers["grpc-status"] = "0"
+    return trailers
+
+
 class GRPCEnvelopeWriter(EnvelopeWriter):
     def end(self, user_trailers: Headers, error: ConnectWireError | None) -> Headers:
-        trailers = Headers(list(user_trailers.allitems()))
-        if error:
-            status = _connect_status_to_grpc[error.code]
-            trailers["grpc-status"] = status
-            message = error.message
-            if message:
-                message = urllib.parse.quote(message, safe="")
-                trailers["grpc-message"] = message
-            if error.details:
-                grpc_status = Status(
-                    code=int(status),
-                    message=error.message,
-                    details=[d._any for d in error.details],
-                )
-                grpc_status_bin = (
-                    b64encode(grpc_status.to_binary()).decode().rstrip("=")
-                )
-                trailers["grpc-status-details-bin"] = grpc_status_bin
-        else:
-            trailers["grpc-status"] = "0"
-        return trailers
+        return _status_trailers(user_trailers, error)
 
 
 class GRPCWebEnvelopeWriter(GRPCEnvelopeWriter):
@@ -344,7 +364,7 @@ class GRPCEnvelopeReader(EnvelopeReader[RES]):
         return response.trailers
 
     def handle_response_complete(
-        self, response: Response | SyncResponse, e: ConnectError | None = None
+        self, response: Response | SyncResponse, error: ConnectError | None = None
     ) -> None:
         # Get the actual HTTP trailers
         trailers = self.get_response_trailers(response)
@@ -355,18 +375,20 @@ class GRPCEnvelopeReader(EnvelopeReader[RES]):
         if grpc_status is None:
             # If there was a body message, we do not read response headers
             if self._read_message:
-                raise e or ConnectError(Code.INTERNAL, "missing grpc-status trailer")
+                raise error or ConnectError(
+                    Code.INTERNAL, "missing grpc-status trailer"
+                )
             trailers = response.headers
 
         handle_response_trailers(trailers)
 
         grpc_status = trailers.get("grpc-status")
         if grpc_status is None:
-            raise e or ConnectError(Code.INTERNAL, "missing grpc-status trailer")
+            raise error or ConnectError(Code.INTERNAL, "missing grpc-status trailer")
 
-        # e is present for RST_STREAM. We prioritize its code while reading message and details
+        # error is present for RST_STREAM. We prioritize its code while reading message and details
         # from trailers when available.
-        code = e.code if e else None
+        code = error.code if error else None
         if grpc_status != "0":
             message = trailers.get("grpc-message", "")
             if grpc_status_details := trailers.get("grpc-status-details-bin"):

@@ -5,14 +5,16 @@ from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, Any, Generic, TypeVar
 
 from ._compression import Compression, IdentityCompression
-from ._shared import message_too_large_error
+from ._shared import decode_message, decompress, message_too_large_error
 from .code import Code
 from .errors import ConnectError
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
+    from types import TracebackType
 
     from pyqwest import Response, SyncResponse
+    from typing_extensions import Self
 
     from ._codec import Codec
     from ._protocol import ConnectWireError
@@ -39,13 +41,14 @@ class EnvelopeReader(Generic[_RES]):
         self._read_max_bytes = read_max_bytes
 
         self._next_message_length = None
+        self._ended = False
 
     def feed(self, data: bytes | memoryview | bytearray) -> Iterator[_RES]:
         self._buffer.extend(data)
         return self._read_messages()
 
     def _read_messages(self) -> Iterator[_RES]:
-        while self._buffer:
+        while self._buffer and not self._ended:
             if self._next_message_length is not None:
                 if len(self._buffer) < self._next_message_length + 5:
                     return
@@ -63,14 +66,15 @@ class EnvelopeReader(Generic[_RES]):
                             "protocol error: sent compressed message without compression support",
                         )
 
-                    message_data = self._compression.decompress(
-                        message_data, self._read_max_bytes
+                    message_data = decompress(
+                        self._compression, message_data, self._read_max_bytes
                     )
 
                 if self.handle_end_message(prefix_byte, message_data):
+                    self._ended = True
                     return
 
-                res = self._codec.decode(message_data, self._message_class)
+                res = decode_message(self._codec, message_data, self._message_class)
                 yield res
 
             if len(self._buffer) < 5:
@@ -83,6 +87,41 @@ class EnvelopeReader(Generic[_RES]):
             ):
                 raise message_too_large_error(self._read_max_bytes)
 
+    def __enter__(self) -> Self:
+        return self
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        _exc: BaseException | None,
+        _tb: TracebackType | None,
+    ) -> None:
+        """Raise if the body ended partway through a message or continued after the end message.
+
+        Skipped when the block exits with an exception.
+        """
+        if exc_type is None:
+            self._check_ended()
+
+    def _check_ended(self) -> None:
+        if self._ended:
+            if self._buffer:
+                raise ConnectError(
+                    Code.INTERNAL,
+                    f"corrupt response: {len(self._buffer)} extra bytes after end of stream",
+                )
+            return
+        if self._next_message_length is not None:
+            raise ConnectError(
+                Code.INVALID_ARGUMENT,
+                f"protocol error: promised {self._next_message_length} bytes in enveloped message, got {len(self._buffer) - 5} bytes",
+            )
+        if self._buffer:
+            raise ConnectError(
+                Code.INVALID_ARGUMENT,
+                "protocol error: incomplete envelope: unexpected EOF",
+            )
+
     def handle_end_message(
         self, _prefix_byte: int, _message_data: bytes | bytearray, /
     ) -> bool:
@@ -94,7 +133,7 @@ class EnvelopeReader(Generic[_RES]):
         return False
 
     def handle_response_complete(
-        self, response: Response | SyncResponse, /, e: ConnectError | None = None
+        self, response: Response | SyncResponse, /, error: ConnectError | None = None
     ) -> None:
         """Handle any client finalization needed when the response is complete.
 

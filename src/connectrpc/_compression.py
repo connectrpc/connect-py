@@ -5,7 +5,9 @@ from typing import TYPE_CHECKING
 from connectrpc.compression.gzip import GzipCompression
 
 from ._shared import message_too_large_error
+from .code import Code
 from .compression import Compression
+from .errors import ConnectError
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -53,3 +55,16 @@ def negotiate_compression(
         if compression:
             return compression
     return _identity
+
+
+def unknown_compression_error(
+    name: str, compressions: dict[str, Compression]
+) -> ConnectError:
+    # identity is always accepted and is not a compression, so it is not listed.
+    supported = [n for n in compressions if n != "identity"]
+    detail = (
+        f"supported encodings are {', '.join(supported)}"
+        if supported
+        else "compression is not supported"
+    )
+    return ConnectError(Code.UNIMPLEMENTED, f"unknown compression: '{name}': {detail}")

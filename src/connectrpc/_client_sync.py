@@ -22,6 +22,7 @@ from ._interceptor_sync import (
 from ._protocol import ConnectWireError
 from ._protocol_connect import ConnectClientProtocol, ConnectEnvelopeWriter
 from ._response_metadata import handle_response_headers
+from ._shared import decode_message
 from .code import Code
 from .errors import ConnectError
 from .protocol import ProtocolType
@@ -218,7 +219,7 @@ class ConnectClientSync:
             url=self._address,
             http_method="GET" if use_get else "POST",
             user_headers=headers,
-            timeout_ms=timeout_ms or self._timeout_ms,
+            timeout_ms=self._timeout_ms if timeout_ms is None else timeout_ms,
             codec=self._codec,
             stream=False,
             accept_compression=self._accept_compression_header,
@@ -241,7 +242,7 @@ class ConnectClientSync:
             url=self._address,
             http_method="POST",
             user_headers=headers,
-            timeout_ms=timeout_ms or self._timeout_ms,
+            timeout_ms=self._timeout_ms if timeout_ms is None else timeout_ms,
             codec=self._codec,
             stream=True,
             accept_compression=self._accept_compression_header,
@@ -262,7 +263,7 @@ class ConnectClientSync:
             url=self._address,
             http_method="POST",
             user_headers=headers,
-            timeout_ms=timeout_ms or self._timeout_ms,
+            timeout_ms=self._timeout_ms if timeout_ms is None else timeout_ms,
             codec=self._codec,
             stream=True,
             accept_compression=self._accept_compression_header,
@@ -285,7 +286,7 @@ class ConnectClientSync:
             url=self._address,
             http_method="POST",
             user_headers=headers,
-            timeout_ms=timeout_ms or self._timeout_ms,
+            timeout_ms=self._timeout_ms if timeout_ms is None else timeout_ms,
             codec=self._codec,
             stream=True,
             accept_compression=self._accept_compression_header,
@@ -302,6 +303,8 @@ class ConnectClientSync:
         request_headers = HTTPHeaders(ctx.request_headers.allitems())
         url = f"{self._address}/{ctx.method.service_name}/{ctx.method.name}"
         if (timeout_ms := ctx.timeout_ms) is not None:
+            if timeout_ms <= 0:
+                raise ConnectError(Code.DEADLINE_EXCEEDED, "Request timed out")
             timeout_s = timeout_ms / 1000.0
         else:
             timeout_s = None
@@ -339,17 +342,16 @@ class ConnectClientSync:
                 resp.headers, self._response_compressions, stream=False
             )
 
+            if (
+                self._read_max_bytes is not None
+                and len(resp.content) > self._read_max_bytes
+            ):
+                raise ConnectError(
+                    Code.RESOURCE_EXHAUSTED,
+                    f"message is larger than configured max {self._read_max_bytes}",
+                )
             if resp.status == 200:
-                if (
-                    self._read_max_bytes is not None
-                    and len(resp.content) > self._read_max_bytes
-                ):
-                    raise ConnectError(
-                        Code.RESOURCE_EXHAUSTED,
-                        f"message is larger than configured max {self._read_max_bytes}",
-                    )
-
-                return self._codec.decode(resp.content, ctx.method.output)
+                return decode_message(self._codec, resp.content, ctx.method.output)
             raise ConnectWireError.from_response(resp).to_exception()
         except TimeoutError as e:
             raise ConnectError(Code.DEADLINE_EXCEEDED, "Request timed out") from e
@@ -374,6 +376,8 @@ class ConnectClientSync:
         request_headers = HTTPHeaders(ctx.request_headers.allitems())
         url = f"{self._address}/{ctx.method.service_name}/{ctx.method.name}"
         if (timeout_ms := ctx.timeout_ms) is not None:
+            if timeout_ms <= 0:
+                raise ConnectError(Code.DEADLINE_EXCEEDED, "Request timed out")
             timeout_s = timeout_ms / 1000.0
         else:
             timeout_s = None
@@ -402,26 +406,25 @@ class ConnectClientSync:
                     compression = self._protocol.handle_response_compression(
                         resp.headers, self._response_compressions, stream=True
                     )
-                    reader = self._protocol.create_envelope_reader(
+                    with self._protocol.create_envelope_reader(
                         ctx.method.output,
                         self._codec,
                         compression,
                         self._read_max_bytes,
-                    )
-                    try:
-                        for chunk in resp.content:
-                            yield from reader.feed(chunk)
-                    except ConnectError as e:
-                        stream_error = e
-                        raise
-                    # For sync, we rely on the HTTP client to handle timeout, but
-                    # currently the one we use for gRPC does not propagate RST_STREAM
-                    # correctly which is used for server timeouts. We go ahead and check
-                    # the timeout ourselves too.
-                    # https://github.com/hyperium/hyper/issues/3681#issuecomment-3734084436
-                    if (t := ctx.timeout_ms) is not None and t <= 0:
-                        raise TimeoutError
-
+                    ) as reader:
+                        try:
+                            for chunk in resp.content:
+                                yield from reader.feed(chunk)
+                        except ConnectError as e:
+                            stream_error = e
+                            raise
+                        # For sync, we rely on the HTTP client to handle timeout, but
+                        # currently the one we use for gRPC does not propagate RST_STREAM
+                        # correctly which is used for server timeouts. We go ahead and check
+                        # the timeout ourselves too.
+                        # https://github.com/hyperium/hyper/issues/3681#issuecomment-3734084436
+                        if (t := ctx.timeout_ms) is not None and t <= 0:
+                            raise TimeoutError
                     reader.handle_response_complete(resp)
                 else:
                     content = bytearray()

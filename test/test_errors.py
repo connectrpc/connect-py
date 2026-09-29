@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import threading
 from http import HTTPStatus
 from typing import TYPE_CHECKING, NoReturn
@@ -8,6 +9,7 @@ from typing import TYPE_CHECKING, NoReturn
 import pytest
 from pyqwest import (
     Client,
+    FullResponse,
     Headers,
     Request,
     Response,
@@ -35,6 +37,8 @@ from .connectrpc.example.haberdasher_connect import (
 from .connectrpc.example.haberdasher_pb import Hat, Size
 
 if TYPE_CHECKING:
+    from collections.abc import AsyncIterator, Iterator
+
     from connectrpc.request import RequestContext
 
 _errors = [
@@ -325,34 +329,66 @@ _client_errors = [
         "/connectrpc.example.Haberdasher/MakeHat",
         {"Content-Type": "application/grpc", "grpc-timeout": "-5m"},
         b"",
-        HTTPStatus.BAD_REQUEST,
-        {"content-type": "application/json"},
+        HTTPStatus.OK,
+        {
+            "content-type": "application/grpc",
+            "grpc-status": "3",
+            "grpc-message": "protocol%20error%3A%20invalid%20timeout%20%27-5m%27",
+        },
         id="grpc timeout header negative",
+    ),
+    pytest.param(
+        "POST",
+        "/connectrpc.example.Haberdasher/MakeHat",
+        {"Content-Type": "application/grpc-web", "grpc-timeout": "-5m"},
+        b"",
+        HTTPStatus.OK,
+        {
+            "content-type": "application/grpc-web",
+            "grpc-status": "3",
+            "grpc-message": "protocol%20error%3A%20invalid%20timeout%20%27-5m%27",
+        },
+        id="grpc-web timeout header negative",
     ),
 ]
 
 
-@pytest.mark.parametrize(
-    ("method", "path", "headers", "body", "response_status", "response_headers"),
-    _client_errors,
-)
-def test_sync_client_errors(
-    method, path, headers, body, response_status, response_headers
-) -> None:
+@pytest.fixture(params=["asgi", "wsgi"])
+def transport(request: pytest.FixtureRequest) -> ASGITransport | WSGITransport:
+    if request.param == "asgi":
+
+        class ValidHaberdasher(Haberdasher):
+            async def make_hat(self, _request, _ctx):
+                return Hat()
+
+        return ASGITransport(HaberdasherASGIApplication(ValidHaberdasher()))
+
     class ValidHaberdasherSync(HaberdasherSync):
         def make_hat(self, _request, _ctx):
             return Hat()
 
-    app = HaberdasherWSGIApplication(ValidHaberdasherSync())
-    transport = WSGITransport(app)
+    return WSGITransport(HaberdasherWSGIApplication(ValidHaberdasherSync()))
 
-    client = SyncClient(transport)
-    response = client.execute(
-        method=method, url=f"http://localhost{path}", content=body, headers=headers
+
+async def _execute(
+    transport: ASGITransport | WSGITransport,
+    method: str,
+    path: str,
+    headers: dict[str, str],
+    body: bytes,
+) -> FullResponse:
+    url = f"http://localhost{path}"
+    if isinstance(transport, WSGITransport):
+        return await asyncio.to_thread(
+            SyncClient(transport).execute,
+            method=method,
+            url=url,
+            content=body,
+            headers=headers,
+        )
+    return await Client(transport).execute(
+        method=method, url=url, content=body, headers=headers
     )
-
-    assert response.status == response_status
-    assert response.headers == response_headers
 
 
 @pytest.mark.asyncio
@@ -360,21 +396,10 @@ def test_sync_client_errors(
     ("method", "path", "headers", "body", "response_status", "response_headers"),
     _client_errors,
 )
-async def test_async_client_errors(
-    method, path, headers, body, response_status, response_headers
+async def test_client_errors(
+    transport, method, path, headers, body, response_status, response_headers
 ) -> None:
-    class ValidHaberdasher(Haberdasher):
-        async def make_hat(self, _request, _ctx):
-            return Hat()
-
-    haberdasher = ValidHaberdasher()
-    app = HaberdasherASGIApplication(haberdasher)
-    transport = ASGITransport(app)
-
-    client = Client(transport)
-    response = await client.execute(
-        method=method, url=f"http://localhost{path}", content=body, headers=headers
-    )
+    response = await _execute(transport, method, path, headers, body)
 
     assert response.status == response_status
     assert response.headers == response_headers
@@ -457,6 +482,90 @@ async def test_async_client_timeout(client_timeout_ms, call_timeout_ms) -> None:
     assert exc_info.value.code == Code.DEADLINE_EXCEEDED
     assert exc_info.value.message == "Request timed out"
     assert recorded_timeout_header == "200"
+
+
+@pytest.mark.parametrize("client_timeout_ms", [None, 5000])
+@pytest.mark.parametrize("call_timeout_ms", [0, -1])
+@pytest.mark.parametrize("stream", [False, True])
+def test_sync_client_expired_timeout(
+    client_timeout_ms, call_timeout_ms, stream
+) -> None:
+    called = False
+
+    class RecordingHaberdasher(HaberdasherSync):
+        def make_hat(self, _request, _ctx) -> Hat:
+            nonlocal called
+            called = True
+            return Hat()
+
+        def make_similar_hats(self, _request, _ctx) -> Iterator[Hat]:
+            nonlocal called
+            called = True
+            yield Hat()
+
+    app = HaberdasherWSGIApplication(RecordingHaberdasher())
+    with (
+        HaberdasherClientSync(
+            "http://localhost",
+            timeout_ms=client_timeout_ms,
+            http_client=SyncClient(WSGITransport(app)),
+        ) as client,
+        pytest.raises(ConnectError) as exc_info,
+    ):
+        if stream:
+            list(
+                client.make_similar_hats(
+                    request=Size(inches=10), timeout_ms=call_timeout_ms
+                )
+            )
+        else:
+            client.make_hat(request=Size(inches=10), timeout_ms=call_timeout_ms)
+
+    assert exc_info.value.code == Code.DEADLINE_EXCEEDED
+    assert exc_info.value.message == "Request timed out"
+    assert not called
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("client_timeout_ms", [None, 5000])
+@pytest.mark.parametrize("call_timeout_ms", [0, -1])
+@pytest.mark.parametrize("stream", [False, True])
+async def test_async_client_expired_timeout(
+    client_timeout_ms, call_timeout_ms, stream
+) -> None:
+    called = False
+
+    class RecordingHaberdasher(Haberdasher):
+        async def make_hat(self, _request, _ctx) -> Hat:
+            nonlocal called
+            called = True
+            return Hat()
+
+        async def make_similar_hats(self, _request, _ctx) -> AsyncIterator[Hat]:
+            nonlocal called
+            called = True
+            yield Hat()
+
+    app = HaberdasherASGIApplication(RecordingHaberdasher())
+    async with HaberdasherClient(
+        "http://localhost",
+        timeout_ms=client_timeout_ms,
+        http_client=Client(ASGITransport(app)),
+    ) as client:
+        with pytest.raises(ConnectError) as exc_info:
+            if stream:
+                async for _ in client.make_similar_hats(
+                    request=Size(inches=10), timeout_ms=call_timeout_ms
+                ):
+                    pass
+            else:
+                await client.make_hat(
+                    request=Size(inches=10), timeout_ms=call_timeout_ms
+                )
+
+    assert exc_info.value.code == Code.DEADLINE_EXCEEDED
+    assert exc_info.value.message == "Request timed out"
+    assert not called
 
 
 @pytest.mark.asyncio
@@ -646,3 +755,54 @@ def test_unicode_error_body_utf8_stream() -> None:
 
     assert res.status == 200
     assert message.encode() in res.content
+
+
+def _envelope(flags: int, payload: bytes) -> bytes:
+    return bytes([flags]) + len(payload).to_bytes(4, "big") + payload
+
+
+_malformed_requests = [
+    pytest.param(
+        "MakeHat",
+        {"content-type": "application/proto"},
+        b"\xff\xff\xff",
+        id="unary message",
+    ),
+    pytest.param(
+        "MakeHat",
+        {"content-type": "application/proto", "content-encoding": "gzip"},
+        b"not gzip",
+        id="unary compression",
+    ),
+    pytest.param(
+        "MakeSimilarHats",
+        {"content-type": "application/connect+proto"},
+        _envelope(0, b"\xff\xff\xff"),
+        id="stream message",
+    ),
+    pytest.param(
+        "MakeSimilarHats",
+        {
+            "content-type": "application/connect+proto",
+            "connect-content-encoding": "gzip",
+        },
+        _envelope(1, b"not gzip"),
+        id="stream compression",
+    ),
+]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("method", "headers", "body"), _malformed_requests)
+async def test_malformed_request(transport, method, headers, body) -> None:
+    res = await _execute(
+        transport, "POST", f"/connectrpc.example.Haberdasher/{method}", headers, body
+    )
+
+    if res.status == 200:
+        # A stream that fails before any response message has only the end message.
+        error = json.loads(res.content[5:])["error"]
+    else:
+        error = json.loads(res.content)
+    assert error["code"] == "invalid_argument"
+    assert transport.app_exception is None

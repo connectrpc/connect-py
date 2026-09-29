@@ -143,13 +143,12 @@ class ConnectServerProtocol:
 
     def negotiate_stream_compression(
         self, headers: Headers, compressions: dict[str, Compression]
-    ) -> tuple[Compression, Compression]:
-        req_compression_name = headers.get(
-            CONNECT_STREAMING_HEADER_COMPRESSION, "identity"
+    ) -> tuple[Compression | None, Compression]:
+        # Missing and empty header both mean identity.
+        req_compression_name = (
+            headers.get(CONNECT_STREAMING_HEADER_COMPRESSION) or "identity"
         )
-        req_compression = (
-            compressions.get(req_compression_name) or IdentityCompression()
-        )
+        req_compression = compressions.get(req_compression_name)
         accept_compression = headers.get(
             CONNECT_STREAMING_HEADER_ACCEPT_COMPRESSION, ""
         )
@@ -328,3 +327,13 @@ class ConnectEnvelopeReader(EnvelopeReader[RES]):
             # and streaming.
             raise ConnectWireError.from_dict(error, 500, Code.UNKNOWN).to_exception()
         return True
+
+    def handle_response_complete(
+        self,
+        _response: pyqwest.Response | pyqwest.SyncResponse,
+        /,
+        error: ConnectError | None = None,
+    ) -> None:
+        # A stream reset is reported by the caller.
+        if error is None and not self._ended:
+            raise ConnectError(Code.INTERNAL, "protocol error: unexpected EOF")

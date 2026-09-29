@@ -439,6 +439,57 @@ async def test_message_limit_async(
             assert len(responses) == 1
 
 
+@pytest.mark.parametrize("large", [False, True])
+def test_message_limit_unary_error_sync(large: bool) -> None:
+    message = "x" * 100 if large else "small"
+
+    class FailingHaberdasher(HaberdasherSync):
+        def make_hat(self, _request, _ctx):
+            raise ConnectError(Code.FAILED_PRECONDITION, message)
+
+    app = HaberdasherWSGIApplication(FailingHaberdasher())
+    with (
+        HaberdasherClientSync(
+            "http://localhost",
+            http_client=SyncClient(WSGITransport(app)),
+            read_max_bytes=100,
+        ) as client,
+        pytest.raises(ConnectError) as exc_info,
+    ):
+        client.make_hat(request=Size())
+    if large:
+        assert exc_info.value.code == Code.RESOURCE_EXHAUSTED
+        assert exc_info.value.message == "message is larger than configured max 100"
+    else:
+        assert exc_info.value.code == Code.FAILED_PRECONDITION
+        assert exc_info.value.message == message
+
+
+@pytest.mark.parametrize("large", [False, True])
+@pytest.mark.asyncio
+async def test_message_limit_unary_error_async(large: bool) -> None:
+    message = "x" * 100 if large else "small"
+
+    class FailingHaberdasher(Haberdasher):
+        async def make_hat(self, _request, _ctx):
+            raise ConnectError(Code.FAILED_PRECONDITION, message)
+
+    app = HaberdasherASGIApplication(FailingHaberdasher())
+    async with HaberdasherClient(
+        "http://localhost",
+        http_client=Client(transport=ASGITransport(app)),
+        read_max_bytes=100,
+    ) as client:
+        with pytest.raises(ConnectError) as exc_info:
+            await client.make_hat(request=Size())
+    if large:
+        assert exc_info.value.code == Code.RESOURCE_EXHAUSTED
+        assert exc_info.value.message == "message is larger than configured max 100"
+    else:
+        assert exc_info.value.code == Code.FAILED_PRECONDITION
+        assert exc_info.value.message == message
+
+
 # The size of a description that results in exactly 4MB+1 on the wire.
 _BIG_DESCRIPTION_LENGTH = DEFAULT_READ_MAX_BYTES + 1 - 5
 

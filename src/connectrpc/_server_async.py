@@ -12,7 +12,11 @@ from typing import TYPE_CHECKING, Generic, TypeVar, cast
 from urllib.parse import parse_qs
 
 from ._codec import Codec, get_default_codecs
-from ._compression import negotiate_compression, resolve_compressions
+from ._compression import (
+    negotiate_compression,
+    resolve_compressions,
+    unknown_compression_error,
+)
 from ._envelope import EnvelopeReader
 from ._interceptor_async import (
     BidiStreamInterceptor,
@@ -27,6 +31,7 @@ from ._interceptor_async import (
 )
 from ._protocol import ConnectWireError, HTTPError, ServerProtocol
 from ._protocol_connect import CONNECT_UNARY_CONTENT_TYPE_PREFIX, ConnectServerProtocol
+from ._protocol_grpc import GRPCServerProtocol
 from ._protocol_server import negotiate_server_protocol
 from ._server_shared import (
     DEFAULT_READ_MAX_BYTES,
@@ -35,6 +40,7 @@ from ._server_shared import (
     EndpointServerStream,
     EndpointUnary,
 )
+from ._shared import decode_message, decompress
 from .code import Code
 from .errors import ConnectError
 from .request import Headers, RequestContext
@@ -182,6 +188,7 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
         endpoints = self._resolved_endpoints
 
         ctx: RequestContext | None = None
+        protocol: ServerProtocol | None = None
         try:
             path = scope["path"]
             endpoint = endpoints.get(path)
@@ -239,7 +246,7 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
                     ctx,
                 )
         except Exception as e:
-            await self._handle_error(e, ctx, send)
+            await self._handle_error(e, ctx, protocol, send)
             if not isinstance(e, (ConnectError, HTTPError)):
                 raise
             return None
@@ -339,20 +346,17 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
             message = message.encode("utf-8")
 
         # Handle compression
-        compression_name = params.get("compression", ["identity"])[0]
+        compression_name = params.get("compression", [""])[0] or "identity"
         compression = self._compressions.get(compression_name)
         if not compression:
-            raise ConnectError(
-                Code.UNIMPLEMENTED,
-                f"unknown compression: '{compression_name}': supported encodings are {', '.join(self._compressions.keys())}",
-            )
+            raise unknown_compression_error(compression_name, self._compressions)
 
         # Decompress and decode message
         if message:  # Don't decompress empty messages
-            message = compression.decompress(message, self._read_max_bytes)
+            message = decompress(compression, message, self._read_max_bytes)
 
         # Get the appropriate decoder for the endpoint
-        return codec.decode(message, endpoint.method.input)
+        return decode_message(codec, message, endpoint.method.input)
 
     async def _read_post_request(
         self,
@@ -376,18 +380,15 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
         req_body = b"".join(chunks)
 
         # Handle compression if specified
-        compression_name = headers.get("content-encoding", "identity").lower()
+        compression_name = headers.get("content-encoding") or "identity"
         compression = self._compressions.get(compression_name)
         if not compression:
-            raise ConnectError(
-                Code.UNIMPLEMENTED,
-                f"unknown compression: '{compression_name}': supported encodings are {', '.join(self._compressions.keys())}",
-            )
+            raise unknown_compression_error(compression_name, self._compressions)
 
         if req_body:  # Don't decompress empty body
-            req_body = compression.decompress(req_body, self._read_max_bytes)
+            req_body = decompress(compression, req_body, self._read_max_bytes)
 
-        return codec.decode(req_body, endpoint.method.input)
+        return decode_message(codec, req_body, endpoint.method.input)
 
     async def _handle_stream(
         self,
@@ -427,8 +428,9 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
         try:
             await metadata_run.start()
             if not req_compression:
-                raise ConnectError(
-                    Code.UNIMPLEMENTED, "Unrecognized request compression"
+                raise unknown_compression_error(
+                    headers.get(protocol.compression_header_name(), ""),
+                    self._compressions,
                 )
             request_stream = _request_stream(
                 receive,
@@ -500,12 +502,32 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
                 raise error
 
     async def _handle_error(
-        self, exc: Exception, ctx: RequestContext | None, send: ASGISendCallable
+        self,
+        exc: Exception,
+        ctx: RequestContext | None,
+        protocol: ServerProtocol | None,
+        send: ASGISendCallable,
     ) -> None:
         """Handle errors that occur during request processing."""
         headers: list[tuple[bytes, bytes]]
         body: bytes
         status: int
+        if isinstance(protocol, GRPCServerProtocol) and not isinstance(exc, HTTPError):
+            # gRPC clients read the status from trailers, so this is a trailers-only
+            # response: HTTP 200 with the gRPC status in the headers.
+            grpc_headers = protocol.trailers_only_headers(ctx, exc)
+            await send(
+                {
+                    "type": "http.response.start",
+                    "status": 200,
+                    "headers": [
+                        (k.encode(), v.encode()) for k, v in grpc_headers.allitems()
+                    ],
+                    "trailers": False,
+                }
+            )
+            await send({"type": "http.response.body", "body": b"", "more_body": False})
+            return
         if isinstance(exc, HTTPError):
             status = exc.status.value
             headers = [(k.encode("utf-8"), v.encode("utf-8")) for k, v in exc.headers]
@@ -652,14 +674,16 @@ async def _request_stream(
     compression: Compression,
     read_max_bytes: int | None = None,
 ) -> AsyncIterator[_REQ]:
-    reader = EnvelopeReader(request_class, codec, compression, read_max_bytes)
     try:
-        async for chunk in _read_body(receive):
-            for message in reader.feed(chunk):
-                yield message
-                # Check for cancellation each message. While this seems heavyweight,
-                # conformance tests require it.
-                await sleep(0)
+        with EnvelopeReader(
+            request_class, codec, compression, read_max_bytes
+        ) as reader:
+            async for chunk in _read_body(receive):
+                for message in reader.feed(chunk):
+                    yield message
+                    # Check for cancellation each message. While this seems heavyweight,
+                    # conformance tests require it.
+                    await sleep(0)
     except CancelledError as e:
         raise ConnectError(Code.CANCELED, "Request was cancelled") from e
 
