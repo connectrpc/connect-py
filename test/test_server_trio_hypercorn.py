@@ -96,15 +96,20 @@ class Wrapper:
             TrioHaberdasher()
         )
         self.token: trio.lowlevel.TrioToken | None = None
+        self._in_flight = 0
+        self.idle = threading.Event()
+        self.idle.set()
         self.reset()
 
     def reset(self) -> None:
+        # A request finishes after the client has its response, so one from the
+        # previous test may still be running.
+        assert self.idle.wait(10)
         self.sent: list[dict[str, Any]] = []
         self.on_send: Callable[[dict[str, Any]], Any] | None = None
         self.raised: BaseException | None = None
         self.cancelled_at = 0.0
         self.finished_at = 0.0
-        self.called = False
         self.done = threading.Event()
         self.blocked = threading.Event()
         self._scope: trio.CancelScope | None = None
@@ -113,7 +118,8 @@ class Wrapper:
         if scope["type"] != "http":
             await self.app(scope, receive, send)
             return
-        self.called = True
+        self._in_flight += 1
+        self.idle.clear()
 
         async def recording_send(message: Any) -> None:
             self.sent.append(message)
@@ -130,6 +136,9 @@ class Wrapper:
         finally:
             self.finished_at = trio.current_time()
             self.done.set()
+            self._in_flight -= 1
+            if self._in_flight == 0:
+                self.idle.set()
 
     def cancel(self) -> None:
         def cancel_on_loop() -> None:
@@ -224,10 +233,6 @@ def wrapper(server: tuple[str, Wrapper]) -> Iterator[Wrapper]:
     wrapper = server[1]
     wrapper.reset()
     yield wrapper
-    # The application finishes after the client has its response, so wait for
-    # it before the next test resets the wrapper.
-    if wrapper.called:
-        assert wrapper.done.wait(10)
     wrapper.app = HaberdasherASGIApplication(TrioHaberdasher())
 
 

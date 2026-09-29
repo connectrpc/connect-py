@@ -17,7 +17,6 @@ from typing import TYPE_CHECKING, Literal, TypeVar, get_args
 
 # Needs to run before importing from connectrpc
 import _cov_embed  # noqa: F401
-import sniffio
 from _util import create_standard_streams
 from gen.connectrpc.conformance.v1 import service_pb
 from gen.connectrpc.conformance.v1.config_pb import Code as ConformanceCode, HTTPVersion
@@ -144,7 +143,12 @@ def _create_request_info(
 
 async def _sleep(seconds: float) -> None:
     """Sleep on whichever event loop the server runs the application on."""
-    if sniffio.current_async_library() == "trio":
+    try:
+        # trio depends on sniffio, so without it only asyncio can be running.
+        import sniffio  # noqa: PLC0415
+    except ModuleNotFoundError:
+        sniffio = None
+    if sniffio is not None and sniffio.current_async_library() == "trio":
         import trio  # noqa: PLC0415
 
         await trio.sleep(seconds)

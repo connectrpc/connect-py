@@ -289,7 +289,7 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
             error = e
         except BaseException as e:
             if loop.is_cancellation(e):
-                # Tell on_end and the client, then let the cancellation reach the
+                # Save the error for sending to the client, then let the cancellation reach the
                 # app server.
                 with loop.async_cleanup():
                     error = await metadata_run.end(
