@@ -19,6 +19,9 @@ concurrency:
 jobs:
   ci:
     runs-on: ${{ matrix.os }}
+    # Jobs take under 5 minutes; a cap well under the 6-hour default ends a
+    # hung step while the runner can still upload its log.
+    timeout-minutes: 10
     strategy:
       matrix:
         resolution: ["highest", "lowest-direct"]
