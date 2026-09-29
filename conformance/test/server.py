@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING, Literal, TypeVar, get_args
 
 # Needs to run before importing from connectrpc
 import _cov_embed  # noqa: F401
+import sniffio
 from _util import create_standard_streams
 from gen.connectrpc.conformance.v1 import service_pb
 from gen.connectrpc.conformance.v1.config_pb import Code as ConformanceCode, HTTPVersion
@@ -141,6 +142,16 @@ def _create_request_info(
     return request_info
 
 
+async def _sleep(seconds: float) -> None:
+    """Sleep on whichever event loop the server runs the application on."""
+    if sniffio.current_async_library() == "trio":
+        import trio  # noqa: PLC0415
+
+        await trio.sleep(seconds)
+    else:
+        await asyncio.sleep(seconds)
+
+
 async def _handle_unary_response(
     definition: UnaryResponseDefinition, reqs: list[Any], res: RES, ctx: RequestContext
 ) -> RES:
@@ -159,7 +170,7 @@ async def _handle_unary_response(
         case _:
             response_data = b""
     if definition.response_delay_ms:
-        await asyncio.sleep(definition.response_delay_ms / 1000.0)
+        await _sleep(definition.response_delay_ms / 1000.0)
 
     res.payload = ConformancePayload(request_info=request_info, data=response_data)
     return res
@@ -215,7 +226,7 @@ class TestService(ConformanceService):
                 res.payload.request_info = request_info
             res.payload.data = res_data
             if definition.response_delay_ms:
-                await asyncio.sleep(definition.response_delay_ms / 1000.0)
+                await _sleep(definition.response_delay_ms / 1000.0)
             sent_message = True
             yield res
 
@@ -247,7 +258,7 @@ class TestService(ConformanceService):
             if not definition or res_idx >= len(definition.response_data):
                 break
             if definition.response_delay_ms:
-                await asyncio.sleep(definition.response_delay_ms / 1000.0)
+                await _sleep(definition.response_delay_ms / 1000.0)
             res = BidiStreamResponse()
             res.payload = ConformancePayload()
             res.payload.data = definition.response_data[res_idx]
@@ -262,7 +273,7 @@ class TestService(ConformanceService):
         request_info = _create_request_info(ctx, requests)
         for i in range(res_idx, len(definition.response_data)):
             if definition.response_delay_ms:
-                await asyncio.sleep(definition.response_delay_ms / 1000.0)
+                await _sleep(definition.response_delay_ms / 1000.0)
             res = BidiStreamResponse()
             res.payload = ConformancePayload()
             res.payload.data = definition.response_data[i]
@@ -616,6 +627,7 @@ async def serve_pyvoy(
     keyfile: str | None,
     cafile: str | None,
     port_future: asyncio.Future[int],
+    loop: Literal["trio"] | None = None,
 ):
     tls_cert = Path(certfile) if certfile else None
     tls_key = Path(keyfile) if keyfile else None
@@ -640,6 +652,7 @@ async def serve_pyvoy(
             tls_key=tls_key,
             tls_cert=tls_cert,
             tls_ca_cert=tls_ca_cert,
+            loop=loop,
         ) as server:
             if (
                 request.http_version == HTTPVersion.HTTP_VERSION_3
@@ -708,7 +721,7 @@ def _find_free_port():
 
 
 Mode = Literal["sync", "async"]
-Server = Literal["granian", "gunicorn", "hypercorn", "pyvoy", "uvicorn"]
+Server = Literal["granian", "gunicorn", "hypercorn", "pyvoy", "pyvoy-trio", "uvicorn"]
 
 
 class Args(argparse.Namespace):
@@ -774,10 +787,16 @@ async def main() -> None:
                         request, args.mode, certfile, keyfile, cafile, port_future
                     )
                 )
-            case "pyvoy":
+            case "pyvoy" | "pyvoy-trio":
                 serve_task = asyncio.create_task(
                     serve_pyvoy(
-                        request, args.mode, certfile, keyfile, cafile, port_future
+                        request,
+                        args.mode,
+                        certfile,
+                        keyfile,
+                        cafile,
+                        port_future,
+                        loop="trio" if args.server == "pyvoy-trio" else None,
                     )
                 )
             case "uvicorn":

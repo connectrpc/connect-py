@@ -1,4 +1,4 @@
-<div align="center">
+c<div align="center">
 
 ![The Connect logo](https://raw.githubusercontent.com/connectrpc/connectrpc.com/12f7ad8e95c5f784700bc280708b27cd148d0cf1/public/img/logos/simple-connect.svg)
 
@@ -29,7 +29,7 @@ Connect already works with your current tech stack:
 
 ## Features
 
-- **Servers:** WSGI and ASGI-ready, use with any [compatible server](https://connectrpc.com/docs/python/deployment/)
+- **Servers:** WSGI and ASGI-ready (including trio), use with any [compatible server](https://connectrpc.com/docs/python/deployment/)
 - **Clients:** Lightweight sync and async clients, backed by `pyqwest`
 - **Protocols:** Supports Connect, gRPC, and gRPC-Web (HTTP/1.1 and HTTP/2)
 - **Type safety:** Fully type-annotated generated code
@@ -45,8 +45,6 @@ Install the runtime library:
 ```bash
 uv add connectrpc
 ```
-
-To serve under [trio](https://trio.readthedocs.io), for example with `hypercorn --worker-class trio`, install `connectrpc[trio]`.
 
 For codegen, install [`buf`](https://github.com/bufbuild/buf) and create `buf.gen.yaml`:
 
