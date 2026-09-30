@@ -6,12 +6,16 @@ on:
     paths:
       - "docs/**"
       - "src/**"
+      - "connectrpc-grpcreflect/**"
+      - "connectrpc-otel/**"
       - zensical.toml
       - ".github/workflows/docs.yaml"
   pull_request:
     paths:
       - "docs/**"
       - "src/**"
+      - "connectrpc-grpcreflect/**"
+      - "connectrpc-otel/**"
       - zensical.toml
       - ".github/workflows/docs.yaml"
 

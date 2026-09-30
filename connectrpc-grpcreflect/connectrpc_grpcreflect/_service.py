@@ -53,8 +53,8 @@ class ServerReflectionService(ServerReflection):
             *descs: The descriptors to make available for reflection.
 
         Returns:
-            A new instance of [ServerReflectionService][connectrpc.grpcreflect.ServerReflectionService],
-                for use with [ServerReflectionASGIApplication][connectrpc.grpcreflect.ServerReflectionASGIApplication].
+            A new instance of [ServerReflectionService][connectrpc_grpcreflect.ServerReflectionService],
+                for use with [ServerReflectionASGIApplication][connectrpc_grpcreflect.ServerReflectionASGIApplication].
 
         """
         registry, service_names = _resolve_registry(descs)
@@ -86,8 +86,8 @@ class ServerReflectionServiceSync(ServerReflectionSync):
             *descs: The descriptors to make available for reflection.
 
         Returns:
-            A new instance of [ServerReflectionServiceSync][connectrpc.grpcreflect.ServerReflectionServiceSync],
-                for use with [ServerReflectionWSGIApplication][connectrpc.grpcreflect.ServerReflectionWSGIApplication].
+            A new instance of [ServerReflectionServiceSync][connectrpc_grpcreflect.ServerReflectionServiceSync],
+                for use with [ServerReflectionWSGIApplication][connectrpc_grpcreflect.ServerReflectionWSGIApplication].
 
         """
         registry, service_names = _resolve_registry(descs)
@@ -123,8 +123,8 @@ class ServerReflectionAlphaService(ServerReflectionAlpha):
             *descs: The descriptors to make available for reflection.
 
         Returns:
-            A new instance of [ServerReflectionAlphaService][connectrpc.grpcreflect.ServerReflectionAlphaService],
-                for use with [ServerReflectionAlphaASGIApplication][connectrpc.grpcreflect.ServerReflectionAlphaASGIApplication].
+            A new instance of [ServerReflectionAlphaService][connectrpc_grpcreflect.ServerReflectionAlphaService],
+                for use with [ServerReflectionAlphaASGIApplication][connectrpc_grpcreflect.ServerReflectionAlphaASGIApplication].
 
         """
         registry, service_names = _resolve_registry(descs)
@@ -165,8 +165,8 @@ class ServerReflectionAlphaServiceSync(ServerReflectionAlphaSync):
             *descs: The descriptors to make available for reflection.
 
         Returns:
-            A new instance of [ServerReflectionAlphaServiceSync][connectrpc.grpcreflect.ServerReflectionAlphaServiceSync],
-                for use with [ServerReflectionAlphaWSGIApplication][connectrpc.grpcreflect.ServerReflectionAlphaWSGIApplication].
+            A new instance of [ServerReflectionAlphaServiceSync][connectrpc_grpcreflect.ServerReflectionAlphaServiceSync],
+                for use with [ServerReflectionAlphaWSGIApplication][connectrpc_grpcreflect.ServerReflectionAlphaWSGIApplication].
 
         """
         registry, service_names = _resolve_registry(descs)
