@@ -69,6 +69,9 @@ _RES = TypeVar("_RES")
 
 _BODY_CHUNK_SIZE = 4096
 
+# We don't mutate query params so use a singleton for when they're not set.
+_UNSET_QUERY_PARAMS: dict[str, list[str]] = {}
+
 # While _server_shared.EndpointSync is a closed type, we can't indicate that to Python so define
 # a more precise type here.
 EndpointSync = (
@@ -318,7 +321,7 @@ class ConnectWSGIApplication(ABC):
             )
             codec_name = query_params.get("encoding", ("",))[0]
         else:
-            query_params = {}
+            query_params = _UNSET_QUERY_PARAMS
             codec_name = codec_name_from_content_type(
                 headers.get("content-type", ""), stream=False
             )
