@@ -76,7 +76,7 @@ def test_server_sync(server: str, cov: Coverage) -> None:
         pytest.fail(f"\n{result.stdout}\n{result.stderr}")
 
 
-@pytest.mark.parametrize("server", ["pyvoy", "uvicorn"])
+@pytest.mark.parametrize("server", ["pyvoy", "pyvoy-trio", "uvicorn"])
 def test_server_async(server: str, cov: Coverage) -> None:
     args = maybe_patch_args_with_debug(
         [sys.executable, _server_py_path, "--mode", "async", "--server", server]
