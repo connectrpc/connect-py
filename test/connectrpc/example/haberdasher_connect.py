@@ -14,7 +14,7 @@ from connectrpc.errors import ConnectError
 from connectrpc.method import IdempotencyLevel, MethodInfo
 from connectrpc.server import ConnectASGIApplication, ConnectWSGIApplication, DEFAULT_READ_MAX_BYTES, Endpoint, EndpointSync
 from protobuf import DescService
-from protobuf.wkt import Empty
+from protobuf.wkt.google.protobuf.empty_pb import Empty
 
 from . import haberdasher_pb
 from .haberdasher_pb import Hat, Size
