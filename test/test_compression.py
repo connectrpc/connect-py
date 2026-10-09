@@ -24,20 +24,65 @@ from connectrpc.errors import ConnectError
 from connectrpc.protocol import ProtocolType
 from connectrpc.request import Headers
 
-from ._util import haberdasher_client, haberdasher_client_sync, resolve_compression
+from ._util import (
+    call,
+    haberdasher_client,
+    haberdasher_client_sync,
+    resolve_compression,
+)
 from .connectrpc.example.haberdasher_connect import (
     Haberdasher,
     HaberdasherASGIApplication,
+    HaberdasherClient,
+    HaberdasherClientSync,
     HaberdasherSync,
     HaberdasherWSGIApplication,
 )
 from .connectrpc.example.haberdasher_pb import Hat, Size
 
 if TYPE_CHECKING:
+    from collections.abc import Iterable
+
     from connectrpc._protocol import ServerProtocol
     from connectrpc.compression import Compression
 
 
+class _BlueHaberdasher(Haberdasher):
+    async def make_hat(self, request, _ctx):
+        return Hat(size=request.inches, color="blue")
+
+    async def make_similar_hats(self, request, _ctx):
+        yield Hat(size=request.inches, color="blue")
+
+
+class _BlueHaberdasherSync(HaberdasherSync):
+    def make_hat(self, request, _ctx):
+        return Hat(size=request.inches, color="blue")
+
+    def make_similar_hats(self, request, _ctx):
+        yield Hat(size=request.inches, color="blue")
+
+
+@pytest.fixture(params=["async", "sync"])
+def new_client(request: pytest.FixtureRequest):
+    """Returns a factory for clients of a server with the given compressions."""
+
+    def new_client(
+        compressions: Iterable[Compression] | None = None, **kwargs
+    ) -> HaberdasherClient | HaberdasherClientSync:
+        if request.param == "async":
+            app = HaberdasherASGIApplication(
+                _BlueHaberdasher(), compressions=compressions
+            )
+            return haberdasher_client(ASGITransport(app), **kwargs)
+        app = HaberdasherWSGIApplication(
+            _BlueHaberdasherSync(), compressions=compressions
+        )
+        return haberdasher_client_sync(WSGITransport(app), **kwargs)
+
+    return new_client
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("compressions", "encoding"),
@@ -49,118 +94,37 @@ if TYPE_CHECKING:
         pytest.param(("gzip", "br", "zstd"), "zstd", id="all"),
     ],
 )
-async def test_server_compressions_async(
-    compressions: tuple[str], encoding: str
+async def test_server_compressions(
+    new_client, compressions: tuple[str], encoding: str
 ) -> None:
-    class SimpleHaberdasher(Haberdasher):
-        async def make_hat(self, _request, _ctx):
-            return Hat(size=10, color="blue")
-
-    app = HaberdasherASGIApplication(
-        SimpleHaberdasher(), compressions=[resolve_compression(c) for c in compressions]
-    )
-    with ResponseMetadata() as meta:
-        client = haberdasher_client(
-            ASGITransport(app),
-            accept_compression=(
-                ZstdCompression(),
-                GzipCompression(),
-                BrotliCompression(),
-            ),
-            send_compression=None,
-        )
-        res = await client.make_hat(Size(inches=10))
-    assert res.size == 10
-    assert res.color == "blue"
-    assert meta.headers.get("content-encoding") == encoding
-
-
-@pytest.mark.parametrize(
-    ("compressions", "encoding"),
-    [
-        pytest.param((), "identity", id="none"),
-        pytest.param(("gzip",), "gzip", id="gzip"),
-        pytest.param(("zstd",), "zstd", id="zstd"),
-        pytest.param(("br",), "br", id="br"),
-        pytest.param(("gzip", "br", "zstd"), "zstd", id="all"),
-    ],
-)
-def test_server_compressions_sync(compressions: tuple[str], encoding: str) -> None:
-    class SimpleHaberdasher(HaberdasherSync):
-        def make_hat(self, _request, _ctx):
-            return Hat(size=10, color="blue")
-
-    app = HaberdasherWSGIApplication(
-        SimpleHaberdasher(), compressions=[resolve_compression(c) for c in compressions]
-    )
-    client = haberdasher_client_sync(
-        WSGITransport(app),
+    client = new_client(
+        [resolve_compression(c) for c in compressions],
         accept_compression=(ZstdCompression(), GzipCompression(), BrotliCompression()),
         send_compression=None,
     )
     with ResponseMetadata() as meta:
-        res = client.make_hat(Size(inches=10))
-    assert res.size == 10
-    assert res.color == "blue"
+        res = await call(client, "make_hat", Size(inches=10))
+    assert res == Hat(size=10, color="blue")
     assert meta.headers.get("content-encoding") == encoding
 
 
 _protocols = [ProtocolType.CONNECT, ProtocolType.GRPC, ProtocolType.GRPC_WEB]
-_streams = [pytest.param(False, id="unary"), pytest.param(True, id="stream")]
+_methods = [
+    pytest.param("make_hat", id="unary"),
+    pytest.param("make_similar_hats", id="stream"),
+]
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("protocol", _protocols)
-@pytest.mark.parametrize("stream", _streams)
-async def test_unknown_request_compression_async(
-    protocol: ProtocolType, stream: bool
+@pytest.mark.parametrize("method", _methods)
+async def test_unknown_request_compression(
+    new_client, protocol: ProtocolType, method: str
 ) -> None:
-    class SimpleHaberdasher(Haberdasher):
-        async def make_hat(self, _request, _ctx):
-            return Hat(size=10, color="blue")
-
-        async def make_similar_hats(self, _request, _ctx):
-            yield Hat(size=10, color="blue")
-
     # The server only supports the default gzip.
-    app = HaberdasherASGIApplication(SimpleHaberdasher())
-    client = haberdasher_client(
-        ASGITransport(app), protocol=protocol, send_compression=ZstdCompression()
-    )
+    client = new_client(protocol=protocol, send_compression=ZstdCompression())
     with pytest.raises(ConnectError) as exc_info:
-        if stream:
-            async for _ in client.make_similar_hats(Size(inches=10)):
-                pass
-        else:
-            await client.make_hat(Size(inches=10))
-    assert exc_info.value.code == Code.UNIMPLEMENTED
-    assert (
-        exc_info.value.message
-        == "unknown compression: 'zstd': supported encodings are gzip"
-    )
-
-
-@pytest.mark.parametrize("protocol", _protocols)
-@pytest.mark.parametrize("stream", _streams)
-def test_unknown_request_compression_sync(protocol: ProtocolType, stream: bool) -> None:
-    class SimpleHaberdasher(HaberdasherSync):
-        def make_hat(self, _request, _ctx):
-            return Hat(size=10, color="blue")
-
-        def make_similar_hats(self, _request, _ctx):
-            yield Hat(size=10, color="blue")
-
-    # The server only supports the default gzip.
-    app = HaberdasherWSGIApplication(SimpleHaberdasher())
-    client = haberdasher_client_sync(
-        WSGITransport(app), protocol=protocol, send_compression=ZstdCompression()
-    )
-    with pytest.raises(ConnectError) as exc_info:
-        if stream:
-            for _ in client.make_similar_hats(Size(inches=10)):
-                pass
-        else:
-            client.make_hat(Size(inches=10))
+        await call(client, method, Size(inches=10))
     assert exc_info.value.code == Code.UNIMPLEMENTED
     assert (
         exc_info.value.message
@@ -206,45 +170,11 @@ class _XorCompression:
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("stream", _streams)
-async def test_mixed_case_request_compression_async(stream: bool) -> None:
-    class SimpleHaberdasher(Haberdasher):
-        async def make_hat(self, request, _ctx):
-            return Hat(size=request.inches, color="blue")
-
-        async def make_similar_hats(self, request, _ctx):
-            yield Hat(size=request.inches, color="blue")
-
-    app = HaberdasherASGIApplication(
-        SimpleHaberdasher(), compressions=[_XorCompression()]
-    )
-    client = haberdasher_client(ASGITransport(app), send_compression=_XorCompression())
-    if stream:
-        hats = [hat async for hat in client.make_similar_hats(Size(inches=10))]
-    else:
-        hats = [await client.make_hat(Size(inches=10))]
-    assert hats == [Hat(size=10, color="blue")]
-
-
-@pytest.mark.parametrize("stream", _streams)
-def test_mixed_case_request_compression_sync(stream: bool) -> None:
-    class SimpleHaberdasher(HaberdasherSync):
-        def make_hat(self, request, _ctx):
-            return Hat(size=request.inches, color="blue")
-
-        def make_similar_hats(self, request, _ctx):
-            yield Hat(size=request.inches, color="blue")
-
-    app = HaberdasherWSGIApplication(
-        SimpleHaberdasher(), compressions=[_XorCompression()]
-    )
-    client = haberdasher_client_sync(
-        WSGITransport(app), send_compression=_XorCompression()
-    )
-    if stream:
-        hats = list(client.make_similar_hats(Size(inches=10)))
-    else:
-        hats = [client.make_hat(Size(inches=10))]
+@pytest.mark.parametrize("method", _methods)
+async def test_mixed_case_request_compression(new_client, method: str) -> None:
+    client = new_client([_XorCompression()], send_compression=_XorCompression())
+    res = await call(client, method, Size(inches=10))
+    hats = res if isinstance(res, list) else [res]
     assert hats == [Hat(size=10, color="blue")]
 
 
