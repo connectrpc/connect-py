@@ -17,6 +17,8 @@ from .connectrpc.example.haberdasher_connect import (
 )
 
 if TYPE_CHECKING:
+    from types import MethodType
+
     from pyqwest import SyncTransport, Transport
 
     from connectrpc.compression import Compression
@@ -53,20 +55,12 @@ def haberdasher_client_sync(
     )
 
 
-async def call(
-    client: HaberdasherClient | HaberdasherClientSync,
-    method: str,
-    request: Size | list[Size],
-) -> Hat | list[Hat]:
-    """Calls method on client, passing and returning streams as lists.
-
-    A sync client runs in a worker thread, as it would in a sync program.
-    """
-    if isinstance(client, HaberdasherClientSync):
+async def call(method: MethodType, request: Size | list[Size]) -> Hat | list[Hat]:
+    """Calls a client method, passing and returning streams as lists."""
+    if isinstance(method.__self__, HaberdasherClientSync):
 
         def run() -> Hat | list[Hat]:
-            req = iter(request) if isinstance(request, list) else request
-            result = getattr(client, method)(req)
+            result = method(iter(request) if isinstance(request, list) else request)
             return list(result) if isinstance(result, Iterator) else result
 
         return await asyncio.to_thread(run)
@@ -75,9 +69,7 @@ async def call(
         for r in requests:
             yield r
 
-    result = getattr(client, method)(
-        stream(request) if isinstance(request, list) else request
-    )
+    result = method(stream(request) if isinstance(request, list) else request)
     if isinstance(result, AsyncIterator):
         return [r async for r in result]
     return await result

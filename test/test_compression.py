@@ -103,7 +103,7 @@ async def test_server_compressions(
         send_compression=None,
     )
     with ResponseMetadata() as meta:
-        res = await call(client, "make_hat", Size(inches=10))
+        res = await call(client.make_hat, Size(inches=10))
     assert res == Hat(size=10, color="blue")
     assert meta.headers.get("content-encoding") == encoding
 
@@ -124,7 +124,7 @@ async def test_unknown_request_compression(
     # The server only supports the default gzip.
     client = new_client(protocol=protocol, send_compression=ZstdCompression())
     with pytest.raises(ConnectError) as exc_info:
-        await call(client, method, Size(inches=10))
+        await call(getattr(client, method), Size(inches=10))
     assert exc_info.value.code == Code.UNIMPLEMENTED
     assert (
         exc_info.value.message
@@ -173,7 +173,7 @@ class _XorCompression:
 @pytest.mark.parametrize("method", _methods)
 async def test_mixed_case_request_compression(new_client, method: str) -> None:
     client = new_client([_XorCompression()], send_compression=_XorCompression())
-    res = await call(client, method, Size(inches=10))
+    res = await call(getattr(client, method), Size(inches=10))
     hats = res if isinstance(res, list) else [res]
     assert hats == [Hat(size=10, color="blue")]
 

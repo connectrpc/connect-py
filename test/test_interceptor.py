@@ -192,7 +192,7 @@ async def test_intercept(
     expected: Hat | list[Hat],
     name: str,
 ) -> None:
-    assert await call(client, method, request_) == expected
+    assert await call(getattr(client, method), request_) == expected
     assert client_interceptor.result == [f"Hello {name} and goodbye"]
     assert server_interceptor.result == [f"Hello {name} and goodbye"]
 
@@ -228,7 +228,7 @@ async def test_intercept_error(
     name: str,
 ) -> None:
     with pytest.raises(ConnectError):
-        await call(client, method, request_)
+        await call(getattr(client, method), request_)
     expected = f"Hello {name} and goodbye with error Size must be non-negative"
     assert client_interceptor.result == [expected]
     assert server_interceptor.result == [expected]
