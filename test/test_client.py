@@ -16,7 +16,7 @@ from pyqwest.testing import ASGITransport, WSGITransport
 from connectrpc.client import ResponseMetadata
 from connectrpc.protocol import ProtocolType
 
-from ._util import haberdasher_client, haberdasher_client_sync
+from ._util import call, haberdasher_client, haberdasher_client_sync, unary_client
 from .connectrpc.example.haberdasher_connect import (
     Haberdasher,
     HaberdasherASGIApplication,
@@ -58,73 +58,28 @@ _headers_cases = [
 ]
 
 
-@pytest.mark.parametrize(
-    ("headers", "trailers", "response_headers", "response_trailers"), _headers_cases
-)
-def test_headers_sync(headers, trailers, response_headers, response_trailers) -> None:
-    class HeadersHaberdasherSync(HaberdasherSync):
-        def __init__(
-            self, headers: list[tuple[str, str]], trailers: list[tuple[str, str]]
-        ) -> None:
-            self.headers = headers
-            self.trailers = trailers
-
-        def make_hat(self, _request, ctx):
-            for key, value in self.headers:
-                ctx.response_headers.add(key, value)
-            for key, value in self.trailers:
-                ctx.response_trailers.add(key, value)
-            return Hat()
-
-    transport = WSGITransport(
-        HaberdasherWSGIApplication(HeadersHaberdasherSync(headers, trailers))
-    )
-
-    client = haberdasher_client_sync(transport)
-
-    with ResponseMetadata() as resp:
-        assert resp.http_status is None
-        assert list(resp.headers.allitems()) == []
-        assert list(resp.trailers.allitems()) == []
-        client.make_hat(Size(inches=10))
-
-    assert resp.http_status == 200
-    assert list(resp.headers.allitems()) == response_headers
-    assert list(resp.trailers.allitems()) == response_trailers
-
-
 @pytest.mark.asyncio
+@pytest.mark.parametrize("mode", ["async", "sync"])
 @pytest.mark.parametrize(
     ("headers", "trailers", "response_headers", "response_trailers"), _headers_cases
 )
-async def test_headers_async(
-    headers, trailers, response_headers, response_trailers
+async def test_headers(
+    mode, headers, trailers, response_headers, response_trailers
 ) -> None:
-    class HeadersHaberdasher(Haberdasher):
-        def __init__(
-            self, headers: list[tuple[str, str]], trailers: list[tuple[str, str]]
-        ) -> None:
-            self.headers = headers
-            self.trailers = trailers
+    def make_hat(_request, ctx):
+        for key, value in headers:
+            ctx.response_headers.add(key, value)
+        for key, value in trailers:
+            ctx.response_trailers.add(key, value)
+        return Hat()
 
-        async def make_hat(self, _request, ctx):
-            for key, value in self.headers:
-                ctx.response_headers.add(key, value)
-            for key, value in self.trailers:
-                ctx.response_trailers.add(key, value)
-            return Hat()
-
-    transport = ASGITransport(
-        HaberdasherASGIApplication(HeadersHaberdasher(headers, trailers))
-    )
-
-    client = haberdasher_client(transport)
+    client = unary_client(mode, make_hat)
 
     with ResponseMetadata() as resp:
         assert resp.http_status is None
         assert list(resp.headers.allitems()) == []
         assert list(resp.trailers.allitems()) == []
-        await client.make_hat(Size(inches=10))
+        await call(client, "make_hat", Size(inches=10))
 
     assert resp.http_status == 200
     assert list(resp.headers.allitems()) == response_headers
