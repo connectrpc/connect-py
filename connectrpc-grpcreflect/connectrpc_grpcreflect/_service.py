@@ -49,12 +49,10 @@ class ServerReflectionService(ServerReflection):
         dependencies are also automatically added and available for resolution by name,
         but the service list will only reflect the descriptors passed in.
 
+        Serve it with [ServerReflectionASGIApplication][connectrpc_grpcreflect.ServerReflectionASGIApplication].
+
         Args:
             *descs: The descriptors to make available for reflection.
-
-        Returns:
-            A new instance of [ServerReflectionService][connectrpc.grpcreflect.ServerReflectionService],
-                for use with [ServerReflectionASGIApplication][connectrpc.grpcreflect.ServerReflectionASGIApplication].
 
         """
         registry, service_names = _resolve_registry(descs)
@@ -82,12 +80,10 @@ class ServerReflectionServiceSync(ServerReflectionSync):
         dependencies are also automatically added and available for resolution by name,
         but the service list will only reflect the descriptors passed in.
 
+        Serve it with [ServerReflectionWSGIApplication][connectrpc_grpcreflect.ServerReflectionWSGIApplication].
+
         Args:
             *descs: The descriptors to make available for reflection.
-
-        Returns:
-            A new instance of [ServerReflectionServiceSync][connectrpc.grpcreflect.ServerReflectionServiceSync],
-                for use with [ServerReflectionWSGIApplication][connectrpc.grpcreflect.ServerReflectionWSGIApplication].
 
         """
         registry, service_names = _resolve_registry(descs)
@@ -119,12 +115,10 @@ class ServerReflectionAlphaService(ServerReflectionAlpha):
         dependencies are also automatically added and available for resolution by name,
         but the service list will only reflect the descriptors passed in.
 
+        Serve it with [ServerReflectionAlphaASGIApplication][connectrpc_grpcreflect.ServerReflectionAlphaASGIApplication].
+
         Args:
             *descs: The descriptors to make available for reflection.
-
-        Returns:
-            A new instance of [ServerReflectionAlphaService][connectrpc.grpcreflect.ServerReflectionAlphaService],
-                for use with [ServerReflectionAlphaASGIApplication][connectrpc.grpcreflect.ServerReflectionAlphaASGIApplication].
 
         """
         registry, service_names = _resolve_registry(descs)
@@ -161,12 +155,10 @@ class ServerReflectionAlphaServiceSync(ServerReflectionAlphaSync):
         dependencies are also automatically added and available for resolution by name,
         but the service list will only reflect the descriptors passed in.
 
+        Serve it with [ServerReflectionAlphaWSGIApplication][connectrpc_grpcreflect.ServerReflectionAlphaWSGIApplication].
+
         Args:
             *descs: The descriptors to make available for reflection.
-
-        Returns:
-            A new instance of [ServerReflectionAlphaServiceSync][connectrpc.grpcreflect.ServerReflectionAlphaServiceSync],
-                for use with [ServerReflectionAlphaWSGIApplication][connectrpc.grpcreflect.ServerReflectionAlphaWSGIApplication].
 
         """
         registry, service_names = _resolve_registry(descs)
@@ -293,7 +285,9 @@ def _file_descriptor_with_dependencies(
         queue.extend(file.dependencies)
 
 
-# Finds a fully-qualified symbol name, (e.g. <package>.<service>[.<method>] or <package>.<type>).
+# Finds the file declaring a fully-qualified symbol name: any message, enum,
+# service, extension, method, field, oneof, or enum value, matching
+# DescriptorPool::FindFileContainingSymbol in C++ protobuf.
 def _find_file_for_symbol(registry: Registry, symbol: str) -> DescFile | None:
     desc = (
         registry.message(symbol)
@@ -303,7 +297,8 @@ def _find_file_for_symbol(registry: Registry, symbol: str) -> DescFile | None:
     )
     if desc:
         return desc.file
-    # May be a fully qualified method or enum value, split off the parent and find it.
+    # May be a fully qualified method, field, oneof, or enum value, split off the
+    # parent and find it.
     parent, _, member = symbol.rpartition(".")
     if not member:
         return None
@@ -311,6 +306,13 @@ def _find_file_for_symbol(registry: Registry, symbol: str) -> DescFile | None:
         if any(m.name == member for m in svc.methods):
             return svc.file
         return None
+    if (msg := registry.message(parent)) and (
+        any(f.name == member for f in msg.fields)
+        # The descriptor's oneof_decl includes synthetic oneofs for proto3
+        # optional fields, which msg.oneofs omits.
+        or any(o.name == member for o in msg.proto.oneof_decl)
+    ):
+        return msg.file
     # An enum value of a message-nested enum also has a message as its parent
     # scope, so always finish with the enum value scan.
     for d in registry:

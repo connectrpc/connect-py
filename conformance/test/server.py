@@ -547,6 +547,9 @@ async def serve_gunicorn(
         "--worker-class=gthread",
         "--threads=16",
         "--keep-alive=0",
+        # Load the app before gunicorn logs "Listening at", which is when we report
+        # the port, rather than in each worker after it.
+        "--preload",
     ]
     if certfile:
         args.append(f"--certfile={certfile}")

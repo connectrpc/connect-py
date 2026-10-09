@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import functools
 import sys
 from asyncio import CancelledError, sleep, wait_for
@@ -30,9 +31,9 @@ from .errors import ConnectError
 from .protocol import ProtocolType
 
 if sys.version_info >= (3, 11):
-    from asyncio import timeout as asyncio_timeout
+    from asyncio import timeout_at as asyncio_timeout_at
 else:
-    from ._asyncio_timeout import timeout as asyncio_timeout
+    from ._asyncio_timeout import timeout_at as asyncio_timeout_at
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Iterable, Mapping
@@ -381,12 +382,13 @@ class ConnectClient:
     ) -> AsyncIterator[RES]:
         request_headers = HTTPHeaders(ctx.request_headers.allitems())
         url = f"{self._address}/{ctx.method.service_name}/{ctx.method.name}"
+        loop = asyncio.get_running_loop()
         if (timeout_ms := ctx.timeout_ms) is not None:
             if timeout_ms <= 0:
                 raise ConnectError(Code.DEADLINE_EXCEEDED, "Request timed out")
-            timeout_s = timeout_ms / 1000.0
+            deadline = loop.time() + timeout_ms / 1000.0
         else:
-            timeout_s = None
+            deadline = None
 
         reader: EnvelopeReader | None = None
         resp: Response | None = None
@@ -395,12 +397,16 @@ class ConnectClient:
                 request, self._codec, self._send_compression
             )
 
-            async with (
-                asyncio_timeout(timeout_s),
-                self._http_client.stream(
-                    "POST", url, headers=request_headers, content=request_data
-                ) as resp,
-            ):
+            # The deadline is applied to each network wait rather than the whole
+            # block, so it is never in effect while suspended at a yield, where it
+            # would cancel the caller's task instead of the request.
+            async with contextlib.AsyncExitStack() as stack:
+                async with asyncio_timeout_at(deadline):
+                    resp = await stack.enter_async_context(
+                        self._http_client.stream(
+                            "POST", url, headers=request_headers, content=request_data
+                        )
+                    )
                 handle_response_headers(resp.status, resp.headers)
                 if resp.status == 200:
                     self._protocol.validate_stream_response(
@@ -415,7 +421,17 @@ class ConnectClient:
                         compression,
                         self._read_max_bytes,
                     ) as reader:
-                        async for chunk in resp.content:
+                        it = aiter(resp.content)
+                        while True:
+                            # A read of buffered data doesn't suspend, so the timeout
+                            # alone wouldn't fire once the deadline has passed.
+                            if deadline is not None and loop.time() >= deadline:
+                                raise TimeoutError
+                            async with asyncio_timeout_at(deadline):
+                                try:
+                                    chunk = await anext(it)
+                                except StopAsyncIteration:
+                                    break
                             for message in reader.feed(bytes(chunk)):
                                 yield message
                                 # Check for cancellation each message. While this seems heavyweight,
@@ -424,8 +440,9 @@ class ConnectClient:
                     reader.handle_response_complete(resp)
                 else:
                     content = bytearray()
-                    async for chunk in resp.content:
-                        content.extend(chunk)
+                    async with asyncio_timeout_at(deadline):
+                        async for chunk in resp.content:
+                            content.extend(chunk)
                     fres = FullResponse(
                         status=resp.status,
                         headers=resp.headers,

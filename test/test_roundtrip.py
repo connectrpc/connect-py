@@ -4,6 +4,7 @@ import asyncio
 import json
 import random
 import struct
+import sys
 from typing import TYPE_CHECKING
 
 import pytest
@@ -294,6 +295,35 @@ async def test_roundtrip_response_stream_async(
 
     assert exc_info.value.code == Code.RESOURCE_EXHAUSTED
     assert exc_info.value.message == "No more hats available"
+
+
+@pytest.mark.asyncio
+async def test_response_stream_deadline_during_consumer_work_async() -> None:
+    """A deadline that passes while the caller handles a message fails the stream, not the caller's task."""
+
+    class StreamingHaberdasher(Haberdasher):
+        async def make_similar_hats(self, request, _ctx):
+            for color in ("green", "red", "blue"):
+                yield Hat(size=request.inches, color=color)
+
+    app = HaberdasherASGIApplication(StreamingHaberdasher())
+    hats: list[Hat] = []
+    async with HaberdasherClient(
+        "http://localhost", http_client=Client(transport=ASGITransport(app))
+    ) as client:
+        with pytest.raises(ConnectError) as exc_info:
+            async for h in client.make_similar_hats(
+                request=Size(inches=10), timeout_ms=50
+            ):
+                hats.append(h)
+                await asyncio.sleep(0.1)
+
+    assert [h.color for h in hats] == ["green"]
+    assert exc_info.value.code == Code.DEADLINE_EXCEEDED
+    if sys.version_info >= (3, 11):
+        task = asyncio.current_task()
+        assert task is not None
+        assert task.cancelling() == 0
 
 
 def _payload(compressible: bool) -> str:

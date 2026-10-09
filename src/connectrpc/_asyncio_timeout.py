@@ -164,3 +164,14 @@ def timeout(delay: float | None) -> Timeout:
     """
     loop = events.get_running_loop()
     return Timeout(loop.time() + delay if delay is not None else None)
+
+
+def timeout_at(when: float | None) -> Timeout:
+    """Schedule the timeout at absolute time.
+
+    Like timeout() but argument gives absolute time in the same clock system
+    as loop.time().
+
+    when - a deadline when timeout occurs or None to disable timeout logic
+    """
+    return Timeout(when)

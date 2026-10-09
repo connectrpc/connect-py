@@ -25,7 +25,7 @@ sequence = [
 
 [tasks.docs-build]
 help = "Build documentation"
-cmd = "uv run --group docs zensical build"
+cmd = "uv run --group docs zensical build --strict"
 
 [tasks.docs-serve]
 help = "Start documentation local server"
