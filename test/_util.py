@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+from collections.abc import AsyncIterator, Iterator
 from typing import TYPE_CHECKING
 
 from connectrpc._compression import IdentityCompression
@@ -7,8 +9,14 @@ from connectrpc.compression.brotli import BrotliCompression
 from connectrpc.compression.gzip import GzipCompression
 from connectrpc.compression.zstd import ZstdCompression
 
+from .connectrpc.example.haberdasher_connect import HaberdasherClientSync
+
 if TYPE_CHECKING:
+    from types import MethodType
+
     from connectrpc.compression import Compression
+
+    from .connectrpc.example.haberdasher_pb import Hat, Size
 
 
 def resolve_compression(encoding: str) -> Compression:
@@ -24,3 +32,23 @@ def resolve_compression(encoding: str) -> Compression:
         case _:
             msg = f"unknown encoding '{encoding}'"
             raise ValueError(msg)
+
+
+async def call(method: MethodType, request: Size | list[Size]) -> Hat | list[Hat]:
+    """Calls a client method, passing and returning streams as lists."""
+    if isinstance(method.__self__, HaberdasherClientSync):
+
+        def run() -> Hat | list[Hat]:
+            result = method(iter(request) if isinstance(request, list) else request)
+            return list(result) if isinstance(result, Iterator) else result
+
+        return await asyncio.to_thread(run)
+
+    async def stream(requests: list[Size]) -> AsyncIterator[Size]:
+        for r in requests:
+            yield r
+
+    result = method(stream(request) if isinstance(request, list) else request)
+    if isinstance(result, AsyncIterator):
+        return [r async for r in result]
+    return await result
