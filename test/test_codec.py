@@ -3,10 +3,8 @@ from __future__ import annotations
 import pytest
 from protobuf import Message
 from pyqwest import (
-    Client,
     Request,
     Response,
-    SyncClient,
     SyncRequest,
     SyncResponse,
     SyncTransport,
@@ -16,11 +14,10 @@ from pyqwest.testing import ASGITransport, WSGITransport
 
 from connectrpc.codec import Codec
 
+from ._util import haberdasher_client, haberdasher_client_sync
 from .connectrpc.example.haberdasher_connect import (
     Haberdasher,
     HaberdasherASGIApplication,
-    HaberdasherClient,
-    HaberdasherClientSync,
     HaberdasherSync,
     HaberdasherWSGIApplication,
 )
@@ -96,12 +93,7 @@ async def test_custom_codec() -> None:
             HaberdasherASGIApplication(SimpleHaberdasher(), codecs=[CustomCodec()])
         )
     )
-    client = HaberdasherClient(
-        "http://localhost",
-        http_client=Client(transport),
-        codec=CustomCodec(),
-        send_compression=None,
-    )
+    client = haberdasher_client(transport, codec=CustomCodec(), send_compression=None)
 
     res = await client.make_hat(Size(inches=10))
     assert res.size == 10
@@ -137,11 +129,8 @@ def test_custom_codec_sync() -> None:
             HaberdasherWSGIApplication(SimpleHaberdasherSync(), codecs=[CustomCodec()])
         )
     )
-    client = HaberdasherClientSync(
-        "http://localhost",
-        http_client=SyncClient(transport=transport),
-        codec=CustomCodec(),
-        send_compression=None,
+    client = haberdasher_client_sync(
+        transport, codec=CustomCodec(), send_compression=None
     )
 
     res = client.make_hat(Size(inches=10))

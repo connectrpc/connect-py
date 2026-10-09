@@ -13,6 +13,7 @@ from connectrpc.client import ResponseMetadata
 from connectrpc.code import Code
 from connectrpc.errors import ConnectError
 
+from ._util import haberdasher_client, haberdasher_client_sync
 from .connectrpc.example.haberdasher_connect import (
     Haberdasher,
     HaberdasherASGIApplication,
@@ -102,10 +103,8 @@ async def client_async(
         SimpleHaberdasher(), interceptors=(server_interceptor,)
     )
     transport = ASGITransport(app)
-    async with HaberdasherClient(
-        "http://localhost",
-        interceptors=(client_interceptor,),
-        http_client=Client(transport=transport),
+    async with haberdasher_client(
+        transport, interceptors=(client_interceptor,)
     ) as client:
         yield client
 
@@ -290,10 +289,8 @@ def client_sync(
         SimpleHaberdasherSync(), interceptors=(server_interceptor,)
     )
     transport = WSGITransport(app)
-    with HaberdasherClientSync(
-        "http://localhost",
-        interceptors=(client_interceptor,),
-        http_client=SyncClient(transport),
+    with haberdasher_client_sync(
+        transport, interceptors=(client_interceptor,)
     ) as client:
         yield client
 
@@ -583,9 +580,7 @@ async def test_metadata_interceptor_ordering_async() -> None:
         SimpleHaberdasher(),
         interceptors=(EventMetadataInterceptor(), EventUnaryInterceptor()),
     )
-    async with HaberdasherClient(
-        "http://localhost", http_client=Client(transport=ASGITransport(app))
-    ) as client:
+    async with haberdasher_client(ASGITransport(app)) as client:
         await client.make_hat(Size(inches=10))
 
     assert events == [
@@ -625,9 +620,7 @@ def test_metadata_interceptor_ordering_sync() -> None:
         SimpleHaberdasherSync(),
         interceptors=(EventMetadataInterceptorSync(), EventUnaryInterceptorSync()),
     )
-    with HaberdasherClientSync(
-        "http://localhost", http_client=SyncClient(WSGITransport(app))
-    ) as client:
+    with haberdasher_client_sync(WSGITransport(app)) as client:
         client.make_hat(Size(inches=10))
 
     assert events == [
@@ -740,9 +733,7 @@ async def test_metadata_interceptor_response_metadata_async() -> None:
     app = HaberdasherASGIApplication(
         SimpleHaberdasher(), interceptors=(_ResponseMetadataInterceptor(),)
     )
-    async with HaberdasherClient(
-        "http://localhost", http_client=Client(transport=ASGITransport(app))
-    ) as client:
+    async with haberdasher_client(ASGITransport(app)) as client:
         with ResponseMetadata() as resp:
             await client.make_hat(Size(inches=10))
         assert resp.headers.get("x-interceptor") == "ran"
@@ -767,9 +758,7 @@ def test_metadata_interceptor_response_metadata_sync() -> None:
     app = HaberdasherWSGIApplication(
         SimpleHaberdasherSync(), interceptors=(_ResponseMetadataInterceptor(),)
     )
-    with HaberdasherClientSync(
-        "http://localhost", http_client=SyncClient(WSGITransport(app))
-    ) as client:
+    with haberdasher_client_sync(WSGITransport(app)) as client:
         with ResponseMetadata() as resp:
             client.make_hat(Size(inches=10))
         assert resp.headers.get("x-interceptor") == "ran"

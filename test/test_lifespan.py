@@ -3,17 +3,16 @@ from __future__ import annotations
 from collections import Counter
 
 import pytest
-from pyqwest import Client
 from pyqwest.testing import ASGITransport
 
 from connectrpc.code import Code
 from connectrpc.errors import ConnectError
 
+from ._util import haberdasher_client
 from .connectrpc.example.empty_connect import NoMethods, NoMethodsASGIApplication
 from .connectrpc.example.haberdasher_connect import (
     Haberdasher,
     HaberdasherASGIApplication,
-    HaberdasherClient,
 )
 from .connectrpc.example.haberdasher_pb import Hat, Size
 
@@ -41,10 +40,7 @@ async def test_lifespan() -> None:
             final_count = counter["requests"]
 
     app = HaberdasherASGIApplication(counting_haberdasher())
-    async with (
-        ASGITransport(app) as transport,
-        HaberdasherClient("http://localhost", http_client=Client(transport)) as client,
-    ):
+    async with ASGITransport(app) as transport, haberdasher_client(transport) as client:
         for _ in range(5):
             hat = await client.make_hat(Size(inches=10))
             assert hat.size == 10
@@ -66,7 +62,7 @@ async def test_lifespan_empty_services() -> None:
         ASGITransport(app) as transport,
         # No method to invoke, so we just send an unrelated request and make sure
         # the error code matches expected.
-        HaberdasherClient("http://localhost", http_client=Client(transport)) as client,
+        haberdasher_client(transport) as client,
     ):
         with pytest.raises(ConnectError) as exc_info:
             await client.make_hat(Size(inches=10))
@@ -135,9 +131,7 @@ async def test_lifespan_not_supported() -> None:
 
     app = HaberdasherASGIApplication(counting_haberdasher())
     transport = ASGITransport(app)
-    async with HaberdasherClient(
-        "http://localhost", http_client=Client(transport)
-    ) as client:
+    async with haberdasher_client(transport) as client:
         with pytest.raises(ConnectError):
             await client.make_hat(Size(inches=10))
     assert (

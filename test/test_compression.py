@@ -24,12 +24,10 @@ from connectrpc.errors import ConnectError
 from connectrpc.protocol import ProtocolType
 from connectrpc.request import Headers
 
-from ._util import resolve_compression
+from ._util import haberdasher_client, haberdasher_client_sync, resolve_compression
 from .connectrpc.example.haberdasher_connect import (
     Haberdasher,
     HaberdasherASGIApplication,
-    HaberdasherClient,
-    HaberdasherClientSync,
     HaberdasherSync,
     HaberdasherWSGIApplication,
 )
@@ -62,9 +60,8 @@ async def test_server_compressions_async(
         SimpleHaberdasher(), compressions=[resolve_compression(c) for c in compressions]
     )
     with ResponseMetadata() as meta:
-        client = HaberdasherClient(
-            "http://localhost",
-            http_client=Client(ASGITransport(app)),
+        client = haberdasher_client(
+            ASGITransport(app),
             accept_compression=(
                 ZstdCompression(),
                 GzipCompression(),
@@ -96,9 +93,8 @@ def test_server_compressions_sync(compressions: tuple[str], encoding: str) -> No
     app = HaberdasherWSGIApplication(
         SimpleHaberdasher(), compressions=[resolve_compression(c) for c in compressions]
     )
-    client = HaberdasherClientSync(
-        "http://localhost",
-        http_client=SyncClient(WSGITransport(app)),
+    client = haberdasher_client_sync(
+        WSGITransport(app),
         accept_compression=(ZstdCompression(), GzipCompression(), BrotliCompression()),
         send_compression=None,
     )
@@ -128,11 +124,8 @@ async def test_unknown_request_compression_async(
 
     # The server only supports the default gzip.
     app = HaberdasherASGIApplication(SimpleHaberdasher())
-    client = HaberdasherClient(
-        "http://localhost",
-        protocol=protocol,
-        http_client=Client(ASGITransport(app)),
-        send_compression=ZstdCompression(),
+    client = haberdasher_client(
+        ASGITransport(app), protocol=protocol, send_compression=ZstdCompression()
     )
     with pytest.raises(ConnectError) as exc_info:
         if stream:
@@ -159,11 +152,8 @@ def test_unknown_request_compression_sync(protocol: ProtocolType, stream: bool) 
 
     # The server only supports the default gzip.
     app = HaberdasherWSGIApplication(SimpleHaberdasher())
-    client = HaberdasherClientSync(
-        "http://localhost",
-        protocol=protocol,
-        http_client=SyncClient(WSGITransport(app)),
-        send_compression=ZstdCompression(),
+    client = haberdasher_client_sync(
+        WSGITransport(app), protocol=protocol, send_compression=ZstdCompression()
     )
     with pytest.raises(ConnectError) as exc_info:
         if stream:
@@ -228,11 +218,7 @@ async def test_mixed_case_request_compression_async(stream: bool) -> None:
     app = HaberdasherASGIApplication(
         SimpleHaberdasher(), compressions=[_XorCompression()]
     )
-    client = HaberdasherClient(
-        "http://localhost",
-        http_client=Client(ASGITransport(app)),
-        send_compression=_XorCompression(),
-    )
+    client = haberdasher_client(ASGITransport(app), send_compression=_XorCompression())
     if stream:
         hats = [hat async for hat in client.make_similar_hats(Size(inches=10))]
     else:
@@ -252,10 +238,8 @@ def test_mixed_case_request_compression_sync(stream: bool) -> None:
     app = HaberdasherWSGIApplication(
         SimpleHaberdasher(), compressions=[_XorCompression()]
     )
-    client = HaberdasherClientSync(
-        "http://localhost",
-        http_client=SyncClient(WSGITransport(app)),
-        send_compression=_XorCompression(),
+    client = haberdasher_client_sync(
+        WSGITransport(app), send_compression=_XorCompression()
     )
     if stream:
         hats = list(client.make_similar_hats(Size(inches=10)))

@@ -5,18 +5,16 @@ from typing import NoReturn
 import pytest
 from protobuf import Oneof
 from protobuf.wkt import Any as AnyPb, Duration, Struct, Value
-from pyqwest import Client, SyncClient
 from pyqwest.testing import ASGITransport, WSGITransport
 
 from connectrpc._protocol import ConnectWireError
 from connectrpc.code import Code
 from connectrpc.errors import ConnectError, ErrorDetail
 
+from ._util import haberdasher_client, haberdasher_client_sync
 from .connectrpc.example.haberdasher_connect import (
     Haberdasher,
     HaberdasherASGIApplication,
-    HaberdasherClient,
-    HaberdasherClientSync,
     HaberdasherSync,
     HaberdasherWSGIApplication,
 )
@@ -44,9 +42,7 @@ def test_details_sync() -> None:
     app = HaberdasherWSGIApplication(DetailsHaberdasherSync())
     transport = WSGITransport(app)
     with (
-        HaberdasherClientSync(
-            "http://localhost", http_client=SyncClient(transport)
-        ) as client,
+        haberdasher_client_sync(transport) as client,
         pytest.raises(ConnectError) as exc_info,
     ):
         client.make_hat(request=Size(inches=10))
@@ -83,9 +79,7 @@ async def test_details_async() -> None:
 
     app = HaberdasherASGIApplication(DetailsHaberdasher())
     transport = ASGITransport(app)
-    async with HaberdasherClient(
-        "http://localhost", http_client=Client(transport=transport)
-    ) as client:
+    async with haberdasher_client(transport) as client:
         with pytest.raises(ConnectError) as exc_info:
             await client.make_hat(request=Size(inches=10))
     assert exc_info.value.code == Code.RESOURCE_EXHAUSTED

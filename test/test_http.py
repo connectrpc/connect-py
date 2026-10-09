@@ -20,11 +20,10 @@ from connectrpc.code import Code
 from connectrpc.codec import proto_json_codec
 from connectrpc.errors import ConnectError
 
+from ._util import haberdasher_client, haberdasher_client_sync
 from .connectrpc.example.haberdasher_connect import (
     Haberdasher,
     HaberdasherASGIApplication,
-    HaberdasherClient,
-    HaberdasherClientSync,
     HaberdasherSync,
     HaberdasherWSGIApplication,
 )
@@ -109,11 +108,7 @@ def test_json_charset_content_type_stream(header: str) -> None:
         WSGITransport(HaberdasherWSGIApplication(HeadersHaberdasherSync()))
     )
 
-    client = HaberdasherClientSync(
-        address="http://localhost",
-        codec=proto_json_codec(),
-        http_client=SyncClient(transport=transport),
-    )
+    client = haberdasher_client_sync(transport, codec=proto_json_codec())
 
     hats = list(client.make_similar_hats(Size(inches=2)))
     assert hats == [Hat(size=2), Hat(size=3)]
@@ -141,11 +136,7 @@ async def test_json_charset_content_type_stream_async(header: str) -> None:
         ASGITransport(HaberdasherASGIApplication(HeadersHaberdasher()))
     )
 
-    client = HaberdasherClient(
-        address="http://localhost",
-        codec=proto_json_codec(),
-        http_client=Client(transport=transport),
-    )
+    client = haberdasher_client(transport, codec=proto_json_codec())
 
     hats = []
     async for hat in client.make_similar_hats(Size(inches=2)):
