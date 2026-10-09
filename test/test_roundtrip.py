@@ -15,10 +15,12 @@ from connectrpc.codec import proto_binary_codec, proto_json_codec
 from connectrpc.errors import ConnectError
 from connectrpc.server import DEFAULT_READ_MAX_BYTES
 
-from ._util import haberdasher_client, haberdasher_client_sync, resolve_compression
+from ._util import resolve_compression
 from .connectrpc.example.haberdasher_connect import (
     Haberdasher,
     HaberdasherASGIApplication,
+    HaberdasherClient,
+    HaberdasherClientSync,
     HaberdasherSync,
     HaberdasherWSGIApplication,
 )
@@ -41,8 +43,9 @@ def test_roundtrip_sync(proto_json: bool, compression_name: str) -> None:
     app = HaberdasherWSGIApplication(
         RoundtripHaberdasherSync(), compressions=[compression]
     )
-    with haberdasher_client_sync(
-        WSGITransport(app=app),
+    with HaberdasherClientSync(
+        "http://localhost",
+        http_client=SyncClient(WSGITransport(app=app)),
         codec=proto_json_codec() if proto_json else None,
         send_compression=compression,
         accept_compression=[compression],
@@ -63,8 +66,9 @@ async def test_roundtrip_async(proto_json: bool, compression_name: str) -> None:
     compression = resolve_compression(compression_name)
     app = HaberdasherASGIApplication(DetailsHaberdasher(), compressions=[compression])
     transport = ASGITransport(app)
-    async with haberdasher_client(
-        transport,
+    async with HaberdasherClient(
+        "http://localhost",
+        http_client=Client(transport),
         codec=proto_json_codec() if proto_json else None,
         send_compression=compression,
         accept_compression=[compression],
@@ -165,8 +169,9 @@ def test_roundtrip_sync_unknown_response_field(ignore_unknown_fields: bool) -> N
         )
         return [_UNKNOWN_FIELD_RESPONSE]
 
-    with haberdasher_client_sync(
-        WSGITransport(app=app),
+    with HaberdasherClientSync(
+        "http://localhost",
+        http_client=SyncClient(WSGITransport(app=app)),
         codec=proto_json_codec(ignore_unknown_fields=ignore_unknown_fields),
     ) as client:
         if ignore_unknown_fields:
@@ -196,8 +201,9 @@ async def test_roundtrip_async_unknown_response_field(
         )
         await send({"type": "http.response.body", "body": _UNKNOWN_FIELD_RESPONSE})
 
-    async with haberdasher_client(
-        ASGITransport(app),
+    async with HaberdasherClient(
+        "http://localhost",
+        http_client=Client(ASGITransport(app)),
         codec=proto_json_codec(ignore_unknown_fields=ignore_unknown_fields),
     ) as client:
         if ignore_unknown_fields:
@@ -218,8 +224,9 @@ def test_roundtrip_sync_connect_get_empty_request() -> None:
     app = HaberdasherWSGIApplication(
         RoundtripHaberdasherSync(), compressions=[compression]
     )
-    with haberdasher_client_sync(
-        WSGITransport(app=app),
+    with HaberdasherClientSync(
+        "http://localhost",
+        http_client=SyncClient(WSGITransport(app=app)),
         send_compression=compression,
         accept_compression=[compression],
     ) as client:
@@ -237,8 +244,11 @@ async def test_roundtrip_async_connect_get_empty_request() -> None:
     compression = resolve_compression("identity")
     app = HaberdasherASGIApplication(RoundtripHaberdasher(), compressions=[compression])
     transport = ASGITransport(app)
-    async with haberdasher_client(
-        transport, send_compression=compression, accept_compression=[compression]
+    async with HaberdasherClient(
+        "http://localhost",
+        http_client=Client(transport=transport),
+        send_compression=compression,
+        accept_compression=[compression],
     ) as client:
         response = await client.make_hat(request=Size(), use_get=True)
     assert response.size == 0
@@ -263,8 +273,9 @@ async def test_roundtrip_response_stream_async(
     transport = ASGITransport(app)
 
     hats: list[Hat] = []
-    async with haberdasher_client(
-        transport,
+    async with HaberdasherClient(
+        "http://localhost",
+        http_client=Client(transport=transport),
         codec=proto_json_codec() if proto_json else None,
         send_compression=compression,
         accept_compression=[compression],
@@ -294,7 +305,9 @@ async def test_response_stream_deadline_during_consumer_work_async() -> None:
 
     app = HaberdasherASGIApplication(StreamingHaberdasher())
     hats: list[Hat] = []
-    async with haberdasher_client(ASGITransport(app)) as client:
+    async with HaberdasherClient(
+        "http://localhost", http_client=Client(transport=ASGITransport(app))
+    ) as client:
         with pytest.raises(ConnectError) as exc_info:
             async for h in client.make_similar_hats(
                 request=Size(inches=10), timeout_ms=50
@@ -347,8 +360,9 @@ def test_message_limit_sync(
         LargeHaberdasher(), read_max_bytes=100, compressions=[compression]
     )
     transport = WSGITransport(app)
-    with haberdasher_client_sync(
-        transport,
+    with HaberdasherClientSync(
+        "http://localhost",
+        http_client=SyncClient(transport),
         send_compression=compression,
         accept_compression=[compression],
         read_max_bytes=100,
@@ -417,8 +431,9 @@ async def test_message_limit_async(
         LargeHaberdasher(), read_max_bytes=100, compressions=[compression]
     )
     transport = ASGITransport(app)
-    async with haberdasher_client(
-        transport,
+    async with HaberdasherClient(
+        "http://localhost",
+        http_client=Client(transport=transport),
         send_compression=compression,
         accept_compression=[compression],
         read_max_bytes=100,
@@ -464,7 +479,11 @@ def test_message_limit_unary_error_sync(large: bool) -> None:
 
     app = HaberdasherWSGIApplication(FailingHaberdasher())
     with (
-        haberdasher_client_sync(WSGITransport(app), read_max_bytes=100) as client,
+        HaberdasherClientSync(
+            "http://localhost",
+            http_client=SyncClient(WSGITransport(app)),
+            read_max_bytes=100,
+        ) as client,
         pytest.raises(ConnectError) as exc_info,
     ):
         client.make_hat(request=Size())
@@ -486,7 +505,11 @@ async def test_message_limit_unary_error_async(large: bool) -> None:
             raise ConnectError(Code.FAILED_PRECONDITION, message)
 
     app = HaberdasherASGIApplication(FailingHaberdasher())
-    async with haberdasher_client(ASGITransport(app), read_max_bytes=100) as client:
+    async with HaberdasherClient(
+        "http://localhost",
+        http_client=Client(transport=ASGITransport(app)),
+        read_max_bytes=100,
+    ) as client:
         with pytest.raises(ConnectError) as exc_info:
             await client.make_hat(request=Size())
     if large:
@@ -515,7 +538,9 @@ def test_message_limit_default_sync(unlimited: bool) -> None:
         if unlimited
         else HaberdasherWSGIApplication(EchoSizeHaberdasher())
     )
-    with haberdasher_client_sync(WSGITransport(app)) as client:
+    with HaberdasherClientSync(
+        "http://localhost", http_client=SyncClient(WSGITransport(app))
+    ) as client:
         if unlimited:
             response = client.make_hat(request=big_size)
             assert response.size == _BIG_DESCRIPTION_LENGTH
@@ -544,7 +569,9 @@ async def test_message_limit_default_async(unlimited: bool) -> None:
         if unlimited
         else HaberdasherASGIApplication(EchoSizeHaberdasher())
     )
-    async with haberdasher_client(ASGITransport(app)) as client:
+    async with HaberdasherClient(
+        "http://localhost", http_client=Client(transport=ASGITransport(app))
+    ) as client:
         if unlimited:
             response = await client.make_hat(request=big_size)
             assert response.size == _BIG_DESCRIPTION_LENGTH

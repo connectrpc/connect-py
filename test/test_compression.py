@@ -24,12 +24,7 @@ from connectrpc.errors import ConnectError
 from connectrpc.protocol import ProtocolType
 from connectrpc.request import Headers
 
-from ._util import (
-    call,
-    haberdasher_client,
-    haberdasher_client_sync,
-    resolve_compression,
-)
+from ._util import call, resolve_compression
 from .connectrpc.example.haberdasher_connect import (
     Haberdasher,
     HaberdasherASGIApplication,
@@ -68,17 +63,33 @@ def new_client(request: pytest.FixtureRequest):
     """Returns a factory for clients of a server with the given compressions."""
 
     def new_client(
-        compressions: Iterable[Compression] | None = None, **kwargs
+        compressions: Iterable[Compression] | None = None,
+        *,
+        send_compression: Compression | None,
+        accept_compression: Iterable[Compression] | None = None,
+        protocol: ProtocolType = ProtocolType.CONNECT,
     ) -> HaberdasherClient | HaberdasherClientSync:
         if request.param == "async":
             app = HaberdasherASGIApplication(
                 _BlueHaberdasher(), compressions=compressions
             )
-            return haberdasher_client(ASGITransport(app), **kwargs)
+            return HaberdasherClient(
+                "http://localhost",
+                http_client=Client(ASGITransport(app)),
+                send_compression=send_compression,
+                accept_compression=accept_compression,
+                protocol=protocol,
+            )
         app = HaberdasherWSGIApplication(
             _BlueHaberdasherSync(), compressions=compressions
         )
-        return haberdasher_client_sync(WSGITransport(app), **kwargs)
+        return HaberdasherClientSync(
+            "http://localhost",
+            http_client=SyncClient(WSGITransport(app)),
+            send_compression=send_compression,
+            accept_compression=accept_compression,
+            protocol=protocol,
+        )
 
     return new_client
 

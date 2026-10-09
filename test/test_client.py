@@ -4,8 +4,10 @@ from typing import TYPE_CHECKING
 
 import pytest
 from pyqwest import (
+    Client,
     Request,
     Response,
+    SyncClient,
     SyncRequest,
     SyncResponse,
     SyncTransport,
@@ -16,10 +18,11 @@ from pyqwest.testing import ASGITransport, WSGITransport
 from connectrpc.client import ResponseMetadata
 from connectrpc.protocol import ProtocolType
 
-from ._util import haberdasher_client, haberdasher_client_sync
 from .connectrpc.example.haberdasher_connect import (
     Haberdasher,
     HaberdasherASGIApplication,
+    HaberdasherClient,
+    HaberdasherClientSync,
     HaberdasherSync,
     HaberdasherWSGIApplication,
 )
@@ -80,7 +83,9 @@ def test_headers_sync(headers, trailers, response_headers, response_trailers) ->
         HaberdasherWSGIApplication(HeadersHaberdasherSync(headers, trailers))
     )
 
-    client = haberdasher_client_sync(transport)
+    client = HaberdasherClientSync(
+        "http://localhost", http_client=SyncClient(transport=transport)
+    )
 
     with ResponseMetadata() as resp:
         assert resp.http_status is None
@@ -118,7 +123,9 @@ async def test_headers_async(
         HaberdasherASGIApplication(HeadersHaberdasher(headers, trailers))
     )
 
-    client = haberdasher_client(transport)
+    client = HaberdasherClient(
+        "http://localhost", http_client=Client(transport=transport)
+    )
 
     with ResponseMetadata() as resp:
         assert resp.http_status is None
@@ -169,7 +176,9 @@ async def test_request_content_async(protocol: ProtocolType) -> None:
     transport = ContentRecorder(
         ASGITransport(HaberdasherASGIApplication(SizeHaberdasher()))
     )
-    async with haberdasher_client(transport, protocol=protocol) as client:
+    async with HaberdasherClient(
+        "http://localhost", protocol=protocol, http_client=Client(transport=transport)
+    ) as client:
         await client.make_hat(Size(inches=10))
         assert [hat async for hat in client.make_similar_hats(Size(inches=10))]
         await client.make_flexible_hat(sizes())
@@ -212,7 +221,9 @@ def test_request_content_sync(protocol: ProtocolType) -> None:
     transport = ContentRecorder(
         WSGITransport(HaberdasherWSGIApplication(SizeHaberdasherSync()))
     )
-    with haberdasher_client_sync(transport, protocol=protocol) as client:
+    with HaberdasherClientSync(
+        "http://localhost", protocol=protocol, http_client=SyncClient(transport)
+    ) as client:
         client.make_hat(Size(inches=10))
         assert list(client.make_similar_hats(Size(inches=10)))
         client.make_flexible_hat(iter([Size(inches=10)]))

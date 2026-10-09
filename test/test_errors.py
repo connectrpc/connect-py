@@ -26,10 +26,11 @@ from connectrpc.client import ResponseMetadata
 from connectrpc.code import Code
 from connectrpc.errors import ConnectError
 
-from ._util import haberdasher_client, haberdasher_client_sync
 from .connectrpc.example.haberdasher_connect import (
     Haberdasher,
     HaberdasherASGIApplication,
+    HaberdasherClient,
+    HaberdasherClientSync,
     HaberdasherSync,
     HaberdasherWSGIApplication,
 )
@@ -85,8 +86,10 @@ def test_sync_errors(code: Code, message: str, http_status: int) -> None:
             recorded_response = response
             return response
 
+    http_client = SyncClient(transport=ResponseRecorder(transport))
+
     with (
-        haberdasher_client_sync(ResponseRecorder(transport)) as client,
+        HaberdasherClientSync("http://localhost", http_client=http_client) as client,
         pytest.raises(ConnectError) as exc_info,
         ResponseMetadata() as resp,
     ):
@@ -125,7 +128,8 @@ async def test_async_errors(code: Code, message: str, http_status: int) -> None:
             recorded_response = response
             return response
 
-    async with haberdasher_client(ResponseRecorder(transport)) as client:
+    http_client = Client(transport=ResponseRecorder(transport))
+    async with HaberdasherClient("http://localhost", http_client=http_client) as client:
         with pytest.raises(ConnectError) as exc_info, ResponseMetadata() as resp:
             await client.make_hat(request=Size(inches=10))
 
@@ -199,7 +203,9 @@ def test_sync_http_errors(
             )
 
     with (
-        haberdasher_client_sync(MockTransport()) as client,
+        HaberdasherClientSync(
+            "http://localhost", http_client=SyncClient(transport=MockTransport())
+        ) as client,
         pytest.raises(ConnectError) as exc_info,
         ResponseMetadata() as resp,
     ):
@@ -225,7 +231,9 @@ async def test_async_http_errors(
                 headers=Headers(response_headers),
             )
 
-    async with haberdasher_client(MockTransport()) as client:
+    async with HaberdasherClient(
+        "http://localhost", http_client=Client(transport=MockTransport())
+    ) as client:
         with pytest.raises(ConnectError) as exc_info, ResponseMetadata() as resp:
             await client.make_hat(request=Size(inches=10))
     assert exc_info.value.code == code
@@ -441,9 +449,10 @@ def test_sync_client_timeout(client_timeout_ms, call_timeout_ms) -> None:
             raise AssertionError(msg)
 
     app = HaberdasherWSGIApplication(SleepingHaberdasher())
+    http_client = SyncClient(ModifyTimeout(WSGITransport(app)))
     with (
-        haberdasher_client_sync(
-            ModifyTimeout(WSGITransport(app)), timeout_ms=client_timeout_ms
+        HaberdasherClientSync(
+            "http://localhost", timeout_ms=client_timeout_ms, http_client=http_client
         ) as client,
         pytest.raises(ConnectError) as exc_info,
     ):
@@ -480,8 +489,10 @@ async def test_async_client_timeout(client_timeout_ms, call_timeout_ms) -> None:
             raise AssertionError(msg)
 
     app = HaberdasherASGIApplication(SleepingHaberdasher())
-    async with haberdasher_client(
-        ModifyTimeout(ASGITransport(app)), timeout_ms=client_timeout_ms
+    http_client = Client(ModifyTimeout(ASGITransport(app)))
+
+    async with HaberdasherClient(
+        "http://localhost", timeout_ms=client_timeout_ms, http_client=http_client
     ) as client:
         with pytest.raises(ConnectError) as exc_info:
             await client.make_hat(request=Size(inches=10), timeout_ms=call_timeout_ms)
@@ -512,8 +523,10 @@ def test_sync_client_expired_timeout(
 
     app = HaberdasherWSGIApplication(RecordingHaberdasher())
     with (
-        haberdasher_client_sync(
-            WSGITransport(app), timeout_ms=client_timeout_ms
+        HaberdasherClientSync(
+            "http://localhost",
+            timeout_ms=client_timeout_ms,
+            http_client=SyncClient(WSGITransport(app)),
         ) as client,
         pytest.raises(ConnectError) as exc_info,
     ):
@@ -552,8 +565,10 @@ async def test_async_client_expired_timeout(
             yield Hat()
 
     app = HaberdasherASGIApplication(RecordingHaberdasher())
-    async with haberdasher_client(
-        ASGITransport(app), timeout_ms=client_timeout_ms
+    async with HaberdasherClient(
+        "http://localhost",
+        timeout_ms=client_timeout_ms,
+        http_client=Client(ASGITransport(app)),
     ) as client:
         with pytest.raises(ConnectError) as exc_info:
             if stream:
@@ -580,8 +595,11 @@ async def test_async_unhandled_exception_reraised() -> None:
 
     app = HaberdasherASGIApplication(RaisingHaberdasher())
     transport = ASGITransport(app)
+    http_client = Client(transport)
 
-    async with haberdasher_client(transport, timeout_ms=200) as client:
+    async with HaberdasherClient(
+        "http://localhost", timeout_ms=200, http_client=http_client
+    ) as client:
         with pytest.raises(ConnectError, match="Something went wrong"):
             await client.make_hat(request=Size(inches=10))
 
@@ -598,8 +616,11 @@ async def test_async_unhandled_exception_reraised_stream() -> None:
 
     app = HaberdasherASGIApplication(RaisingHaberdasher())
     transport = ASGITransport(app)
+    http_client = Client(transport)
 
-    async with haberdasher_client(transport, timeout_ms=200) as client:
+    async with HaberdasherClient(
+        "http://localhost", timeout_ms=200, http_client=http_client
+    ) as client:
         with pytest.raises(ConnectError, match="Something went wrong"):
             async for _ in client.make_similar_hats(request=Size(inches=10)):
                 pass
@@ -616,8 +637,11 @@ async def test_async_connect_exception_not_reraised() -> None:
 
     app = HaberdasherASGIApplication(RaisingHaberdasher())
     transport = ASGITransport(app)
+    http_client = Client(transport)
 
-    async with haberdasher_client(transport, timeout_ms=200) as client:
+    async with HaberdasherClient(
+        "http://localhost", timeout_ms=200, http_client=http_client
+    ) as client:
         with pytest.raises(ConnectError, match="We're broken"):
             await client.make_hat(request=Size(inches=10))
 
@@ -632,8 +656,11 @@ async def test_async_connect_exception_not_reraised_stream() -> None:
 
     app = HaberdasherASGIApplication(RaisingHaberdasher())
     transport = ASGITransport(app)
+    http_client = Client(transport)
 
-    async with haberdasher_client(transport, timeout_ms=200) as client:
+    async with HaberdasherClient(
+        "http://localhost", timeout_ms=200, http_client=http_client
+    ) as client:
         with pytest.raises(ConnectError, match="We're broken"):
             async for _ in client.make_similar_hats(request=Size(inches=10)):
                 pass
@@ -649,8 +676,11 @@ async def test_async_http_exception_not_reraised() -> None:
 
     app = HaberdasherASGIApplication(RaisingHaberdasher())
     transport = ASGITransport(app)
+    http_client = Client(transport)
 
-    async with haberdasher_client(transport, timeout_ms=200) as client:
+    async with HaberdasherClient(
+        "http://localhost", timeout_ms=200, http_client=http_client
+    ) as client:
         with pytest.raises(ConnectError, match="Internal Server Error"):
             await client.make_hat(request=Size(inches=10))
 
@@ -665,9 +695,12 @@ def test_sync_unhandled_exception_logged() -> None:
 
     app = HaberdasherWSGIApplication(RaisingHaberdasher())
     transport = WSGITransport(app)
+    http_client = SyncClient(transport)
 
     with (
-        haberdasher_client_sync(transport, timeout_ms=200) as client,
+        HaberdasherClientSync(
+            "http://localhost", timeout_ms=200, http_client=http_client
+        ) as client,
         pytest.raises(ConnectError, match="Something went wrong"),
     ):
         client.make_hat(request=Size(inches=10))
@@ -686,9 +719,12 @@ def test_sync_unhandled_exception_logged_stream() -> None:
 
     app = HaberdasherWSGIApplication(RaisingHaberdasher())
     transport = WSGITransport(app)
+    http_client = SyncClient(transport)
 
     with (
-        haberdasher_client_sync(transport, timeout_ms=200) as client,
+        HaberdasherClientSync(
+            "http://localhost", timeout_ms=200, http_client=http_client
+        ) as client,
         pytest.raises(ConnectError, match="Something went wrong"),
     ):
         next(client.make_similar_hats(request=Size(inches=10)))
