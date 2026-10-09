@@ -4,7 +4,7 @@ import asyncio
 import random
 import struct
 import sys
-from typing import TYPE_CHECKING, NoReturn
+from typing import TYPE_CHECKING
 
 import pytest
 from pyqwest import Client, SyncClient
@@ -15,13 +15,7 @@ from connectrpc.codec import proto_binary_codec, proto_json_codec
 from connectrpc.errors import ConnectError
 from connectrpc.server import DEFAULT_READ_MAX_BYTES
 
-from ._util import (
-    call,
-    haberdasher_client,
-    haberdasher_client_sync,
-    resolve_compression,
-    unary_client,
-)
+from ._util import haberdasher_client, haberdasher_client_sync, resolve_compression
 from .connectrpc.example.haberdasher_connect import (
     Haberdasher,
     HaberdasherASGIApplication,
@@ -36,22 +30,48 @@ if TYPE_CHECKING:
     from asgiref.typing import HTTPDisconnectEvent, HTTPRequestEvent, HTTPScope
 
 
-@pytest.mark.asyncio
-@pytest.mark.parametrize("mode", ["async", "sync"])
 @pytest.mark.parametrize("proto_json", [False, True])
 @pytest.mark.parametrize("compression_name", ["gzip", "br", "zstd", "identity"])
-async def test_roundtrip(mode, proto_json: bool, compression_name: str) -> None:
+def test_roundtrip_sync(proto_json: bool, compression_name: str) -> None:
+    class RoundtripHaberdasherSync(HaberdasherSync):
+        def make_hat(self, request, _ctx):
+            return Hat(size=request.inches, color="green")
+
     compression = resolve_compression(compression_name)
-    client = unary_client(
-        mode,
-        lambda request, _ctx: Hat(size=request.inches, color="green"),
-        {"compressions": [compression]},
+    app = HaberdasherWSGIApplication(
+        RoundtripHaberdasherSync(), compressions=[compression]
+    )
+    with haberdasher_client_sync(
+        WSGITransport(app=app),
         codec=proto_json_codec() if proto_json else None,
         send_compression=compression,
         accept_compression=[compression],
-    )
-    response = await call(client, "make_hat", Size(inches=10))
-    assert response == Hat(size=10, color="green")
+    ) as client:
+        response = client.make_hat(request=Size(inches=10))
+    assert response.size == 10
+    assert response.color == "green"
+
+
+@pytest.mark.parametrize("proto_json", [False, True])
+@pytest.mark.parametrize("compression_name", ["gzip", "br", "zstd", "identity"])
+@pytest.mark.asyncio
+async def test_roundtrip_async(proto_json: bool, compression_name: str) -> None:
+    class DetailsHaberdasher(Haberdasher):
+        async def make_hat(self, request, _ctx):
+            return Hat(size=request.inches, color="green")
+
+    compression = resolve_compression(compression_name)
+    app = HaberdasherASGIApplication(DetailsHaberdasher(), compressions=[compression])
+    transport = ASGITransport(app)
+    async with haberdasher_client(
+        transport,
+        codec=proto_json_codec() if proto_json else None,
+        send_compression=compression,
+        accept_compression=[compression],
+    ) as client:
+        response = await client.make_hat(request=Size(inches=10))
+    assert response.size == 10
+    assert response.color == "green"
 
 
 # A request and a response containing a field the receiver's schema doesn't have,
@@ -189,19 +209,40 @@ async def test_roundtrip_async_unknown_response_field(
                 await client.make_hat(request=Size(inches=10))
 
 
-@pytest.mark.asyncio
-@pytest.mark.parametrize("mode", ["async", "sync"])
-async def test_roundtrip_connect_get_empty_request(mode) -> None:
+def test_roundtrip_sync_connect_get_empty_request() -> None:
+    class RoundtripHaberdasherSync(HaberdasherSync):
+        def make_hat(self, request, _ctx):
+            return Hat(size=request.inches, color="green")
+
     compression = resolve_compression("identity")
-    client = unary_client(
-        mode,
-        lambda request, _ctx: Hat(size=request.inches, color="green"),
-        {"compressions": [compression]},
+    app = HaberdasherWSGIApplication(
+        RoundtripHaberdasherSync(), compressions=[compression]
+    )
+    with haberdasher_client_sync(
+        WSGITransport(app=app),
         send_compression=compression,
         accept_compression=[compression],
-    )
-    response = await call(client, "make_hat", Size(), use_get=True)
-    assert response == Hat(size=0, color="green")
+    ) as client:
+        response = client.make_hat(request=Size(), use_get=True)
+    assert response.size == 0
+    assert response.color == "green"
+
+
+@pytest.mark.asyncio
+async def test_roundtrip_async_connect_get_empty_request() -> None:
+    class RoundtripHaberdasher(Haberdasher):
+        async def make_hat(self, request, _ctx):
+            return Hat(size=request.inches, color="green")
+
+    compression = resolve_compression("identity")
+    app = HaberdasherASGIApplication(RoundtripHaberdasher(), compressions=[compression])
+    transport = ASGITransport(app)
+    async with haberdasher_client(
+        transport, send_compression=compression, accept_compression=[compression]
+    ) as client:
+        response = await client.make_hat(request=Size(), use_get=True)
+    assert response.size == 0
+    assert response.color == "green"
 
 
 @pytest.mark.parametrize("proto_json", [False, True])
@@ -413,18 +454,41 @@ async def test_message_limit_async(
             assert len(responses) == 1
 
 
-@pytest.mark.asyncio
-@pytest.mark.parametrize("mode", ["async", "sync"])
 @pytest.mark.parametrize("large", [False, True])
-async def test_message_limit_unary_error(mode, large: bool) -> None:
+def test_message_limit_unary_error_sync(large: bool) -> None:
     message = "x" * 100 if large else "small"
 
-    def make_hat(_request, _ctx) -> NoReturn:
-        raise ConnectError(Code.FAILED_PRECONDITION, message)
+    class FailingHaberdasher(HaberdasherSync):
+        def make_hat(self, _request, _ctx):
+            raise ConnectError(Code.FAILED_PRECONDITION, message)
 
-    client = unary_client(mode, make_hat, read_max_bytes=100)
-    with pytest.raises(ConnectError) as exc_info:
-        await call(client, "make_hat", Size())
+    app = HaberdasherWSGIApplication(FailingHaberdasher())
+    with (
+        haberdasher_client_sync(WSGITransport(app), read_max_bytes=100) as client,
+        pytest.raises(ConnectError) as exc_info,
+    ):
+        client.make_hat(request=Size())
+    if large:
+        assert exc_info.value.code == Code.RESOURCE_EXHAUSTED
+        assert exc_info.value.message == "message is larger than configured max 100"
+    else:
+        assert exc_info.value.code == Code.FAILED_PRECONDITION
+        assert exc_info.value.message == message
+
+
+@pytest.mark.parametrize("large", [False, True])
+@pytest.mark.asyncio
+async def test_message_limit_unary_error_async(large: bool) -> None:
+    message = "x" * 100 if large else "small"
+
+    class FailingHaberdasher(Haberdasher):
+        async def make_hat(self, _request, _ctx):
+            raise ConnectError(Code.FAILED_PRECONDITION, message)
+
+    app = HaberdasherASGIApplication(FailingHaberdasher())
+    async with haberdasher_client(ASGITransport(app), read_max_bytes=100) as client:
+        with pytest.raises(ConnectError) as exc_info:
+            await client.make_hat(request=Size())
     if large:
         assert exc_info.value.code == Code.RESOURCE_EXHAUSTED
         assert exc_info.value.message == "message is larger than configured max 100"
@@ -437,29 +501,61 @@ async def test_message_limit_unary_error(mode, large: bool) -> None:
 _BIG_DESCRIPTION_LENGTH = DEFAULT_READ_MAX_BYTES + 1 - 5
 
 
-@pytest.mark.asyncio
-@pytest.mark.parametrize("mode", ["async", "sync"])
 @pytest.mark.parametrize("unlimited", [False, True])
-async def test_message_limit_default(mode, unlimited: bool) -> None:
+def test_message_limit_default_sync(unlimited: bool) -> None:
+    class EchoSizeHaberdasher(HaberdasherSync):
+        def make_hat(self, request, _ctx):
+            return Hat(size=len(request.description))
+
     big_size = Size(description="X" * _BIG_DESCRIPTION_LENGTH)
     assert len(big_size.to_binary()) == DEFAULT_READ_MAX_BYTES + 1
     # We specifically want to test not setting vs setting to None
-    client = unary_client(
-        mode,
-        lambda request, _ctx: Hat(size=len(request.description)),
-        {"read_max_bytes": None} if unlimited else None,
+    app = (
+        HaberdasherWSGIApplication(EchoSizeHaberdasher(), read_max_bytes=None)
+        if unlimited
+        else HaberdasherWSGIApplication(EchoSizeHaberdasher())
     )
-    if unlimited:
-        response = await call(client, "make_hat", big_size)
-        assert response == Hat(size=_BIG_DESCRIPTION_LENGTH)
-    else:
-        with pytest.raises(ConnectError) as exc_info:
-            await call(client, "make_hat", big_size)
-        assert exc_info.value.code == Code.RESOURCE_EXHAUSTED
-        assert (
-            exc_info.value.message
-            == f"message is larger than configured max {DEFAULT_READ_MAX_BYTES}"
-        )
+    with haberdasher_client_sync(WSGITransport(app)) as client:
+        if unlimited:
+            response = client.make_hat(request=big_size)
+            assert response.size == _BIG_DESCRIPTION_LENGTH
+        else:
+            with pytest.raises(ConnectError) as exc_info:
+                client.make_hat(request=big_size)
+            assert exc_info.value.code == Code.RESOURCE_EXHAUSTED
+            assert (
+                exc_info.value.message
+                == f"message is larger than configured max {DEFAULT_READ_MAX_BYTES}"
+            )
+
+
+@pytest.mark.parametrize("unlimited", [False, True])
+@pytest.mark.asyncio
+async def test_message_limit_default_async(unlimited: bool) -> None:
+    class EchoSizeHaberdasher(Haberdasher):
+        async def make_hat(self, request, _ctx):
+            return Hat(size=len(request.description))
+
+    big_size = Size(description="X" * _BIG_DESCRIPTION_LENGTH)
+    assert len(big_size.to_binary()) == DEFAULT_READ_MAX_BYTES + 1
+    # We specifically want to test not setting vs setting to None
+    app = (
+        HaberdasherASGIApplication(EchoSizeHaberdasher(), read_max_bytes=None)
+        if unlimited
+        else HaberdasherASGIApplication(EchoSizeHaberdasher())
+    )
+    async with haberdasher_client(ASGITransport(app)) as client:
+        if unlimited:
+            response = await client.make_hat(request=big_size)
+            assert response.size == _BIG_DESCRIPTION_LENGTH
+        else:
+            with pytest.raises(ConnectError) as exc_info:
+                await client.make_hat(request=big_size)
+            assert exc_info.value.code == Code.RESOURCE_EXHAUSTED
+            assert (
+                exc_info.value.message
+                == f"message is larger than configured max {DEFAULT_READ_MAX_BYTES}"
+            )
 
 
 @pytest.mark.asyncio
