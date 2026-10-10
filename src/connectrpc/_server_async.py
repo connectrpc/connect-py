@@ -1,16 +1,18 @@
 from __future__ import annotations
 
+import asyncio
 import base64
 import contextlib
 import functools
 import inspect
 from abc import ABC, abstractmethod
-from asyncio import CancelledError, Event, create_task, sleep
+from asyncio import CancelledError, Event, create_task, get_event_loop, sleep
 from dataclasses import replace
 from http import HTTPStatus
 from typing import TYPE_CHECKING, Generic, TypeVar, cast
 from urllib.parse import parse_qs
 
+from ._asyncio_timeout import timeout_at as asyncio_timeout_at
 from ._codec import Codec, get_default_codecs
 from ._compression import (
     negotiate_compression,
@@ -188,6 +190,7 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
 
         ctx: RequestContext | None = None
         protocol: ServerProtocol | None = None
+        deadline: float | None = None
         try:
             path = scope["path"]
             endpoint = endpoints.get(path)
@@ -215,6 +218,11 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
                 endpoint.method, http_method, http_scheme, headers, client_address
             )
 
+            if (timeout_ms := ctx.timeout_ms) is not None:
+                deadline = get_event_loop().time() + timeout_ms / 1000
+            else:
+                deadline = None
+
             is_unary = isinstance(endpoint, EndpointUnary)
 
             if http_method == "GET":
@@ -234,16 +242,26 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
                 )
 
             if is_unary and isinstance(protocol, ConnectServerProtocol):
-                return await self._handle_unary_connect(
-                    http_method,
-                    headers,
-                    codec,
-                    query_params,
-                    endpoint,
-                    receive,
-                    send,
-                    ctx,
-                )
+                try:
+                    return await self._handle_unary_connect(
+                        http_method,
+                        headers,
+                        codec,
+                        query_params,
+                        endpoint,
+                        receive,
+                        send,
+                        deadline,
+                        ctx,
+                    )
+                except CancelledError:
+                    await self._handle_error(
+                        ConnectError(Code.CANCELED, "Request was cancelled"),
+                        ctx,
+                        protocol,
+                        send,
+                    )
+                    raise
         except Exception as e:
             await self._handle_error(e, ctx, protocol, send)
             if not isinstance(e, (ConnectError, HTTPError)):
@@ -252,7 +270,7 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
 
         # Streams have their own error handling so move out of the try block.
         return await self._handle_stream(
-            receive, send, protocol, endpoint, codec, headers, ctx
+            receive, send, protocol, endpoint, codec, headers, deadline, ctx
         )
 
     async def _handle_unary_connect(
@@ -264,6 +282,7 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
         endpoint: EndpointUnary[_REQ, _RES],
         receive: ASGIReceiveCallable,
         send: ASGISendCallable,
+        deadline: float | None,
         ctx: RequestContext,
     ) -> None:
         accept_encoding = headers.get("accept-encoding", "")
@@ -272,21 +291,35 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
         metadata_run = MetadataInterceptorsRun(self._metadata_interceptors, ctx)
         response_data: _RES | None = None
         error: Exception | None = None
+        # Important to propagate cancellation to app servers as-is
+        cancelled_error: CancelledError | None = None
         try:
-            await metadata_run.start()
-            if http_method == "GET":
-                request = await self._read_get_request(endpoint, codec, query_params)
-            else:
-                request = await self._read_post_request(
-                    endpoint, receive, codec, headers
-                )
-            response_data = await endpoint.function(request, ctx)
+            async with asyncio_timeout_at(deadline):
+                await metadata_run.start()
+                if http_method == "GET":
+                    request = await self._read_get_request(
+                        endpoint, codec, query_params
+                    )
+                else:
+                    request = await self._read_post_request(
+                        endpoint, receive, codec, headers
+                    )
+                response_data = await endpoint.function(request, ctx)
+        except CancelledError as e:
+            cancelled_error = e
+            error = ConnectError(Code.CANCELED, "Request was cancelled")
+            error.__cause__ = e
+        except (TimeoutError, asyncio.TimeoutError) as e:
+            error = ConnectError(Code.DEADLINE_EXCEEDED, "Request timed out")
+            error.__cause__ = e
         except Exception as e:  # noqa: BLE001 # re-raised after ending the run
             error = e
         finally:
             # End the run before sending the response so on_end can still modify
             # response metadata.
             error = await metadata_run.end(error)
+        if cancelled_error is not None:
+            raise cancelled_error
         if error is not None:
             raise error
         assert response_data is not None  # noqa: S101 # no error means function returned
@@ -397,6 +430,7 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
         endpoint: Endpoint[_REQ, _RES],
         codec: Codec,
         headers: Headers,
+        deadline: float | None,
         ctx: _server_shared.RequestContext,
     ) -> None:
         req_compression, resp_compression = protocol.negotiate_stream_compression(
@@ -408,87 +442,102 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
         metadata_run = MetadataInterceptorsRun(self._metadata_interceptors, ctx)
         error: Exception | None = None
         sent_headers = False
+        # Important to propagate cancellation to app servers as-is
+        cancelled_error: CancelledError | None = None
         try:
-            await metadata_run.start()
-            if not req_compression:
-                raise unknown_compression_error(
-                    headers.get(protocol.compression_header_name(), ""),
-                    self._compressions,
-                )
-            request_stream = _request_stream(
-                receive,
-                endpoint.method.input,
-                codec,
-                req_compression,
-                self._read_max_bytes,
-            )
-
-            disconnect_detected: Event | None = None
-            monitor_task = None
-
-            match endpoint:
-                case EndpointUnary():
-                    request = await _consume_single_request(request_stream)
-                    response = await endpoint.function(request, ctx)
-                    # End the run before sending the response so on_end can still
-                    # modify response metadata.
-                    if (end_error := await metadata_run.end(None)) is not None:
-                        raise end_error
-                    response_stream = _yield_single_response(response)
-                case EndpointClientStream():
-                    response = await endpoint.function(request_stream, ctx)
-                    if (end_error := await metadata_run.end(None)) is not None:
-                        raise end_error
-                    response_stream = _yield_single_response(response)
-                case EndpointServerStream():
-                    request = await _consume_single_request(request_stream)
-                    response_stream = endpoint.function(request, ctx)
-
-                    # The request has been fully consumed; monitor receive() for a
-                    # client disconnect so we can stop streaming promptly.
-                    disconnect_detected = Event()
-
-                    async def _watch_for_disconnect() -> None:
-                        while True:
-                            msg = await receive()
-                            if msg["type"] == "http.disconnect":
-                                disconnect_detected.set()
-                                return
-
-                    monitor_task = create_task(_watch_for_disconnect())
-                case EndpointBidiStream():
-                    response_stream = endpoint.function(request_stream, ctx)
-
-            try:
-                async for message in response_stream:
-                    if disconnect_detected is not None and disconnect_detected.is_set():
-                        raise ConnectError(Code.CANCELED, "Client disconnected")
-                    # Don't send headers until the first message to allow logic a chance to add
-                    # response headers.
-                    if not sent_headers:
-                        await _send_stream_response_headers(
-                            send, protocol, codec, resp_compression.name(), ctx
-                        )
-                        sent_headers = True
-
-                    body = writer.write(message)
-                    await send(
-                        {"type": "http.response.body", "body": body, "more_body": True}
+            async with asyncio_timeout_at(deadline):
+                await metadata_run.start()
+                if not req_compression:
+                    raise unknown_compression_error(
+                        headers.get(protocol.compression_header_name(), ""),
+                        self._compressions,
                     )
-            finally:
-                # Cancel the monitor first so a throwing generator finally-block
-                # doesn't leak the task.
-                if monitor_task is not None:
-                    monitor_task.cancel()
-                    with contextlib.suppress(CancelledError):
-                        await monitor_task
-                # Explicitly close the stream so that any generator finally-blocks
-                # run promptly (Python defers async-generator cleanup to GC otherwise).
-                aclose = getattr(response_stream, "aclose", None)
-                if aclose is not None:
-                    await aclose()
+                request_stream = _request_stream(
+                    receive,
+                    endpoint.method.input,
+                    codec,
+                    req_compression,
+                    self._read_max_bytes,
+                )
+
+                disconnect_detected: Event | None = None
+                monitor_task = None
+
+                match endpoint:
+                    case EndpointUnary():
+                        request = await _consume_single_request(request_stream)
+                        response = await endpoint.function(request, ctx)
+                        # End the run before sending the response so on_end can still
+                        # modify response metadata.
+                        if (end_error := await metadata_run.end(None)) is not None:
+                            raise end_error
+                        response_stream = _yield_single_response(response)
+                    case EndpointClientStream():
+                        response = await endpoint.function(request_stream, ctx)
+                        if (end_error := await metadata_run.end(None)) is not None:
+                            raise end_error
+                        response_stream = _yield_single_response(response)
+                    case EndpointServerStream():
+                        request = await _consume_single_request(request_stream)
+                        response_stream = endpoint.function(request, ctx)
+
+                        # The request has been fully consumed; monitor receive() for a
+                        # client disconnect so we can stop streaming promptly.
+                        disconnect_detected = Event()
+
+                        async def _watch_for_disconnect() -> None:
+                            while True:
+                                msg = await receive()
+                                if msg["type"] == "http.disconnect":
+                                    disconnect_detected.set()
+                                    return
+
+                        monitor_task = create_task(_watch_for_disconnect())
+                    case EndpointBidiStream():
+                        response_stream = endpoint.function(request_stream, ctx)
+
+                try:
+                    async for message in response_stream:
+                        if (
+                            disconnect_detected is not None
+                            and disconnect_detected.is_set()
+                        ):
+                            raise ConnectError(Code.CANCELED, "Client disconnected")
+                        # Don't send headers until the first message to allow logic a chance to add
+                        # response headers.
+                        if not sent_headers:
+                            await _send_stream_response_headers(
+                                send, protocol, codec, resp_compression.name(), ctx
+                            )
+                            sent_headers = True
+
+                        body = writer.write(message)
+                        await send(
+                            {
+                                "type": "http.response.body",
+                                "body": body,
+                                "more_body": True,
+                            }
+                        )
+                finally:
+                    # Cancel the monitor first so a throwing generator finally-block
+                    # doesn't leak the task.
+                    if monitor_task is not None:
+                        monitor_task.cancel()
+                        with contextlib.suppress(CancelledError):
+                            await monitor_task
+                    # Explicitly close the stream so that any generator finally-blocks
+                    # run promptly (Python defers async-generator cleanup to GC otherwise).
+                    aclose = getattr(response_stream, "aclose", None)
+                    if aclose is not None:
+                        await aclose()
         except CancelledError as e:
-            raise ConnectError(Code.CANCELED, "Request was cancelled") from e
+            cancelled_error = e
+            error = ConnectError(Code.CANCELED, "Request was cancelled")
+            error.__cause__ = e
+        except (TimeoutError, asyncio.TimeoutError) as e:
+            error = ConnectError(Code.DEADLINE_EXCEEDED, "Request timed out")
+            error.__cause__ = e
         except Exception as e:  # noqa: BLE001 # invoking user callback
             error = e
         finally:
@@ -525,6 +574,8 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
                         "more_trailers": False,
                     }
                 )
+            if cancelled_error is not None:
+                raise cancelled_error from None
             if error and not isinstance(error, ConnectError):
                 raise error
 
@@ -621,18 +672,13 @@ async def _request_stream(
     compression: Compression,
     read_max_bytes: int | None = None,
 ) -> AsyncIterator[_REQ]:
-    try:
-        with EnvelopeReader(
-            request_class, codec, compression, read_max_bytes
-        ) as reader:
-            async for chunk in _read_body(receive):
-                for message in reader.feed(chunk):
-                    yield message
-                    # Check for cancellation each message. While this seems heavyweight,
-                    # conformance tests require it.
-                    await sleep(0)
-    except CancelledError as e:
-        raise ConnectError(Code.CANCELED, "Request was cancelled") from e
+    with EnvelopeReader(request_class, codec, compression, read_max_bytes) as reader:
+        async for chunk in _read_body(receive):
+            for message in reader.feed(chunk):
+                yield message
+                # Check for cancellation each message. While this seems heavyweight,
+                # conformance tests require it.
+                await sleep(0)
 
 
 async def _read_body(receive: ASGIReceiveCallable) -> AsyncIterator[bytes]:

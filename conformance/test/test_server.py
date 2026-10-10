@@ -47,11 +47,13 @@ def test_server_sync(server: str, cov: Coverage) -> None:
     args = maybe_patch_args_with_debug(
         [sys.executable, _server_py_path, "--mode", "sync", "--server", server]
     )
-    opts = []
+    # WSGI applications can't enforce timeouts while a handler is blocked, and
+    # the conformance handlers block for longer than the timeout.
+    opts = ["--skip", "Timeouts/**"]
     match server:
         case "gunicorn":
             # gunicorn doesn't support HTTP/2 or 3
-            opts = ["--skip", "**/HTTPVersion:2/**", "--skip", "**/HTTPVersion:3/**"]
+            opts += ["--skip", "**/HTTPVersion:2/**", "--skip", "**/HTTPVersion:3/**"]
 
     result = subprocess.run(
         [

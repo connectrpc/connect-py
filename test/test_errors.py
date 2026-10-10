@@ -25,6 +25,7 @@ from connectrpc._protocol import HTTPError
 from connectrpc.client import ResponseMetadata
 from connectrpc.code import Code
 from connectrpc.errors import ConnectError
+from connectrpc.protocol import ProtocolType
 
 from .connectrpc.example.haberdasher_connect import (
     Haberdasher,
@@ -584,6 +585,143 @@ async def test_async_client_expired_timeout(
     assert exc_info.value.code == Code.DEADLINE_EXCEEDED
     assert exc_info.value.message == "Request timed out"
     assert not called
+
+
+class _BlockingHaberdasher(Haberdasher):
+    """Blocks until cancelled, for unary, server streams, and while reading
+    client streams."""
+
+    async def make_hat(self, _request, _ctx) -> NoReturn:
+        await asyncio.Event().wait()
+        msg = "Should be cancelled already"
+        raise AssertionError(msg)
+
+    async def make_flexible_hat(self, request, _ctx) -> NoReturn:
+        async for _ in request:
+            pass
+        msg = "Request stream should not end"
+        raise AssertionError(msg)
+
+    async def make_similar_hats(self, _request, _ctx) -> AsyncIterator[Hat]:
+        await asyncio.Event().wait()
+        yield Hat()
+
+
+class _ErrorRecordingInterceptor:
+    def __init__(self) -> None:
+        self.errors: list[Exception | None] = []
+
+    async def on_start(self, ctx) -> None:  # noqa: ARG002
+        return None
+
+    async def on_end(self, _token, _ctx, error: Exception | None) -> None:
+        self.errors.append(error)
+
+
+async def _blocking_sizes() -> AsyncIterator[Size]:
+    yield Size(inches=10)
+    await asyncio.Event().wait()
+
+
+async def _call_blocking(client: HaberdasherClient, method: str) -> None:
+    async def call() -> None:
+        match method:
+            case "unary":
+                await client.make_hat(request=Size(inches=10))
+            case "client_stream":
+                await client.make_flexible_hat(_blocking_sizes())
+            case "server_stream":
+                async for _ in client.make_similar_hats(request=Size(inches=10)):
+                    pass
+
+    # Fail instead of hanging if the server never responds.
+    await asyncio.wait_for(call(), 5)
+
+
+_protocols = [ProtocolType.CONNECT, ProtocolType.GRPC, ProtocolType.GRPC_WEB]
+_blocking_methods = ["unary", "client_stream", "server_stream"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("protocol", _protocols)
+@pytest.mark.parametrize("method", _blocking_methods)
+async def test_async_server_timeout(protocol: ProtocolType, method: str) -> None:
+    class SetServerTimeout(Transport):
+        def __init__(self, transport: Transport) -> None:
+            self._transport = transport
+
+        async def execute(self, request: Request) -> Response:
+            # The client sends no timeout so that only the server enforces one.
+            if protocol == ProtocolType.CONNECT:
+                request.headers["connect-timeout-ms"] = "50"
+            else:
+                request.headers["grpc-timeout"] = "50m"
+            return await self._transport.execute(request)
+
+    interceptor = _ErrorRecordingInterceptor()
+    app = HaberdasherASGIApplication(
+        _BlockingHaberdasher(), interceptors=(interceptor,)
+    )
+    transport = ASGITransport(app)
+
+    async with HaberdasherClient(
+        "http://localhost",
+        protocol=protocol,
+        http_client=Client(SetServerTimeout(transport)),
+    ) as client:
+        with pytest.raises(ConnectError) as exc_info:
+            await _call_blocking(client, method)
+
+    assert exc_info.value.code == Code.DEADLINE_EXCEEDED
+    assert exc_info.value.message == "Request timed out"
+    assert len(interceptor.errors) == 1
+    assert isinstance(interceptor.errors[0], ConnectError)
+    assert interceptor.errors[0].code == Code.DEADLINE_EXCEEDED
+    assert transport.app_exception is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("protocol", _protocols)
+@pytest.mark.parametrize("method", _blocking_methods)
+async def test_async_server_cancelled(protocol: ProtocolType, method: str) -> None:
+    interceptor = _ErrorRecordingInterceptor()
+    app = HaberdasherASGIApplication(
+        _BlockingHaberdasher(), interceptors=(interceptor,)
+    )
+    outer_exceptions: list[BaseException] = []
+
+    async def cancelling_app(scope, receive, send) -> None:
+        # Middleware that cancels the task running the application, like an
+        # ASGI server does. Cancel the current task rather than using
+        # wait_for, which runs the application in a separate task on
+        # Python 3.10.
+        task = asyncio.current_task()
+        assert task is not None
+        handle = asyncio.get_running_loop().call_later(0.05, task.cancel)
+        try:
+            await app(scope, receive, send)
+        except BaseException as e:
+            outer_exceptions.append(e)
+            raise
+        finally:
+            handle.cancel()
+
+    async with HaberdasherClient(
+        "http://localhost",
+        protocol=protocol,
+        http_client=Client(ASGITransport(cancelling_app)),
+    ) as client:
+        with pytest.raises(ConnectError) as exc_info:
+            await _call_blocking(client, method)
+
+    assert exc_info.value.code == Code.CANCELED
+    assert exc_info.value.message == "Request was cancelled"
+    assert len(interceptor.errors) == 1
+    assert isinstance(interceptor.errors[0], ConnectError)
+    assert interceptor.errors[0].code == Code.CANCELED
+    # The application propagates the cancellation instead of swallowing it.
+    assert len(outer_exceptions) == 1
+    assert isinstance(outer_exceptions[0], asyncio.CancelledError)
 
 
 @pytest.mark.asyncio
