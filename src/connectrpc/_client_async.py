@@ -3,8 +3,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import functools
-import sys
-from asyncio import CancelledError, sleep, wait_for
+from asyncio import CancelledError, sleep, timeout_at as asyncio_timeout_at, wait_for
 from typing import TYPE_CHECKING, Any, Protocol, TypeVar
 from urllib.parse import urlencode
 
@@ -30,25 +29,16 @@ from .code import Code
 from .errors import ConnectError
 from .protocol import ProtocolType
 
-if sys.version_info >= (3, 11):
-    from asyncio import timeout_at as asyncio_timeout_at
-else:
-    from ._asyncio_timeout import timeout_at as asyncio_timeout_at
-
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Iterable, Mapping
     from types import TracebackType
+    from typing import Self
 
     from ._envelope import EnvelopeReader
     from .codec import Codec
     from .compression import Compression
     from .method import MethodInfo
     from .request import Headers, RequestContext
-
-    if sys.version_info >= (3, 11):
-        from typing import Self
-    else:
-        from typing_extensions import Self
 else:
     Self = "Self"
 
@@ -356,7 +346,7 @@ class ConnectClient:
             if resp.status == 200:
                 return decode_message(self._codec, resp.content, ctx.method.output)
             raise ConnectWireError.from_response(resp).to_exception()
-        except (TimeoutError, asyncio.TimeoutError) as e:
+        except TimeoutError as e:
             raise ConnectError(Code.DEADLINE_EXCEEDED, "Request timed out") from e
         except ConnectError:
             raise
@@ -450,7 +440,7 @@ class ConnectClient:
                         trailers=resp.trailers,
                     )
                     raise ConnectWireError.from_response(fres).to_exception()
-        except (TimeoutError, asyncio.TimeoutError) as e:
+        except TimeoutError as e:
             raise ConnectError(Code.DEADLINE_EXCEEDED, "Request timed out") from e
         except ConnectError:
             raise

@@ -3,7 +3,7 @@ name = "connectrpc"
 version = "0.12.1"
 description = "Server and client runtime library for Connect RPC"
 readme = "README.md"
-requires-python = ">= 3.10"
+requires-python = ">= 3.11"
 license = "Apache-2.0"
 license-files = ["LICENSE"]
 maintainers = [
@@ -19,19 +19,20 @@ classifiers = [
   "Operating System :: OS Independent",
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3 :: Only",
-  "Programming Language :: Python :: 3.10",
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
   "Programming Language :: Python :: 3.13",
   "Programming Language :: Python :: 3.14",
+  "Programming Language :: Python :: 3.15",
+  "Programming Language :: Python :: Free Threading",
   "Topic :: Internet :: WWW/HTTP",
   "Topic :: Software Development :: Libraries :: Python Modules",
   "Typing :: Typed",
 ]
 dependencies = [
   "protobuf-py>=0.3.0",
-  "pyqwest>=0.5.1",
-  "typing_extensions>=4.13.0",
+  "pyqwest>=0.12.0",
+  "typing_extensions>=4.16.0",
 ]
 
 [project.urls]
@@ -52,7 +53,6 @@ dev = [
   "brotli==1.2.0",
   "buf-bin==1.73.0",
   "granian==2.8.4",
-  "grpcio-tools==1.84.0",
   "gunicorn==26.2.0",
   "hypercorn==0.18.0",
   "poethepoet==0.48.0",
@@ -60,7 +60,7 @@ dev = [
   "pytest-asyncio==1.4.0",
   "pytest-cov==7.1.0",
   "pytest-timeout==2.5.0",
-  "pyvoy==1.2.0",
+  "pyvoy==1.3.0",
   "ruff==0.16.10",
   "tombi==1.7.2",
   "ty==0.0.84",
@@ -110,7 +110,7 @@ skip-magic-trailing-comma = true
 docstring-code-format = true
 
 [tool.ruff.lint]
-typing-extensions = false
+typing-extensions = true
 select = ["ALL"]
 ignore = [
   # Rules recommended to ignore when using ruff formatting

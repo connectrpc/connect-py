@@ -12,9 +12,9 @@ from .errors import ConnectError
 if TYPE_CHECKING:
     from collections.abc import Iterator
     from types import TracebackType
+    from typing import Self
 
     from pyqwest import Response, SyncResponse
-    from typing_extensions import Self
 
     from ._codec import Codec
     from ._protocol import ConnectWireError

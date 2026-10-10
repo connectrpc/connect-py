@@ -28,17 +28,13 @@ jobs:
           - ubuntu-26.04
           - windows-2025
         python:
-          - "3.10"
-          - "3.14"
+          - "3.11"
+          - "3.15"
         coverage:
           - "nocov"
         # Test oldest and newest on all OS's, but others only on one
         # to save CI load.
         include:
-          - os: ubuntu-26.04
-            python: "3.11"
-            coverage: "nocov"
-            resolution: "lowest-direct"
           - os: ubuntu-26.04
             python: "3.12"
             coverage: "nocov"
@@ -47,14 +43,29 @@ jobs:
             python: "3.13"
             coverage: "nocov"
             resolution: "lowest-direct"
-          # Enable coverage on just one job
           - os: ubuntu-26.04
             python: "3.14"
+            coverage: "nocov"
+            resolution: "lowest-direct"
+          - os: ubuntu-26.04
+            python: "3.14t"
+            coverage: "nocov"
+            resolution: "lowest-direct"
+          # Enable coverage on just one job
+          - os: ubuntu-26.04
+            python: "3.15"
             coverage: "cov"
+            resolution: "lowest-direct"
+          - os: ubuntu-26.04
+            python: "3.15t"
+            coverage: "nocov"
             resolution: "lowest-direct"
     env:
       # Shared env variables for all the tests
       UV_RESOLUTION: "${{ matrix.resolution }}"
+      # brotli is actually threadsafe but doesn't declare it, so we force GIL off.
+      # We want to run the tests with GIL off either way so there isn't really any issue with it.
+      PYTHON_GIL: ${{ endsWith(matrix.python, 't') && '0' || '' }}
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

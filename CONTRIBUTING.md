@@ -22,7 +22,6 @@ $ git commit -s -m "your commit message"
 
 ### Prerequisites
 
-- Python 3.10 or later
 - [uv](https://docs.astral.sh/uv/) for dependency management
 
 ### Installation

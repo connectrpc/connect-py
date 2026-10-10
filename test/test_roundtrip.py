@@ -3,7 +3,6 @@ from __future__ import annotations
 import asyncio
 import random
 import struct
-import sys
 from typing import TYPE_CHECKING
 
 import pytest
@@ -313,10 +312,9 @@ async def test_response_stream_deadline_during_consumer_work_async() -> None:
 
     assert [h.color for h in hats] == ["green"]
     assert exc_info.value.code == Code.DEADLINE_EXCEEDED
-    if sys.version_info >= (3, 11):
-        task = asyncio.current_task()
-        assert task is not None
-        assert task.cancelling() == 0
+    task = asyncio.current_task()
+    assert task is not None
+    assert task.cancelling() == 0
 
 
 def _payload(compressible: bool) -> str:

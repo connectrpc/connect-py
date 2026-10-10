@@ -307,7 +307,7 @@ class MetadataInterceptorsRun:
         for interceptor, token in reversed(self._started):
             try:
                 await interceptor.on_end(token, self._ctx, error)
-            except Exception as e:  # noqa: BLE001, PERF203 # invoking user callback
+            except Exception as e:  # noqa: BLE001 # invoking user callback
                 error = e
         return error
 

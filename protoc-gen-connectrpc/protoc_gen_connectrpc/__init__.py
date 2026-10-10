@@ -5,7 +5,7 @@ from __future__ import annotations
 import importlib.metadata
 import re
 from dataclasses import dataclass, field
-from enum import Enum
+from enum import StrEnum
 from typing import TYPE_CHECKING
 
 from protobuf.plugin import (
@@ -87,7 +87,7 @@ _KEYWORDS = frozenset(
 )
 
 
-class _ProtobufOption(str, Enum):
+class _ProtobufOption(StrEnum):
     """Whether to generate code for google.protobuf or protobuf-py."""
 
     GOOGLE = "google"
@@ -97,7 +97,7 @@ class _ProtobufOption(str, Enum):
     """Generates code for protobuf-py."""
 
 
-class _IOOption(str, Enum):
+class _IOOption(StrEnum):
     """Whether to generate synchronous or asynchronous code."""
 
     SYNC = "sync"
