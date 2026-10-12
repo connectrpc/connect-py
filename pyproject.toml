@@ -61,9 +61,9 @@ dev = [
   "pytest-cov==7.1.0",
   "pytest-timeout==2.5.0",
   "pyvoy==1.3.0",
-  "ruff==0.16.10",
-  "tombi==1.7.2",
-  "ty==0.0.84",
+  "ruff==0.17.0",
+  "tombi==1.8.2",
+  "ty==0.0.86",
   "types-grpcio==1.84.0.20260928",
   "types-protobuf==7.35.1.20260906",
   "uvicorn==0.54.0",
@@ -84,10 +84,10 @@ dev = [
   "protoc-gen-py==0.6.0",
 ]
 
-docs = ["mkdocstrings-python==2.0.9", "zensical==0.0.67"]
+docs = ["mkdocstrings-python==2.0.9", "zensical==0.0.69"]
 
 [build-system]
-requires = ["uv_build>=0.12.0,<0.13.0"]
+requires = ["uv_build>=0.13.0,<0.14.0"]
 build-backend = "uv_build"
 
 [tool.pytest]
