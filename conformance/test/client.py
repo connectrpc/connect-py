@@ -62,7 +62,7 @@ from connectrpc.protocol import ProtocolType
 from connectrpc.request import Headers
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncIterator, Iterator
+    from collections.abc import AsyncGenerator, AsyncIterator, Iterator
 
     from protobuf.wkt import Any
 
@@ -152,7 +152,7 @@ def pyqwest_client_kwargs(test_request: ClientCompatRequest) -> dict:
 @contextlib.asynccontextmanager
 async def client_sync(
     test_request: ClientCompatRequest,
-) -> AsyncIterator[ConformanceServiceClientSync]:
+) -> AsyncGenerator[ConformanceServiceClientSync]:
     read_max_bytes = None
     if test_request.message_receive_limit:
         read_max_bytes = test_request.message_receive_limit
@@ -198,7 +198,7 @@ async def client_sync(
 @contextlib.asynccontextmanager
 async def client_async(
     test_request: ClientCompatRequest,
-) -> AsyncIterator[ConformanceServiceClient]:
+) -> AsyncGenerator[ConformanceServiceClient]:
     read_max_bytes = None
     if test_request.message_receive_limit:
         read_max_bytes = test_request.message_receive_limit
