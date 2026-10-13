@@ -52,6 +52,7 @@ help = "Generate all files"
 sequence = [
   "generate-conformance",
   "generate-example",
+  "generate-grpchealth",
   "generate-grpcreflect",
   "generate-status",
   "generate-test",
@@ -67,6 +68,11 @@ cwd = "conformance"
 help = "Generate example files"
 cmd = "buf generate"
 cwd = "example"
+
+[tasks.generate-grpchealth]
+help = "Generate gRPC health files"
+cmd = "buf generate"
+cwd = "connectrpc-grpchealth"
 
 [tasks.generate-grpcreflect]
 help = "Generate gRPC reflection files"
@@ -100,6 +106,7 @@ help = "Apply type checking to Python files"
 # https://docs.astral.sh/ty/reference/typing-faq/#does-ty-support-monorepos
 # https://github.com/astral-sh/ty/issues/819
 sequence = [
+  { cmd = "ty check --project connectrpc-grpchealth" },
   { cmd = "ty check --project connectrpc-grpcreflect" },
   { cmd = "ty check --project connectrpc-otel" },
   { cmd = "ty check --project example" },
@@ -114,6 +121,11 @@ cmd = "pytest"
 help = "Run conformance tests. These are very slow"
 cmd = "pytest"
 cwd = "conformance"
+
+[tasks.test-grpchealth]
+help = "Run connectrpc-grpchealth tests"
+cmd = "pytest"
+cwd = "connectrpc-grpchealth"
 
 [tasks.test-grpcreflect]
 help = "Run connectrpc-grpcreflect tests"

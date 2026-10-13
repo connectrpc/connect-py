@@ -11,7 +11,7 @@ This document outlines how to create a release of Connect.
 
 Note the new version X.Y.Z in the updated files.
 
-If `connectrpc-otel` or `connectrpc-grpcreflect` have changes to release too, bump them on the same branch (see [below](#releasing-connectrpc-otel-and-connectrpc-grpcreflect)) and title the PR "Prepare for vX.Y.Z" all the same ([Example PR: #406](https://github.com/connectrpc/connect-py/pull/406)).
+If `connectrpc-otel`, `connectrpc-grpcreflect`, or `connectrpc-grpchealth` have changes to release too, bump them on the same branch (see [below](#releasing-connectrpc-otel-connectrpc-grpcreflect-and-connectrpc-grpchealth)) and title the PR "Prepare for vX.Y.Z" all the same ([Example PR: #406](https://github.com/connectrpc/connect-py/pull/406)).
 
 3. Open a PR titled "Prepare for vX.Y.Z" ([Example PR: #60](https://github.com/connectrpc/connect-py/pull/60)) and assign the `connectrpc/python` group as reviewers. Once it's approved by at
    least one other maintainer and CI passes, merge it.
@@ -32,12 +32,12 @@ If `connectrpc-otel` or `connectrpc-grpcreflect` have changes to release too, bu
 
 6. Publish the release.
 
-## Releasing `connectrpc-otel` and `connectrpc-grpcreflect`
+## Releasing `connectrpc-otel`, `connectrpc-grpcreflect`, and `connectrpc-grpchealth`
 
 These packages are versioned and released independently of `connectrpc`, either on their own or alongside a `connectrpc` release. Follow the steps above, with these differences:
 
-- Bump the version with `uv version --package connectrpc-otel --bump <patch|minor>` (or `--package connectrpc-grpcreflect`) instead of `poe bump`.
+- Bump the version with `uv version --package connectrpc-otel --bump <patch|minor>` (or `--package connectrpc-grpcreflect`, `--package connectrpc-grpchealth`) instead of `poe bump`.
 - When releasing on its own, title the PR "Prepare for connectrpc-otel vX.Y.Z" ([Example PR: #277](https://github.com/connectrpc/connect-py/pull/277)). When releasing alongside `connectrpc`, the shared "Prepare for vX.Y.Z" PR covers it.
 - Create a separate GitHub release for each package, after the `connectrpc` release when releasing alongside it.
-- Tag the release `connectrpc-otel/vX.Y.Z` (or `connectrpc-grpcreflect/vX.Y.Z`) and title it "otel vX.Y.Z" (or "grpcreflect vX.Y.Z"). The tag prefix triggers that package's release workflow.
+- Tag the release `connectrpc-otel/vX.Y.Z` (or `connectrpc-grpcreflect/vX.Y.Z`, `connectrpc-grpchealth/vX.Y.Z`) and title it "otel vX.Y.Z" (or "grpcreflect vX.Y.Z", "grpchealth vX.Y.Z"). The tag prefix triggers that package's release workflow.
 - When generating release notes, set the package's previous tag as the "Previous tag", and leave "set as latest release" unchecked so the `connectrpc` release stays latest.

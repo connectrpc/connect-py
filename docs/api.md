@@ -35,4 +35,6 @@
             - ServerReflectionAlphaServiceSync
             - ServerReflectionAlphaWSGIApplication
 
+::: connectrpc_grpchealth
+
 ::: connectrpc_otel

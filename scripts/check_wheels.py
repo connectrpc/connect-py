@@ -31,6 +31,11 @@ EXTRA = {
         "sortedcontainers>=2.1",
         "idna>=2",
     ],
+    "connectrpc_grpchealth": [
+        # trio's unbounded floors, as for connectrpc.
+        "sortedcontainers>=2.1",
+        "idna>=2",
+    ],
     "connectrpc_otel": [
         # The tests need this repository's connectrpc.
         "dist/connectrpc-*.whl",

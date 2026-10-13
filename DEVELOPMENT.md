@@ -38,6 +38,9 @@ uv run poe test
 # Run connectrpc-grpcreflect tests (not part of `check`)
 uv run poe test-grpcreflect
 
+# Run connectrpc-grpchealth tests (not part of `check`)
+uv run poe test-grpchealth
+
 # Run conformance tests (not part of `check`)
 uv run poe test-conformance
 ```
