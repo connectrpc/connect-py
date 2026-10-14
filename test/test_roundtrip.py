@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import random
 import struct
 from typing import TYPE_CHECKING
@@ -604,7 +605,83 @@ async def test_server_stream_client_disconnect() -> None:
             if response_count >= 3:
                 disconnect_trigger.set()
 
-    scope: HTTPScope = {
+    scope = _make_similar_hats_scope()
+
+    await asyncio.wait_for(app(scope, receive, send), timeout=5.0)
+
+    assert generator_closed.is_set(), (
+        "generator should be closed after client disconnect"
+    )
+
+
+@pytest.mark.asyncio
+async def test_server_stream_client_disconnect_while_blocked() -> None:
+    """A handler blocked between messages is cancelled when the client disconnects."""
+    events: list[str] = []
+
+    class BlockedHaberdasher(Haberdasher):
+        async def make_similar_hats(self, request, _ctx):
+            try:
+                yield Hat(size=request.inches)
+                await asyncio.Event().wait()
+            finally:
+                events.append("handler closed")
+
+    class WrappingInterceptor:
+        async def intercept_server_stream(self, call_next, request, ctx):
+            try:
+                async for response in call_next(request, ctx):
+                    yield response
+            finally:
+                events.append("interceptor closed")
+
+    class Recorder:
+        async def on_start(self, ctx):
+            pass
+
+        async def on_end(self, _token, _ctx, error):
+            code = error.code.value if isinstance(error, ConnectError) else error
+            events.append(f"on_end {code}")
+
+    app = HaberdasherASGIApplication(
+        BlockedHaberdasher(), interceptors=[Recorder(), WrappingInterceptor()]
+    )
+
+    request_bytes = Size(inches=10).to_binary()
+    request_body = struct.pack(">BI", 0, len(request_bytes)) + request_bytes
+
+    first_message_sent = asyncio.Event()
+    sent_request = False
+    sent: list[bytes] = []
+
+    async def receive() -> HTTPRequestEvent | HTTPDisconnectEvent:
+        nonlocal sent_request
+        if not sent_request:
+            sent_request = True
+            return {"type": "http.request", "body": request_body, "more_body": False}
+        await first_message_sent.wait()
+        return {"type": "http.disconnect"}
+
+    async def send(message):
+        if message["type"] == "http.response.body":
+            sent.append(message["body"])
+            first_message_sent.set()
+
+    scope = _make_similar_hats_scope()
+
+    await asyncio.wait_for(app(scope, receive, send), timeout=1.0)
+
+    assert events == ["handler closed", "interceptor closed", "on_end canceled"]
+    assert len(sent) == 2
+    end = sent[-1]
+    assert end[0] & 0b10, "last body is the end-of-stream message"
+    assert json.loads(end[5:]) == {
+        "error": {"code": "canceled", "message": "Client disconnected"}
+    }
+
+
+def _make_similar_hats_scope() -> HTTPScope:
+    return {
         "type": "http",
         "asgi": {"spec_version": "2.0", "version": "3.0"},
         "http_version": "1.1",
@@ -619,11 +696,3 @@ async def test_server_stream_client_disconnect() -> None:
         "server": None,
         "extensions": None,
     }
-
-    # Without the fix the app hangs forever (generator never stopped), causing a
-    # TimeoutError here.  With the fix it terminates promptly after the disconnect.
-    await asyncio.wait_for(app(scope, receive, send), timeout=5.0)
-
-    assert generator_closed.is_set(), (
-        "generator should be closed after client disconnect"
-    )

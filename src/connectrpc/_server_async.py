@@ -5,7 +5,7 @@ import contextlib
 import functools
 import inspect
 from abc import ABC, abstractmethod
-from asyncio import CancelledError, Event, create_task, sleep
+from asyncio import CancelledError, create_task, get_running_loop, sleep, timeout
 from dataclasses import replace
 from http import HTTPStatus
 from typing import TYPE_CHECKING, Generic, TypeVar, cast
@@ -423,8 +423,9 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
                 self._read_max_bytes,
             )
 
-            disconnect_detected: Event | None = None
-            monitor_task = None
+            watch: contextlib.AbstractAsyncContextManager[None] = (
+                contextlib.nullcontext()
+            )
 
             match endpoint:
                 case EndpointUnary():
@@ -446,42 +447,32 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
 
                     # The request has been fully consumed; monitor receive() for a
                     # client disconnect so we can stop streaming promptly.
-                    disconnect_detected = Event()
-
-                    async def _watch_for_disconnect() -> None:
-                        while True:
-                            msg = await receive()
-                            if msg["type"] == "http.disconnect":
-                                disconnect_detected.set()
-                                return
-
-                    monitor_task = create_task(_watch_for_disconnect())
+                    watch = _cancel_on_disconnect(receive)
                 case EndpointBidiStream():
                     response_stream = endpoint.function(request_stream, ctx)
 
             try:
-                async for message in response_stream:
-                    if disconnect_detected is not None and disconnect_detected.is_set():
-                        raise ConnectError(Code.CANCELED, "Client disconnected")
-                    # Don't send headers until the first message to allow logic a chance to add
-                    # response headers.
-                    if not sent_headers:
-                        await _send_stream_response_headers(
-                            send, protocol, codec, resp_compression.name(), ctx
-                        )
-                        sent_headers = True
+                # Exit the watch before aclose() below, so an error from the
+                # generator's cleanup can't leak the watch task.
+                async with watch:
+                    async for message in response_stream:
+                        # Don't send headers until the first message to allow logic a
+                        # chance to add response headers.
+                        if not sent_headers:
+                            await _send_stream_response_headers(
+                                send, protocol, codec, resp_compression.name(), ctx
+                            )
+                            sent_headers = True
 
-                    body = writer.write(message)
-                    await send(
-                        {"type": "http.response.body", "body": body, "more_body": True}
-                    )
+                        body = writer.write(message)
+                        await send(
+                            {
+                                "type": "http.response.body",
+                                "body": body,
+                                "more_body": True,
+                            }
+                        )
             finally:
-                # Cancel the monitor first so a throwing generator finally-block
-                # doesn't leak the task.
-                if monitor_task is not None:
-                    monitor_task.cancel()
-                    with contextlib.suppress(CancelledError):
-                        await monitor_task
                 # Explicitly close the stream so that any generator finally-blocks
                 # run promptly (Python defers async-generator cleanup to GC otherwise).
                 aclose = getattr(response_stream, "aclose", None)
@@ -588,6 +579,36 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
                 for path, endpoint in resolved_endpoints.items()
             }
         return resolved_endpoints
+
+
+@contextlib.asynccontextmanager
+async def _cancel_on_disconnect(receive: ASGIReceiveCallable) -> AsyncGenerator[None]:
+    """Cancel the enclosed block with CANCELED when the client disconnects.
+
+    This reads receive(), so only use it once the request body has been read.
+    """
+    scope = timeout(None)
+
+    async def watch() -> None:
+        while True:
+            msg = await receive()
+            if msg["type"] == "http.disconnect":
+                scope.reschedule(get_running_loop().time())
+                return
+
+    try:
+        async with scope:
+            task = create_task(watch())
+            try:
+                yield
+            finally:
+                task.cancel()
+                with contextlib.suppress(CancelledError):
+                    await task
+    except TimeoutError as e:
+        if scope.expired():
+            raise ConnectError(Code.CANCELED, "Client disconnected") from e
+        raise
 
 
 async def _send_stream_response_headers(
