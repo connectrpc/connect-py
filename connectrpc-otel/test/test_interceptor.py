@@ -40,7 +40,11 @@ if TYPE_CHECKING:
 
 
 class ElizaServiceTest(ElizaService):
-    async def say(self, request: SayRequest, _ctx: RequestContext) -> SayResponse:
+    def __init__(self, traceparents: list[str | None]) -> None:
+        self._traceparents = traceparents
+
+    async def say(self, request: SayRequest, ctx: RequestContext) -> SayResponse:
+        self._traceparents.append(ctx.request_headers.get("traceparent"))
         if request.sentence == "connect error":
             raise ConnectError(Code.FAILED_PRECONDITION, "connect error")
         if request.sentence == "unknown error":
@@ -50,7 +54,11 @@ class ElizaServiceTest(ElizaService):
 
 
 class ElizaServiceTestSync(ElizaServiceSync):
-    def say(self, request: SayRequest, _ctx: RequestContext) -> SayResponse:
+    def __init__(self, traceparents: list[str | None]) -> None:
+        self._traceparents = traceparents
+
+    def say(self, request: SayRequest, ctx: RequestContext) -> SayResponse:
+        self._traceparents.append(ctx.request_headers.get("traceparent"))
         if request.sentence == "connect error":
             raise ConnectError(Code.FAILED_PRECONDITION, "connect error")
         if request.sentence == "unknown error":
@@ -60,11 +68,19 @@ class ElizaServiceTestSync(ElizaServiceSync):
 
 
 @pytest.fixture
+def traceparents() -> list[str | None]:
+    """The traceparent headers received by the test services."""
+    return []
+
+
+@pytest.fixture
 def app_async(
-    tracer_provider: TracerProvider, meter_provider: MeterProvider
+    tracer_provider: TracerProvider,
+    meter_provider: MeterProvider,
+    traceparents: list[str | None],
 ) -> ElizaServiceASGIApplication:
     return ElizaServiceASGIApplication(
-        ElizaServiceTest(),
+        ElizaServiceTest(traceparents),
         interceptors=[
             OpenTelemetryInterceptor(
                 tracer_provider=tracer_provider, meter_provider=meter_provider
@@ -95,10 +111,12 @@ def client_async(
 
 @pytest.fixture
 def app_sync(
-    tracer_provider: TracerProvider, meter_provider: MeterProvider
+    tracer_provider: TracerProvider,
+    meter_provider: MeterProvider,
+    traceparents: list[str | None],
 ) -> ElizaServiceWSGIApplication:
     return ElizaServiceWSGIApplication(
-        ElizaServiceTestSync(),
+        ElizaServiceTestSync(traceparents),
         interceptors=[
             OpenTelemetryInterceptor(
                 tracer_provider=tracer_provider, meter_provider=meter_provider
@@ -177,6 +195,7 @@ async def test_basic(
     client: ElizaServiceClient | ElizaServiceClientSync,
     span_exporter: InMemorySpanExporter,
     metric_reader: InMemoryMetricReader,
+    traceparents: list[str | None],
 ) -> None:
     if isinstance(client, ElizaServiceClient):
         await client.say(SayRequest(sentence="Hi"))
@@ -195,6 +214,10 @@ async def test_basic(
     assert client_trace_context is not None
     assert client_trace_context.trace_id == server_trace_context.trace_id
     assert server_parent_context.span_id == client_trace_context.span_id
+    # The request carries the client span, not the span that was current when
+    # the client was called.
+    client_span_id = f"{client_trace_context.span_id:016x}"
+    assert [t and t.split("-")[2] for t in traceparents] == [client_span_id]
 
     for span in spans:
         assert span.status.is_unset
