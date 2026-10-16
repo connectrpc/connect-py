@@ -47,11 +47,13 @@ def test_server_sync(server: str, cov: Coverage) -> None:
     args = maybe_patch_args_with_debug(
         [sys.executable, _server_py_path, "--mode", "sync", "--server", server]
     )
-    opts = []
+    # WSGI applications can't enforce timeouts while a handler is blocked, and
+    # the conformance handlers block for longer than the timeout.
+    opts = ["--skip", "Timeouts/**"]
     match server:
         case "gunicorn":
             # gunicorn doesn't support HTTP/2 or 3
-            opts = ["--skip", "**/HTTPVersion:2/**", "--skip", "**/HTTPVersion:3/**"]
+            opts += ["--skip", "**/HTTPVersion:2/**", "--skip", "**/HTTPVersion:3/**"]
 
     result = subprocess.run(
         [
@@ -98,6 +100,11 @@ def test_server_async(server: str, cov: Coverage) -> None:
             "server",
             *opts,
             *_known_flaky,
+            "--known-flaky",
+            # There is a race between our server and the conformance runner itself completing a timeout
+            # that causes errors.
+            # TODO: Remove after https://github.com/connectrpc/conformance/pull/1155
+            "Timeouts/**",
             "--",
             *args,
         ],
