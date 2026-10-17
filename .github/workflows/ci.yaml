@@ -118,6 +118,34 @@ jobs:
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
 
+  dependency-floors:
+    name: dependency floors (${{ matrix.directory }})
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        directory:
+          - .
+          - connectrpc-grpcreflect
+          - connectrpc-otel
+          - protoc-gen-connectrpc
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          # The oldest supported Python, which allows the oldest dependencies.
+          python-version: "3.11"
+
+      - run: uv run --no-project python scripts/check_dependency_floors.py "$DIRECTORY"
+        env:
+          DIRECTORY: ${{ matrix.directory }}
+
   wheels:
     runs-on: ubuntu-26.04
     needs: ci
