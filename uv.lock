@@ -174,7 +174,7 @@ docs = [
 
 [package.metadata]
 requires-dist = [
-    { name = "protobuf-py", specifier = ">=0.3.0" },
+    { name = "protobuf-py", specifier = ">=0.6.0" },
     { name = "pyqwest", specifier = ">=0.12.0" },
     { name = "typing-extensions", specifier = ">=4.16.0" },
 ]
