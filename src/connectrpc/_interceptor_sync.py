@@ -290,7 +290,7 @@ class MetadataInterceptorsRunSync:
         for interceptor, token in reversed(self._started):
             try:
                 interceptor.on_end_sync(token, self._ctx, error)
-            except Exception as e:  # noqa: BLE001, PERF203 # invoking user callback
+            except Exception as e:  # noqa: BLE001 # invoking user callback
                 error = e
         return error
 

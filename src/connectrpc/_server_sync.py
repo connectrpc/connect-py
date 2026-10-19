@@ -49,14 +49,9 @@ from .errors import ConnectError
 from .request import Headers, RequestContext
 
 if TYPE_CHECKING:
-    import sys
     from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
     from io import BytesIO
-
-    if sys.version_info >= (3, 11):
-        from wsgiref.types import ErrorStream, StartResponse, WSGIEnvironment
-    else:
-        from _typeshed.wsgi import ErrorStream, StartResponse, WSGIEnvironment
+    from wsgiref.types import ErrorStream, StartResponse, WSGIEnvironment
 
     from .compression import Compression
 else:

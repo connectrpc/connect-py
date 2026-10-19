@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import contextlib
 from contextvars import ContextVar, Token
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Self
 
 from .request import Headers
 
@@ -79,7 +79,7 @@ class ResponseMetadata:
     _trailers: Headers | None = None
     _token: Token[ResponseMetadata] | None = None
 
-    def __enter__(self) -> ResponseMetadata:
+    def __enter__(self) -> Self:
         self._token = _current_response.set(self)
         return self
 

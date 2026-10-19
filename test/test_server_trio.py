@@ -53,6 +53,7 @@ END_STREAM = 2
 CLEANUP_TIMEOUT = 0.2
 
 CANCELLED = {"code": "canceled", "message": "Request was cancelled"}
+TIMED_OUT = {"code": "deadline_exceeded", "message": "Request timed out"}
 
 
 class TrioHaberdasher(Haberdasher):
@@ -262,17 +263,21 @@ def sizes() -> Iterator[Size]:
         yield Size(inches=inches)
 
 
-def call(client: HaberdasherClientSync, method: str) -> Any:
+def call(
+    client: HaberdasherClientSync, method: str, headers: dict[str, str] | None = None
+) -> Any:
     """Call the method with one request message, consuming any response stream."""
     match method:
         case "MakeHat":
-            return client.make_hat(Size(inches=10))
+            return client.make_hat(Size(inches=10), headers=headers)
         case "MakeFlexibleHat":
-            return client.make_flexible_hat(iter([Size(inches=10)]))
+            return client.make_flexible_hat(iter([Size(inches=10)]), headers=headers)
         case "MakeSimilarHats":
-            return list(client.make_similar_hats(Size(inches=10)))
+            return list(client.make_similar_hats(Size(inches=10), headers=headers))
         case "MakeVariousHats":
-            return list(client.make_various_hats(iter([Size(inches=10)])))
+            return list(
+                client.make_various_hats(iter([Size(inches=10)]), headers=headers)
+            )
         case _:
             raise ValueError(method)
 
@@ -548,6 +553,34 @@ def test_cancelled_in_handler(
     ]
     assert wrapper.types() == ["start", "body"]
     assert wrapper.error() == CANCELLED
+
+
+@pytest.mark.parametrize(
+    "method", ["MakeHat", "MakeFlexibleHat", "MakeSimilarHats", "MakeVariousHats"]
+)
+def test_timeout_in_handler(
+    client: HaberdasherClientSync, wrapper: Wrapper, method: str
+) -> None:
+    events: list[str] = []
+    wrapper.app = HaberdasherASGIApplication(
+        BlockedHats(threading.Event(), events, in_nursery=True),
+        interceptors=[Recorder(events)],
+    )
+
+    # The header alone, so that only the server enforces the timeout.
+    with pytest.raises(ConnectError) as exc_info:
+        call(client, method, headers={"connect-timeout-ms": "100"})
+    assert wrapper.done.wait(10)
+
+    assert exc_info.value.code == Code.DEADLINE_EXCEEDED
+    assert wrapper.raised is None
+    assert events == [
+        "handler cleaned up",
+        "on_end started deadline_exceeded",
+        "on_end finished",
+    ]
+    assert wrapper.types() == ["start", "body"]
+    assert wrapper.error() == TIMED_OUT
 
 
 def leaves(error: BaseException) -> list[BaseException]:

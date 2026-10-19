@@ -28,20 +28,15 @@ from .errors import ConnectError
 from .protocol import ProtocolType
 
 if TYPE_CHECKING:
-    import sys
     from collections.abc import Iterable, Iterator, Mapping
     from types import TracebackType
+    from typing import Self
 
     from ._envelope import EnvelopeReader
     from .codec import Codec
     from .compression import Compression
     from .method import MethodInfo
     from .request import Headers, RequestContext
-
-    if sys.version_info >= (3, 11):
-        from typing import Self
-    else:
-        from typing_extensions import Self
 else:
     Self = "Self"
 

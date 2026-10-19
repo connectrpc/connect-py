@@ -7,13 +7,15 @@ asyncio never import trio.
 from __future__ import annotations
 
 import contextlib
-from typing import TYPE_CHECKING
+import math
+from typing import TYPE_CHECKING, Self
 
 import trio
 import trio.lowlevel
 
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator, Callable
+    from types import TracebackType
 
     from asgiref.typing import ASGIReceiveCallable
 
@@ -30,6 +32,12 @@ class TrioLoop:
 
     async def checkpoint(self) -> None:
         await trio.lowlevel.checkpoint()
+
+    def time(self) -> float:
+        return trio.current_time()
+
+    def timeout_at(self, deadline: float | None) -> TrioTimeout:
+        return TrioTimeout(deadline)
 
     def is_cancellation(self, error: BaseException) -> bool:
         if isinstance(error, trio.Cancelled):
@@ -88,3 +96,35 @@ class TrioLoop:
             raise
         if error is not None:
             raise error
+
+
+class TrioTimeout:
+    """A cancel scope with a deadline that raises TimeoutError, like asyncio.Timeout.
+
+    The handler then treats a deadline the same way under both loops.
+    """
+
+    def __init__(self, deadline: float | None) -> None:
+        self._scope = trio.CancelScope(
+            deadline=math.inf if deadline is None else deadline
+        )
+
+    def expired(self) -> bool:
+        """Whether the deadline passed while the body ran."""
+        return self._scope.cancelled_caught
+
+    async def __aenter__(self) -> Self:
+        self._scope.__enter__()
+        return self
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
+    ) -> bool:
+        swallowed = self._scope.__exit__(exc_type, exc_val, exc_tb)
+        if exc_type is not None and swallowed:
+            # The scope swallowed its own cancellation, so the body is done.
+            raise TimeoutError from exc_val
+        return False

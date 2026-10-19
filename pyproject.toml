@@ -3,7 +3,7 @@ name = "connectrpc"
 version = "0.12.1"
 description = "Server and client runtime library for Connect RPC"
 readme = "README.md"
-requires-python = ">= 3.10"
+requires-python = ">= 3.11"
 license = "Apache-2.0"
 license-files = ["LICENSE"]
 maintainers = [
@@ -19,19 +19,20 @@ classifiers = [
   "Operating System :: OS Independent",
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3 :: Only",
-  "Programming Language :: Python :: 3.10",
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
   "Programming Language :: Python :: 3.13",
   "Programming Language :: Python :: 3.14",
+  "Programming Language :: Python :: 3.15",
+  "Programming Language :: Python :: Free Threading",
   "Topic :: Internet :: WWW/HTTP",
   "Topic :: Software Development :: Libraries :: Python Modules",
   "Typing :: Typed",
 ]
 dependencies = [
   "protobuf-py>=0.3.0",
-  "pyqwest>=0.5.1",
-  "typing_extensions>=4.13.0",
+  "pyqwest>=0.12.0",
+  "typing_extensions>=4.16.0",
 ]
 
 [project.urls]
@@ -52,7 +53,6 @@ dev = [
   "brotli==1.2.0",
   "buf-bin==1.73.0",
   "granian==2.8.4",
-  "grpcio-tools==1.84.0",
   "gunicorn==26.2.0",
   "hypercorn==0.18.0",
   "poethepoet==0.48.0",
@@ -60,11 +60,11 @@ dev = [
   "pytest-asyncio==1.4.0",
   "pytest-cov==7.1.0",
   "pytest-timeout==2.5.0",
-  "pyvoy==1.2.0",
-  "ruff==0.16.10",
-  "tombi==1.7.2",
+  "pyvoy==1.3.0",
+  "ruff==0.17.0",
+  "tombi==1.8.1",
   "trio==0.34.0",
-  "ty==0.0.84",
+  "ty==0.0.86",
   "types-grpcio==1.84.0.20260928",
   "types-protobuf==7.35.1.20260906",
   "uvicorn==0.54.0",
@@ -77,18 +77,18 @@ dev = [
   # If the below issue is resolved, we can move them back to subprojects and configure
   # our default sync setting as --all-packages.
   # https://github.com/astral-sh/uv/issues/5737
-  "opentelemetry-instrumentation-asgi==0.66b0",
-  "opentelemetry-instrumentation-wsgi==0.66b0",
-  "opentelemetry-sdk==1.45.0",
+  "opentelemetry-instrumentation-asgi==0.66b1",
+  "opentelemetry-instrumentation-wsgi==0.66b1",
+  "opentelemetry-sdk==1.45.1",
   "protobuf>=5.28",
   "protoc-gen-grpc-py==0.4.0",
   "protoc-gen-py==0.6.0",
 ]
 
-docs = ["mkdocstrings-python==2.0.9", "zensical==0.0.67"]
+docs = ["mkdocstrings-python==2.0.9", "zensical==0.0.69"]
 
 [build-system]
-requires = ["uv_build>=0.12.0,<0.13.0"]
+requires = ["uv_build>=0.13.0,<0.14.0"]
 build-backend = "uv_build"
 
 [tool.pytest]
@@ -111,7 +111,7 @@ skip-magic-trailing-comma = true
 docstring-code-format = true
 
 [tool.ruff.lint]
-typing-extensions = false
+typing-extensions = true
 select = ["ALL"]
 ignore = [
   # Rules recommended to ignore when using ruff formatting
