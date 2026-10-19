@@ -44,10 +44,8 @@ class TrioLoop:
             return True
         # A cancelled nursery raises its cancellation in an exception group,
         # beside any error its tasks raised while they were being cancelled.
-        # TODO: Use ExceptionGroup when updating Python floor to 3.11.
-        exceptions = getattr(error, "exceptions", None)
-        return isinstance(exceptions, tuple) and any(
-            self.is_cancellation(e) for e in exceptions
+        return isinstance(error, BaseExceptionGroup) and any(
+            self.is_cancellation(e) for e in error.exceptions
         )
 
     def async_cleanup(self) -> trio.CancelScope:
