@@ -586,8 +586,9 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
             finally:
                 if request_stream is not None:
                     await request_stream.aclose()
-            if error and not isinstance(error, ConnectError):
-                raise error
+        # Outside the finally, so that it does not replace a cancellation in flight.
+        if error and not isinstance(error, ConnectError):
+            raise error
 
     async def _handle_error(
         self,

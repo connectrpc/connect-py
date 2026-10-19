@@ -633,11 +633,18 @@ async def test_server_stream_client_disconnect() -> None:
 
 
 @pytest.mark.parametrize("unary", [False, True], ids=["stream", "unary"])
+@pytest.mark.parametrize(
+    "on_end_fails", [False, True], ids=["on_end-ok", "on_end-fails"]
+)
 @pytest.mark.asyncio
-async def test_server_cancelled(unary: bool) -> None:
-    """A cancelled request is answered with CANCELED, then the cancellation propagates."""
+async def test_server_cancelled(unary: bool, on_end_fails: bool) -> None:
+    """A cancelled request is answered, then the cancellation propagates.
+
+    The answer is CANCELED unless an on_end hook fails.
+    """
     events: list[str] = []
     blocked = asyncio.Event()
+    on_end_error = RuntimeError("on_end failed")
 
     class BlockedHaberdasher(Haberdasher):
         async def make_hat(self, request, _ctx):
@@ -665,6 +672,8 @@ async def test_server_cancelled(unary: bool) -> None:
             await asyncio.sleep(0)
             code = error.code.value if isinstance(error, ConnectError) else error
             events.append(f"on_end {code}")
+            if on_end_fails:
+                raise on_end_error
 
     app = HaberdasherASGIApplication(BlockedHaberdasher(), interceptors=[Recorder()])
     request_bytes = Size(inches=10).to_binary()
@@ -714,13 +723,17 @@ async def test_server_cancelled(unary: bool) -> None:
         await task
 
     assert events == ["handler cleaned up", "on_end canceled"]
-    error = {"code": "canceled", "message": "Request was cancelled"}
+    if on_end_fails:
+        # The hook's error replaces CANCELED in the response.
+        status, error = 500, {"code": "unknown", "message": "on_end failed"}
+    else:
+        status, error = 499, {"code": "canceled", "message": "Request was cancelled"}
     if unary:
         assert [m["type"] for m in sent] == [
             "http.response.start",
             "http.response.body",
         ]
-        assert sent[0]["status"] == 499
+        assert sent[0]["status"] == status
         assert json.loads(sent[1]["body"]) == error
     else:
         assert [m["type"] for m in sent] == ["http.response.start"] + [

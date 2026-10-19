@@ -315,11 +315,14 @@ def test_bidi_stream(client: HaberdasherClientSync) -> None:
 
 
 class Recorder:
-    """A metadata interceptor whose on_end awaits before it finishes."""
+    """A metadata interceptor whose on_end awaits before it finishes or fails."""
 
-    def __init__(self, events: list[str], seconds: float = 0) -> None:
+    def __init__(
+        self, events: list[str], seconds: float = 0, error: Exception | None = None
+    ) -> None:
         self._events = events
         self._seconds = seconds
+        self._error = error
 
     async def on_start(self, ctx: RequestContext) -> None:  # noqa: ARG002
         return None
@@ -331,6 +334,8 @@ class Recorder:
         self._events.append(f"on_end started {code}")
         await trio.sleep(self._seconds)
         self._events.append("on_end finished")
+        if self._error is not None:
+            raise self._error
 
 
 class EndlessHats(Haberdasher):
@@ -627,6 +632,41 @@ def test_cancelled_in_handler_whose_cleanup_fails(
     ]
     assert wrapper.types() == ["start", "body"]
     assert wrapper.error() == CANCELLED
+
+
+@pytest.mark.parametrize(
+    "method", ["MakeHat", "MakeFlexibleHat", "MakeSimilarHats", "MakeVariousHats"]
+)
+def test_cancelled_in_handler_whose_on_end_fails(
+    client: HaberdasherClientSync,
+    wrapper: Wrapper,
+    executor: ThreadPoolExecutor,
+    method: str,
+) -> None:
+    """The cancellation still reaches the server when an on_end hook fails."""
+    events: list[str] = []
+    blocked = threading.Event()
+    wrapper.app = HaberdasherASGIApplication(
+        BlockedHats(blocked, events, in_nursery=True),
+        interceptors=[Recorder(events, error=RuntimeError("on_end failed"))],
+    )
+
+    response = executor.submit(call, client, method)
+    assert blocked.wait(10)
+    wrapper.cancel()
+    assert wrapper.done.wait(10)
+    response.exception(10)
+
+    # The wrapper's cancel scope absorbs the cancellation; the hook's error
+    # raised in its place would escape the scope.
+    assert wrapper.raised is None
+    assert events == [
+        "handler cleaned up",
+        "on_end started canceled",
+        "on_end finished",
+    ]
+    assert wrapper.types() == ["start", "body"]
+    assert wrapper.error() == {"code": "unknown", "message": "on_end failed"}
 
 
 def test_handler_cleanup_after_cancellation_is_bounded(
