@@ -499,10 +499,11 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
                     case EndpointBidiStream():
                         response_stream = endpoint.function(request_stream, ctx)
 
-                try:
-                    # The watcher stops before the generator is closed so a throwing
-                    # generator finally-block doesn't leak the task.
-                    async with watch as disconnected:
+                # The generator is closed before the watcher stops. trio's watcher
+                # is a nursery, and a generator that was resumed inside a nursery
+                # must be closed inside it for its own cancel scopes to unwind.
+                async with watch as disconnected:
+                    try:
                         async for message in response_stream:
                             if disconnected is not None and disconnected():
                                 raise ConnectError(Code.CANCELED, "Client disconnected")
@@ -522,10 +523,10 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
                                     "more_body": True,
                                 }
                             )
-                except BaseException as e:
-                    await _close_response_stream(response_stream, loop, e)
-                    raise
-                await _close_response_stream(response_stream, loop, None)
+                    except BaseException as e:
+                        await _close_response_stream(response_stream, loop, e)
+                        raise
+                    await _close_response_stream(response_stream, loop, None)
         except TimeoutError as e:
             if timeout.expired():
                 error = ConnectError(Code.DEADLINE_EXCEEDED, "Request timed out")

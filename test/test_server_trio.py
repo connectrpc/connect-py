@@ -377,6 +377,18 @@ class EndlessHats(Haberdasher):
             raise self._cleanup_error
 
 
+def read_hats_then_disconnect(url: str) -> None:
+    # The client's own connection, so that closing it disconnects the request.
+    with (
+        SyncHTTPTransport(http_version=HTTPVersion.HTTP1) as transport,
+        HaberdasherClientSync(url, http_client=SyncClient(transport)) as client,
+    ):
+        hats = client.make_similar_hats(Size(inches=10))
+        assert [next(hats).size for _ in range(3)] == [10, 10, 10]
+        del hats
+    gc.collect()
+
+
 @pytest.mark.parametrize(
     ("cleanup_error", "end_error"),
     [
@@ -398,15 +410,7 @@ def test_disconnect_ends_server_stream(
     wrapper.app = HaberdasherASGIApplication(
         EndlessHats(events, cleanup_error), interceptors=[Recorder(events)]
     )
-    # The client's own connection, so that closing it disconnects the request.
-    with (
-        SyncHTTPTransport(http_version=HTTPVersion.HTTP1) as transport,
-        HaberdasherClientSync(url, http_client=SyncClient(transport)) as client,
-    ):
-        hats = client.make_similar_hats(Size(inches=10))
-        assert [next(hats).size for _ in range(3)] == [10, 10, 10]
-        del hats
-    gc.collect()
+    read_hats_then_disconnect(url)
 
     assert wrapper.done.wait(10)
     assert wrapper.end_error() == end_error
@@ -415,6 +419,30 @@ def test_disconnect_ends_server_stream(
         f"on_end started {end_error['code']}",
         "on_end finished",
     ]
+
+
+class ScopedHats(Haberdasher):
+    """Streams hats from inside a cancel scope of its own."""
+
+    async def make_similar_hats(
+        self, request: Size, _ctx: RequestContext[Size, Hat], /
+    ) -> AsyncIterator[Hat]:
+        with trio.move_on_after(60):
+            while True:
+                yield Hat(size=request.inches)
+                await trio.sleep(0.01)
+
+
+def test_disconnect_ends_server_stream_in_cancel_scope(
+    url: str, wrapper: Wrapper
+) -> None:
+    """A disconnect cleanly closes a handler suspended inside its own cancel scope."""
+    wrapper.app = HaberdasherASGIApplication(ScopedHats())
+    read_hats_then_disconnect(url)
+
+    assert wrapper.done.wait(10)
+    assert wrapper.raised is None
+    assert wrapper.end_error() == {"code": "canceled", "message": "Client disconnected"}
 
 
 @pytest.mark.parametrize(
