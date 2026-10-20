@@ -222,7 +222,7 @@ docs = [
 
 [package.metadata]
 requires-dist = [
-    { name = "protobuf-py", specifier = ">=0.3.0" },
+    { name = "protobuf-py", specifier = ">=0.6.0" },
     { name = "pyqwest", specifier = ">=0.12.0" },
     { name = "typing-extensions", specifier = ">=4.16.0" },
 ]
@@ -271,6 +271,7 @@ version = "0.1.0"
 source = { editable = "connectrpc-grpcreflect" }
 dependencies = [
     { name = "connectrpc" },
+    { name = "protobuf-py" },
 ]
 
 [package.dev-dependencies]
@@ -279,7 +280,10 @@ dev = [
 ]
 
 [package.metadata]
-requires-dist = [{ name = "connectrpc", editable = "." }]
+requires-dist = [
+    { name = "connectrpc", editable = "." },
+    { name = "protobuf-py", specifier = ">=0.3.0" },
+]
 
 [package.metadata.requires-dev]
 dev = [{ name = "pytest", specifier = "==9.1.1" }]

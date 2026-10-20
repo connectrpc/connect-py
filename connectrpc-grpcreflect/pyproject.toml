@@ -33,7 +33,8 @@ classifiers = [
   "Topic :: System :: Networking",
 ]
 dependencies = [
-  "connectrpc>=0.11.0",
+  "connectrpc>=0.12.0",
+  "protobuf-py>=0.3.0",
 ]
 
 [project.urls]
