@@ -44,10 +44,12 @@ class ServerReflectionService(ServerReflection):
     def __init__(self, *descs: DescFile | DescService) -> None:
         """Create a service for gRPC reflection.
 
-        The services in the passed in descriptors will be made available for reflection.
-        For [DescFile][protobuf.DescFile], this means all the services declared in that file. Note that file
-        dependencies are also automatically added and available for resolution by name,
-        but the service list will only reflect the descriptors passed in.
+        The services in the passed in descriptors will be made available for reflection,
+        along with the v1 and v1alpha reflection services. For
+        [DescFile][protobuf.DescFile], this means all the services declared in that
+        file. Note that file dependencies are also automatically added and available
+        for resolution by name, but the service list will only reflect the reflection
+        services and the descriptors passed in.
 
         Serve it with [ServerReflectionASGIApplication][connectrpc_grpcreflect.ServerReflectionASGIApplication].
 
@@ -75,10 +77,12 @@ class ServerReflectionServiceSync(ServerReflectionSync):
     def __init__(self, *descs: DescFile | DescService) -> None:
         """Create a service for gRPC reflection.
 
-        The services in the passed in descriptors will be made available for reflection.
-        For [DescFile][protobuf.DescFile], this means all the services declared in that file. Note that file
-        dependencies are also automatically added and available for resolution by name,
-        but the service list will only reflect the descriptors passed in.
+        The services in the passed in descriptors will be made available for reflection,
+        along with the v1 and v1alpha reflection services. For
+        [DescFile][protobuf.DescFile], this means all the services declared in that
+        file. Note that file dependencies are also automatically added and available
+        for resolution by name, but the service list will only reflect the reflection
+        services and the descriptors passed in.
 
         Serve it with [ServerReflectionWSGIApplication][connectrpc_grpcreflect.ServerReflectionWSGIApplication].
 
@@ -110,10 +114,12 @@ class ServerReflectionAlphaService(ServerReflectionAlpha):
     def __init__(self, *descs: DescFile | DescService) -> None:
         """Create a service for gRPC reflection.
 
-        The services in the passed in descriptors will be made available for reflection.
-        For [DescFile][protobuf.DescFile], this means all the services declared in that file. Note that file
-        dependencies are also automatically added and available for resolution by name,
-        but the service list will only reflect the descriptors passed in.
+        The services in the passed in descriptors will be made available for reflection,
+        along with the v1 and v1alpha reflection services. For
+        [DescFile][protobuf.DescFile], this means all the services declared in that
+        file. Note that file dependencies are also automatically added and available
+        for resolution by name, but the service list will only reflect the reflection
+        services and the descriptors passed in.
 
         Serve it with [ServerReflectionAlphaASGIApplication][connectrpc_grpcreflect.ServerReflectionAlphaASGIApplication].
 
@@ -150,10 +156,12 @@ class ServerReflectionAlphaServiceSync(ServerReflectionAlphaSync):
     def __init__(self, *descs: DescFile | DescService) -> None:
         """Create a service for gRPC reflection.
 
-        The services in the passed in descriptors will be made available for reflection.
-        For [DescFile][protobuf.DescFile], this means all the services declared in that file. Note that file
-        dependencies are also automatically added and available for resolution by name,
-        but the service list will only reflect the descriptors passed in.
+        The services in the passed in descriptors will be made available for reflection,
+        along with the v1 and v1alpha reflection services. For
+        [DescFile][protobuf.DescFile], this means all the services declared in that
+        file. Note that file dependencies are also automatically added and available
+        for resolution by name, but the service list will only reflect the reflection
+        services and the descriptors passed in.
 
         Serve it with [ServerReflectionAlphaWSGIApplication][connectrpc_grpcreflect.ServerReflectionAlphaWSGIApplication].
 
@@ -190,7 +198,7 @@ def _resolve_registry(
     fds: list[DescFile] = []
     seen: set[str] = set()
     service_names: set[str] = set()
-    for desc in descs:
+    for desc in (*descs, ServerReflection.desc(), ServerReflectionAlpha.desc()):
         if isinstance(desc, DescFile):
             fds.extend(_file_descriptor_with_dependencies(desc, seen))
             service_names.update(d.type_name for d in desc.services)
