@@ -26,6 +26,11 @@ _T = TypeVar("_T")
 
 class EnvelopeReader(Generic[_RES]):
     _next_message_length: int | None
+    _flags_mask = 0b01
+
+    # Invalid flags and truncated frames are bad requests on the server and
+    # internal errors on the client.
+    _protocol_error_code = Code.INVALID_ARGUMENT
 
     def __init__(
         self,
@@ -80,6 +85,10 @@ class EnvelopeReader(Generic[_RES]):
             if len(self._buffer) < 5:
                 return
 
+            if self._buffer[0] & ~self._flags_mask:
+                raise ConnectError(
+                    self._protocol_error_code, "protocol error: invalid envelope flags"
+                )
             self._next_message_length = int.from_bytes(self._buffer[1:5], "big")
             if (
                 self._read_max_bytes is not None
@@ -113,12 +122,12 @@ class EnvelopeReader(Generic[_RES]):
             return
         if self._next_message_length is not None:
             raise ConnectError(
-                Code.INVALID_ARGUMENT,
+                self._protocol_error_code,
                 f"protocol error: promised {self._next_message_length} bytes in enveloped message, got {len(self._buffer) - 5} bytes",
             )
         if self._buffer:
             raise ConnectError(
-                Code.INVALID_ARGUMENT,
+                self._protocol_error_code,
                 "protocol error: incomplete envelope: unexpected EOF",
             )
 

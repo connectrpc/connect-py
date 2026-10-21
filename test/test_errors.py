@@ -962,6 +962,18 @@ def _envelope(flags: int, payload: bytes) -> bytes:
 
 _malformed_requests = [
     pytest.param(
+        "MakeSimilarHats",
+        {"content-type": "application/connect+proto"},
+        _envelope(2, Size(inches=10).to_binary()),
+        id="response-only flag in request",
+    ),
+    pytest.param(
+        "MakeSimilarHats",
+        {"content-type": "application/connect+proto"},
+        _envelope(4, Size(inches=10).to_binary()),
+        id="reserved envelope flag",
+    ),
+    pytest.param(
         "MakeHat",
         {"content-type": "application/proto"},
         b"\xff\xff\xff",

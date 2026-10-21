@@ -311,6 +311,9 @@ class ConnectClientProtocol:
 
 
 class ConnectEnvelopeReader(EnvelopeReader[RES]):
+    _flags_mask = 0b11
+    _protocol_error_code = Code.INTERNAL
+
     def handle_end_message(
         self, prefix_byte: int, message_data: bytes | bytearray, /
     ) -> bool:

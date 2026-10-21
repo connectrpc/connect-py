@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import itertools
 from typing import TYPE_CHECKING
 
@@ -280,6 +281,52 @@ _MAKE_SIMILAR_HATS_URL = (
 _INVALID_STREAM_BODY = b"\x00" + (1).to_bytes(4, "big") + b"{"
 
 
+async def _run_connect_app(
+    app: HaberdasherASGIApplication,
+    method: str,
+    body: bytes,
+    *,
+    streaming: bool = False,
+) -> None:
+    path = f"/connectrpc.example.Haberdasher/{method}"
+    scope: HTTPScope = {
+        "type": "http",
+        "asgi": {"spec_version": "2.0", "version": "3.0"},
+        "http_version": "1.1",
+        "method": "POST",
+        "scheme": "http",
+        "path": path,
+        "raw_path": path.encode(),
+        "query_string": b"",
+        "root_path": "",
+        "headers": [
+            (
+                b"content-type",
+                b"application/connect+json" if streaming else b"application/json",
+            )
+        ],
+        "client": None,
+        "server": None,
+        "extensions": None,
+    }
+    received = False
+    disconnected = asyncio.Event()
+
+    async def receive() -> HTTPRequestEvent | HTTPDisconnectEvent:
+        nonlocal received
+        if not received:
+            received = True
+            return {"type": "http.request", "body": body, "more_body": False}
+        # Keep the server-stream disconnect monitor pending until cancellation.
+        await disconnected.wait()
+        return {"type": "http.disconnect"}
+
+    async def send(_message) -> None:
+        return
+
+    await app(scope, receive, send)
+
+
 @pytest.mark.asyncio
 async def test_metadata_interceptor_unparseable_unary_async(
     server_interceptor: RequestInterceptor,
@@ -427,6 +474,161 @@ async def test_metadata_interceptor_ordering_async() -> None:
         "unary after",
         "metadata end",
     ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("method", "streaming"),
+    [
+        pytest.param("MakeHat", False, id="unary"),
+        pytest.param("MakeFlexibleHat", True, id="client_stream"),
+        pytest.param("MakeSimilarHats", True, id="server_stream"),
+        pytest.param("MakeVariousHats", True, id="bidi_stream"),
+    ],
+)
+async def test_non_hoisted_metadata_interceptor_reports_cancellation(
+    method: str, streaming: bool
+) -> None:
+    entered = asyncio.Event()
+    request_body = b'{"inches":10}'
+    if streaming:
+        request_body = b"\x00" + len(request_body).to_bytes(4, "big") + request_body
+
+    class BlockingHaberdasher(Haberdasher):
+        async def _block(self):
+            entered.set()
+            await asyncio.Event().wait()
+
+        async def make_hat(self, request, _ctx):
+            await self._block()
+            return Hat(size=request.inches)
+
+        async def make_flexible_hat(self, request, _ctx):
+            async for _ in request:
+                pass
+            await self._block()
+            return Hat(size=10)
+
+        async def make_similar_hats(self, request, _ctx):
+            yield Hat(size=request.inches)
+            await self._block()
+
+        async def make_various_hats(self, request, _ctx):
+            async for _ in request:
+                yield Hat(size=10)
+                await self._block()
+
+    class PassthroughInterceptor:
+        async def intercept_unary(self, call_next, request, ctx):
+            return await call_next(request, ctx)
+
+        async def intercept_client_stream(self, call_next, request, ctx):
+            return await call_next(request, ctx)
+
+        def intercept_server_stream(self, call_next, request, ctx):
+            return call_next(request, ctx)
+
+        def intercept_bidi_stream(self, call_next, request, ctx):
+            return call_next(request, ctx)
+
+    class CancellationObserver:
+        def __init__(self):
+            self.errors = []
+
+        async def on_start(self, ctx):  # noqa: ARG002
+            return None
+
+        async def on_end(self, _token, _ctx, error):
+            self.errors.append(error)
+
+    observer = CancellationObserver()
+    app = HaberdasherASGIApplication(
+        BlockingHaberdasher(), interceptors=(PassthroughInterceptor(), observer)
+    )
+    task = asyncio.create_task(
+        _run_connect_app(app, method, request_body, streaming=streaming)
+    )
+    try:
+        await asyncio.wait_for(entered.wait(), timeout=5.0)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+    finally:
+        if not task.done():
+            task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
+
+    assert len(observer.errors) == 1
+    error = observer.errors[0]
+    assert isinstance(error, ConnectError)
+    assert error.code == Code.CANCELED
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "middle_raises",
+    [pytest.param(False, id="canceled-error"), pytest.param(True, id="cleanup-error")],
+)
+async def test_hoisted_metadata_interceptors_unwind_after_cancellation(
+    middle_raises: bool,
+) -> None:
+    cleanup_entered = asyncio.Event()
+    cleanup_release = asyncio.Event()
+    middle_error = ValueError("middle cleanup failed") if middle_raises else None
+
+    class CancellationObserver:
+        def __init__(
+            self,
+            *,
+            suspend_on_end: bool = False,
+            error_to_raise: Exception | None = None,
+        ):
+            self.suspend_on_end = suspend_on_end
+            self.error_to_raise = error_to_raise
+            self.errors = []
+
+        async def on_start(self, ctx):  # noqa: ARG002
+            return None
+
+        async def on_end(self, _token, _ctx, error):
+            self.errors.append(error)
+            if self.suspend_on_end:
+                cleanup_entered.set()
+                await cleanup_release.wait()
+            if self.error_to_raise is not None:
+                raise self.error_to_raise
+
+    inner = CancellationObserver(suspend_on_end=True)
+    middle = CancellationObserver(error_to_raise=middle_error)
+    outer = CancellationObserver()
+    app = HaberdasherASGIApplication(
+        SimpleHaberdasher(), interceptors=(outer, middle, inner)
+    )
+    task = asyncio.create_task(_run_connect_app(app, "MakeHat", b'{"inches":10}'))
+    try:
+        await asyncio.wait_for(cleanup_entered.wait(), timeout=5.0)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+    finally:
+        if not task.done():
+            task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
+
+    assert inner.errors == [None]
+    assert len(middle.errors) == 1
+    middle_reported = middle.errors[0]
+    assert isinstance(middle_reported, ConnectError)
+    assert middle_reported.code == Code.CANCELED
+    assert len(outer.errors) == 1
+    if middle_error is None:
+        outer_reported = outer.errors[0]
+        assert isinstance(outer_reported, ConnectError)
+        assert outer_reported.code == Code.CANCELED
+    else:
+        assert outer.errors[0] is middle_error
 
 
 def test_metadata_interceptor_ordering_sync() -> None:

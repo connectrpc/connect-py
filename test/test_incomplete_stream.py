@@ -90,9 +90,14 @@ _HAT = _envelope(Hat(size=10).to_binary())
 _END = _envelope(b"{}", flags=0b10)
 
 _bad_responses = [
-    pytest.param(_HAT + b"\x00\x00", Code.INVALID_ARGUMENT, id="partial prefix"),
     pytest.param(
-        _HAT + _envelope(b"\x08\x0a")[:-1], Code.INVALID_ARGUMENT, id="partial message"
+        _HAT + _envelope(Hat(size=12).to_binary(), flags=4) + _END,
+        Code.INTERNAL,
+        id="reserved envelope flag",
+    ),
+    pytest.param(_HAT + b"\x00\x00", Code.INTERNAL, id="partial prefix"),
+    pytest.param(
+        _HAT + _envelope(b"\x08\x0a")[:-1], Code.INTERNAL, id="partial message"
     ),
     pytest.param(_HAT + _END + _HAT, Code.INTERNAL, id="data after end message"),
 ]
