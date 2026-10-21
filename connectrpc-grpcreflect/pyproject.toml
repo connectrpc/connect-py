@@ -34,7 +34,7 @@ classifiers = [
 ]
 dependencies = [
   "connectrpc>=0.12.0",
-  "protobuf-py>=0.3.0",
+  "protobuf-py>=0.6.0",
 ]
 
 [project.urls]
@@ -43,8 +43,15 @@ Issues = "https://github.com/connectrpc/connect-py/issues"
 Repository = "https://github.com/connectrpc/connect-py"
 
 [dependency-groups]
-dev = [
+dev = [{ include-group = "test" }]
+
+# What the tests need, which the dependency floor check installs with the wheel.
+test = [
+  "example",
+
   "pytest==9.1.1",
+  "pytest-asyncio==1.4.0",
+  "pytest-timeout==2.5.0",
 ]
 
 [build-system]

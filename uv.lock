@@ -171,6 +171,16 @@ docs = [
     { name = "mkdocstrings-python" },
     { name = "zensical" },
 ]
+test = [
+    { name = "asgiref" },
+    { name = "brotli" },
+    { name = "example" },
+    { name = "protobuf" },
+    { name = "pytest" },
+    { name = "pytest-asyncio" },
+    { name = "pytest-timeout" },
+    { name = "zstandard" },
+]
 
 [package.metadata]
 requires-dist = [
@@ -215,6 +225,16 @@ docs = [
     { name = "mkdocstrings-python", specifier = "==2.0.9" },
     { name = "zensical", specifier = "==0.0.71" },
 ]
+test = [
+    { name = "asgiref", specifier = "==3.12.1" },
+    { name = "brotli", specifier = "==1.2.0" },
+    { name = "example", editable = "example" },
+    { name = "protobuf", specifier = ">=5.28" },
+    { name = "pytest", specifier = "==9.1.1" },
+    { name = "pytest-asyncio", specifier = "==1.4.0" },
+    { name = "pytest-timeout", specifier = "==2.5.0" },
+    { name = "zstandard", specifier = "==0.25.0" },
+]
 
 [[package]]
 name = "connectrpc-grpcreflect"
@@ -227,17 +247,37 @@ dependencies = [
 
 [package.dev-dependencies]
 dev = [
+    { name = "example" },
     { name = "pytest" },
+    { name = "pytest-asyncio" },
+    { name = "pytest-timeout" },
+]
+test = [
+    { name = "example" },
+    { name = "pytest" },
+    { name = "pytest-asyncio" },
+    { name = "pytest-timeout" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "connectrpc", editable = "." },
-    { name = "protobuf-py", specifier = ">=0.3.0" },
+    { name = "protobuf-py", specifier = ">=0.6.0" },
 ]
 
 [package.metadata.requires-dev]
-dev = [{ name = "pytest", specifier = "==9.1.1" }]
+dev = [
+    { name = "example", editable = "example" },
+    { name = "pytest", specifier = "==9.1.1" },
+    { name = "pytest-asyncio", specifier = "==1.4.0" },
+    { name = "pytest-timeout", specifier = "==2.5.0" },
+]
+test = [
+    { name = "example", editable = "example" },
+    { name = "pytest", specifier = "==9.1.1" },
+    { name = "pytest-asyncio", specifier = "==1.4.0" },
+    { name = "pytest-timeout", specifier = "==2.5.0" },
+]
 
 [[package]]
 name = "connectrpc-otel"
@@ -250,9 +290,26 @@ dependencies = [
 
 [package.dev-dependencies]
 dev = [
+    { name = "asgiref" },
     { name = "connectrpc" },
     { name = "example" },
+    { name = "opentelemetry-instrumentation-asgi" },
+    { name = "opentelemetry-instrumentation-wsgi" },
+    { name = "opentelemetry-sdk" },
     { name = "pytest" },
+    { name = "pytest-asyncio" },
+    { name = "pytest-timeout" },
+]
+test = [
+    { name = "asgiref" },
+    { name = "connectrpc" },
+    { name = "example" },
+    { name = "opentelemetry-instrumentation-asgi" },
+    { name = "opentelemetry-instrumentation-wsgi" },
+    { name = "opentelemetry-sdk" },
+    { name = "pytest" },
+    { name = "pytest-asyncio" },
+    { name = "pytest-timeout" },
 ]
 
 [package.metadata]
@@ -263,9 +320,26 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "asgiref", specifier = "==3.12.1" },
     { name = "connectrpc", editable = "." },
     { name = "example", editable = "example" },
+    { name = "opentelemetry-instrumentation-asgi", specifier = ">=0.60b1" },
+    { name = "opentelemetry-instrumentation-wsgi", specifier = ">=0.60b1" },
+    { name = "opentelemetry-sdk", specifier = ">=1.39.1" },
     { name = "pytest", specifier = "==9.1.1" },
+    { name = "pytest-asyncio", specifier = "==1.4.0" },
+    { name = "pytest-timeout", specifier = "==2.5.0" },
+]
+test = [
+    { name = "asgiref", specifier = "==3.12.1" },
+    { name = "connectrpc", editable = "." },
+    { name = "example", editable = "example" },
+    { name = "opentelemetry-instrumentation-asgi", specifier = ">=0.60b1" },
+    { name = "opentelemetry-instrumentation-wsgi", specifier = ">=0.60b1" },
+    { name = "opentelemetry-sdk", specifier = ">=1.39.1" },
+    { name = "pytest", specifier = "==9.1.1" },
+    { name = "pytest-asyncio", specifier = "==1.4.0" },
+    { name = "pytest-timeout", specifier = "==2.5.0" },
 ]
 
 [[package]]
