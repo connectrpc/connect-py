@@ -116,6 +116,8 @@ async def test_list_services(reflection_client: ReflectionClient) -> None:
     assert [svc.name for svc in res.message_response.value.service] == [
         "connectrpc.eliza.v1.ElizaService",
         "connectrpc.example.Haberdasher",
+        "grpc.reflection.v1.ServerReflection",
+        "grpc.reflection.v1alpha.ServerReflection",
     ]
 
 
@@ -134,7 +136,9 @@ def test_list_services_service_descriptor() -> None:
     assert res.message_response is not None
     assert res.message_response.field == "list_services_response"
     assert [svc.name for svc in res.message_response.value.service] == [
-        "connectrpc.example.Haberdasher"
+        "connectrpc.example.Haberdasher",
+        "grpc.reflection.v1.ServerReflection",
+        "grpc.reflection.v1alpha.ServerReflection",
     ]
 
 
@@ -459,7 +463,9 @@ async def test_v1alpha() -> None:
     assert res.message_response is not None
     assert res.message_response.field == "list_services_response"
     assert [svc.name for svc in res.message_response.value.service] == [
-        "connectrpc.eliza.v1.ElizaService"
+        "connectrpc.eliza.v1.ElizaService",
+        "grpc.reflection.v1.ServerReflection",
+        "grpc.reflection.v1alpha.ServerReflection",
     ]
 
 
@@ -481,5 +487,7 @@ def test_v1alpha_sync() -> None:
     assert res.message_response is not None
     assert res.message_response.field == "list_services_response"
     assert [svc.name for svc in res.message_response.value.service] == [
-        "connectrpc.eliza.v1.ElizaService"
+        "connectrpc.eliza.v1.ElizaService",
+        "grpc.reflection.v1.ServerReflection",
+        "grpc.reflection.v1alpha.ServerReflection",
     ]

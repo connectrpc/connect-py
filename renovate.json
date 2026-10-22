@@ -16,6 +16,13 @@
         "(?:os:|-)\\s+(?<depName>ubuntu|macos|windows)-(?<currentValue>[\\w.-]+)"
       ],
       "datasourceTemplate": "github-runners"
+    },
+    {
+      "customType": "regex",
+      "managerFilePatterns": ["/^conformance/test/_util\\.py$/"],
+      "matchStrings": ["VERSION_CONFORMANCE = \"(?<currentValue>[^\"]+)\""],
+      "depNameTemplate": "connectrpc.com/conformance",
+      "datasourceTemplate": "go"
     }
   ],
   "packageRules": [

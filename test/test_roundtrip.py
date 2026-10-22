@@ -31,6 +31,8 @@ if TYPE_CHECKING:
 
     from asgiref.typing import HTTPDisconnectEvent, HTTPRequestEvent, HTTPScope
 
+    from connectrpc.request import RequestContext
+
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("mode", ["async", "sync"])
@@ -696,3 +698,115 @@ def _make_similar_hats_scope() -> HTTPScope:
         "server": None,
         "extensions": None,
     }
+
+
+@pytest.mark.parametrize("unary", [False, True], ids=["stream", "unary"])
+@pytest.mark.parametrize(
+    "on_end_fails", [False, True], ids=["on_end-ok", "on_end-fails"]
+)
+@pytest.mark.asyncio
+async def test_server_cancelled(unary: bool, on_end_fails: bool) -> None:
+    """A cancelled request is answered, then the cancellation propagates.
+
+    The answer is CANCELED unless an on_end hook fails.
+    """
+    events: list[str] = []
+    blocked = asyncio.Event()
+    on_end_error = RuntimeError("on_end failed")
+
+    class BlockedHaberdasher(Haberdasher):
+        async def make_hat(self, request, _ctx):
+            await self._block()
+            return Hat(size=request.inches)
+
+        async def make_similar_hats(self, request, _ctx):
+            yield Hat(size=request.inches)
+            await self._block()
+
+        async def _block(self):
+            try:
+                blocked.set()
+                await asyncio.Event().wait()
+            finally:
+                events.append("handler cleaned up")
+
+    class Recorder:
+        async def on_start(self, ctx: RequestContext) -> None:  # noqa: ARG002
+            return None
+
+        async def on_end(
+            self, _token: None, _ctx: RequestContext, error: Exception | None, /
+        ) -> None:
+            await asyncio.sleep(0)
+            code = error.code.value if isinstance(error, ConnectError) else error
+            events.append(f"on_end {code}")
+            if on_end_fails:
+                raise on_end_error
+
+    app = HaberdasherASGIApplication(BlockedHaberdasher(), interceptors=[Recorder()])
+    request_bytes = Size(inches=10).to_binary()
+    if unary:
+        method, content_type, request_body = (
+            "MakeHat",
+            b"application/proto",
+            request_bytes,
+        )
+    else:
+        method, content_type = "MakeSimilarHats", b"application/connect+proto"
+        request_body = struct.pack(">BI", 0, len(request_bytes)) + request_bytes
+    sent_request = False
+    sent: list[dict] = []
+
+    async def receive() -> HTTPRequestEvent:
+        nonlocal sent_request
+        if not sent_request:
+            sent_request = True
+            return {"type": "http.request", "body": request_body, "more_body": False}
+        await asyncio.Event().wait()
+        raise AssertionError
+
+    async def send(message):
+        sent.append(message)
+
+    scope: HTTPScope = {
+        "type": "http",
+        "asgi": {"spec_version": "2.0", "version": "3.0"},
+        "http_version": "1.1",
+        "method": "POST",
+        "scheme": "http",
+        "path": f"/connectrpc.example.Haberdasher/{method}",
+        "raw_path": f"/connectrpc.example.Haberdasher/{method}".encode(),
+        "query_string": b"",
+        "root_path": "",
+        "headers": [(b"content-type", content_type)],
+        "client": None,
+        "server": None,
+        "extensions": None,
+    }
+
+    task = asyncio.create_task(app(scope, receive, send))
+    await blocked.wait()
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    assert events == ["handler cleaned up", "on_end canceled"]
+    if on_end_fails:
+        # The hook's error replaces CANCELED in the response.
+        status, error = 500, {"code": "unknown", "message": "on_end failed"}
+    else:
+        status, error = 499, {"code": "canceled", "message": "Request was cancelled"}
+    if unary:
+        assert [m["type"] for m in sent] == [
+            "http.response.start",
+            "http.response.body",
+        ]
+        assert sent[0]["status"] == status
+        assert json.loads(sent[1]["body"]) == error
+    else:
+        assert [m["type"] for m in sent] == ["http.response.start"] + [
+            "http.response.body"
+        ] * 2
+        end = sent[-1]["body"]
+        assert end[0] & 0b10, "last body is the end-of-stream message"
+        assert json.loads(end[5:]) == {"error": error}
