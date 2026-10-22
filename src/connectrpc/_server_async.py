@@ -499,9 +499,7 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
                     case EndpointBidiStream():
                         response_stream = endpoint.function(request_stream, ctx)
 
-                # The generator is closed before the watcher stops. trio's watcher
-                # is a nursery, and a generator that was resumed inside a nursery
-                # must be closed inside it for its own cancel scopes to unwind.
+                # Make sure the generator is closed within the watcher's scope.
                 async with watch as disconnected:
                     try:
                         async for message in response_stream:
@@ -747,11 +745,7 @@ async def _close_response_stream(
     loop: AsyncioLoop | TrioLoop,
     error: BaseException | None,
 ) -> None:
-    """Close the handler's generator, so its finally-blocks run promptly.
-
-    While a cancellation propagates the generator cannot await, so it is given
-    the loop's cleanup context and any error it raises is dropped.
-    """
+    """Close the handler's generator to allow possibly async cleanup."""
     if error is not None and loop.is_cancellation(error):
         with loop.async_cleanup(), contextlib.suppress(Exception):
             await _aclose(stream)
