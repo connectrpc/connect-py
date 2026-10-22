@@ -789,25 +789,44 @@ async def test_async_handler_timeout_error_reraised(
 
 
 @pytest.mark.asyncio
-async def test_async_unhandled_exception_reraised_stream() -> None:
+@pytest.mark.parametrize("protocol", _protocols)
+@pytest.mark.parametrize(
+    ("exception", "message"),
+    [(TypeError, "Something went wrong"), (SystemExit, "Request was interrupted")],
+)
+async def test_async_unhandled_exception_reraised_stream(
+    protocol: ProtocolType, exception: type[BaseException], message: str
+) -> None:
     class RaisingHaberdasher(Haberdasher):
         def make_similar_hats(self, _request: Size, _ctx: RequestContext) -> NoReturn:
             msg = "Something went wrong"
-            raise TypeError(msg)
+            raise exception(msg)
 
     app = HaberdasherASGIApplication(RaisingHaberdasher())
-    transport = ASGITransport(app)
-    http_client = Client(transport)
+    app_exceptions: list[BaseException] = []
+
+    async def recording_app(scope, receive, send) -> None:
+        # Record instead of raising, since a SystemExit would escape ASGITransport.
+        try:
+            await app(scope, receive, send)
+        except BaseException as e:  # noqa: BLE001
+            app_exceptions.append(e)
 
     async with HaberdasherClient(
-        "http://localhost", timeout_ms=200, http_client=http_client
+        "http://localhost",
+        protocol=protocol,
+        timeout_ms=200,
+        http_client=Client(ASGITransport(recording_app)),
     ) as client:
-        with pytest.raises(ConnectError, match="Something went wrong"):
+        with pytest.raises(ConnectError) as exc_info:
             async for _ in client.make_similar_hats(request=Size(inches=10)):
                 pass
 
-    assert isinstance(transport.app_exception, TypeError)
-    assert str(transport.app_exception) == "Something went wrong"
+    assert exc_info.value.code == Code.UNKNOWN
+    assert exc_info.value.message == message
+    assert len(app_exceptions) == 1
+    assert isinstance(app_exceptions[0], exception)
+    assert str(app_exceptions[0]) == "Something went wrong"
 
 
 @pytest.mark.asyncio
