@@ -344,6 +344,11 @@ class ConnectWSGIApplication(ABC):
             response = endpoint.function(request, ctx)
         except Exception as e:  # noqa: BLE001 # re-raised after ending the run
             error = e
+        except BaseException as e:
+            # Save the error for on_end, then let the exception reach the app server.
+            error = ConnectError(Code.UNKNOWN, "Request was interrupted")
+            error.__cause__ = e
+            raise
         finally:
             # End the run before sending the response so on_end can still modify
             # response metadata.
@@ -587,6 +592,12 @@ class ConnectWSGIApplication(ABC):
                     send_trailers,
                 )
             ]
+        except BaseException as e:
+            # Report the error to on_end, then let the exception reach the app server.
+            error = ConnectError(Code.UNKNOWN, "Request was interrupted")
+            error.__cause__ = e
+            metadata_run.end(error)
+            raise
 
     def _handle_error(
         self,
@@ -690,6 +701,13 @@ def _response_stream(
     except Exception as e:  # noqa: BLE001 # invoking user callback
         error = e
         _drain_request_body(environ, request_body)
+    except BaseException as e:
+        # A GeneratorExit is the app server closing the response, not a handler error.
+        if not isinstance(e, GeneratorExit):
+            # Save the error for on_end, then let the exception reach the app server.
+            error = ConnectError(Code.UNKNOWN, "Request was interrupted")
+            error.__cause__ = e
+        raise
     finally:
         # End the run before ending the response so on_end can still modify
         # response trailers. This is a no-op if the run already ended.

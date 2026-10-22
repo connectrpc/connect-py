@@ -324,6 +324,10 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
                     )
                     assert error is not None  # noqa: S101
                     await self._handle_error(error, ctx, None, send)
+            else:
+                # Save the error for on_end, then let the exception reach the app server.
+                error = ConnectError(Code.UNKNOWN, "Request was interrupted")
+                error.__cause__ = e
             raise
         finally:
             # End the run before sending the response so on_end can still modify
