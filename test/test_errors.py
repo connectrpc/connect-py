@@ -962,36 +962,49 @@ def _envelope(flags: int, payload: bytes) -> bytes:
 
 _malformed_requests = [
     pytest.param(
+        "POST",
         "MakeSimilarHats",
         {"content-type": "application/connect+proto"},
         _envelope(2, Size(inches=10).to_binary()),
         id="response-only flag in request",
     ),
     pytest.param(
+        "POST",
         "MakeSimilarHats",
         {"content-type": "application/connect+proto"},
         _envelope(4, Size(inches=10).to_binary()),
         id="reserved envelope flag",
     ),
     pytest.param(
+        "POST",
         "MakeHat",
         {"content-type": "application/proto"},
         b"\xff\xff\xff",
         id="unary message",
     ),
     pytest.param(
+        "POST",
         "MakeHat",
         {"content-type": "application/proto", "content-encoding": "gzip"},
         b"not gzip",
         id="unary compression",
     ),
     pytest.param(
+        "GET",
+        "MakeHat?connect=v1&encoding=json&compression=gzip&message=%7B%7D",
+        {},
+        b"",
+        id="unary get compression",
+    ),
+    pytest.param(
+        "POST",
         "MakeSimilarHats",
         {"content-type": "application/connect+proto"},
         _envelope(0, b"\xff\xff\xff"),
         id="stream message",
     ),
     pytest.param(
+        "POST",
         "MakeSimilarHats",
         {
             "content-type": "application/connect+proto",
@@ -1004,10 +1017,16 @@ _malformed_requests = [
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(("method", "headers", "body"), _malformed_requests)
-async def test_malformed_request(transport, method, headers, body) -> None:
+@pytest.mark.parametrize(
+    ("http_method", "method", "headers", "body"), _malformed_requests
+)
+async def test_malformed_request(transport, http_method, method, headers, body) -> None:
     res = await _execute(
-        transport, "POST", f"/connectrpc.example.Haberdasher/{method}", headers, body
+        transport,
+        http_method,
+        f"/connectrpc.example.Haberdasher/{method}",
+        headers,
+        body,
     )
 
     if res.status == 200:
