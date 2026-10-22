@@ -41,7 +41,7 @@ from .connectrpc.example.haberdasher_connect import (
 from .connectrpc.example.haberdasher_pb import Hat, Size
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncIterator, Callable, Iterator
+    from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
 
     from connectrpc.request import RequestContext
 
@@ -96,8 +96,8 @@ class Wrapper:
     """
 
     def __init__(self) -> None:
-        self.app: HaberdasherASGIApplication = HaberdasherASGIApplication(
-            TrioHaberdasher()
+        self.app: Callable[[Any, Any, Any], Awaitable[None]] = (
+            HaberdasherASGIApplication(TrioHaberdasher())
         )
         self.token: trio.lowlevel.TrioToken | None = None
         self._in_flight = 0
@@ -751,6 +751,48 @@ def test_on_end_is_not_bounded_without_cancellation(
     call(client, method)
 
     assert events == ["on_end started None", "on_end finished"]
+
+
+@pytest.mark.parametrize("method", ["MakeHat", "MakeSimilarHats"])
+def test_base_exception_in_handler(
+    client: HaberdasherClientSync, wrapper: Wrapper, method: str
+) -> None:
+    """A SystemExit from the handler reaches the server and is reported as an error."""
+    events: list[str] = []
+    raised: list[BaseException] = []
+
+    class ExitingHats(Haberdasher):
+        async def make_hat(self, _request: Size, _ctx: RequestContext, /) -> Hat:
+            raise SystemExit(1)
+
+        async def make_similar_hats(
+            self, _request: Size, _ctx: RequestContext, /
+        ) -> AsyncIterator[Hat]:
+            yield Hat(size=1)
+            raise SystemExit(1)
+
+    app = HaberdasherASGIApplication(ExitingHats(), interceptors=[Recorder(events)])
+
+    async def catching_app(scope: Any, receive: Any, send: Any) -> None:
+        # Raised into hypercorn, a SystemExit would stop the module's server.
+        try:
+            await app(scope, receive, send)
+        except SystemExit as e:
+            raised.append(e)
+
+    wrapper.app = catching_app
+
+    with pytest.raises(ConnectError):
+        call(client, method)
+    assert wrapper.done.wait(10)
+
+    assert [type(e) for e in raised] == [SystemExit]
+    assert events == ["on_end started unknown", "on_end finished"]
+    if method == "MakeSimilarHats":
+        assert wrapper.end_error() == {
+            "code": "unknown",
+            "message": "Request was interrupted",
+        }
 
 
 def test_handler_timeout_on_request_stream(
