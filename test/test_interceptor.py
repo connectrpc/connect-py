@@ -14,6 +14,7 @@ from pyqwest.testing import ASGITransport, WSGITransport
 from connectrpc.client import ResponseMetadata
 from connectrpc.code import Code
 from connectrpc.errors import ConnectError
+from connectrpc.protocol import ProtocolType
 
 from ._util import call
 from .connectrpc.example.haberdasher_connect import (
@@ -753,8 +754,11 @@ async def test_metadata_interceptor_closes_stream_async(method: str) -> None:
         pytest.param(None, 2, False, id="complete"),
     ],
 )
+@pytest.mark.parametrize(
+    "protocol", [ProtocolType.CONNECT, ProtocolType.GRPC, ProtocolType.GRPC_WEB]
+)
 def test_metadata_interceptor_closes_stream_sync(
-    chunks: int | None, hats: int, cancelled: bool
+    protocol: ProtocolType, chunks: int | None, hats: int, cancelled: bool
 ) -> None:
     """Closing the response before its end closes the handler's stream and reports a
     cancellation to on_end, while closing a completed response reports no error."""
@@ -794,7 +798,9 @@ def test_metadata_interceptor_closes_stream_sync(
     received: list[Hat] = []
     with (
         HaberdasherClientSync(
-            "http://localhost", http_client=SyncClient(WSGITransport(closing_app))
+            "http://localhost",
+            protocol=protocol,
+            http_client=SyncClient(WSGITransport(closing_app)),
         ) as client,
         contextlib.suppress(ConnectError),
     ):
