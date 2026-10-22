@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import itertools
+from collections.abc import Generator
 from typing import TYPE_CHECKING
 
 import pytest
@@ -743,6 +744,71 @@ async def test_metadata_interceptor_closes_stream_async(method: str) -> None:
     await asyncio.wait_for(app(scope, receive, send), timeout=5.0)
 
     assert events == ["metadata start", "handler closed", "metadata end"]
+
+
+@pytest.mark.parametrize(
+    ("chunks", "hats", "cancelled"),
+    [
+        pytest.param(1, 1, True, id="disconnect"),
+        pytest.param(None, 2, False, id="complete"),
+    ],
+)
+def test_metadata_interceptor_closes_stream_sync(
+    chunks: int | None, hats: int, cancelled: bool
+) -> None:
+    """Closing the response before its end closes the handler's stream and reports a
+    cancellation to on_end, while closing a completed response reports no error."""
+    events: list[str] = []
+    errors: list[Exception | None] = []
+
+    class ErrorRecordingInterceptorSync:
+        def on_start_sync(self, _ctx):
+            return None
+
+        def on_end_sync(self, _token, _ctx, error):
+            events.append("metadata end")
+            errors.append(error)
+
+    class TwoHatHaberdasherSync(HaberdasherSync):
+        def make_similar_hats(self, request, _ctx):
+            try:
+                yield Hat(size=request.inches)
+                yield Hat(size=request.inches)
+            finally:
+                events.append("handler closed")
+
+    app = HaberdasherWSGIApplication(
+        TwoHatHaberdasherSync(), interceptors=(ErrorRecordingInterceptorSync(),)
+    )
+
+    def closing_app(environ, start_response):
+        # Close the response as an app server does, after sending the given number of
+        # chunks, or all of them.
+        response = app(environ, start_response)
+        assert isinstance(response, Generator)
+        try:
+            yield from itertools.islice(response, chunks)
+        finally:
+            response.close()
+
+    received: list[Hat] = []
+    with (
+        HaberdasherClientSync(
+            "http://localhost", http_client=SyncClient(WSGITransport(closing_app))
+        ) as client,
+        contextlib.suppress(ConnectError),
+    ):
+        received.extend(client.make_similar_hats(Size(inches=10)))
+
+    assert len(received) == hats
+    assert events == ["handler closed", "metadata end"]
+    assert len(errors) == 1
+    if cancelled:
+        assert isinstance(errors[0], ConnectError)
+        assert errors[0].code == Code.CANCELED
+        assert errors[0].message == "Client disconnected"
+    else:
+        assert errors[0] is None
 
 
 class _ResponseMetadataInterceptor:
