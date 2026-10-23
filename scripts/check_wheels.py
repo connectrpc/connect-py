@@ -25,6 +25,12 @@ ROOT = Path(__file__).resolve().parent.parent
 
 # Requirements each package's tests need beyond its test group.
 EXTRA = {
+    "connectrpc": [
+        # trio doesn't bound sortedcontainers or idna. Their oldest releases
+        # predate Python 3, and sortedcontainers 2.0 needs collections.Sequence.
+        "sortedcontainers>=2.1",
+        "idna>=2",
+    ],
     "connectrpc_otel": [
         # The tests need this repository's connectrpc.
         "dist/connectrpc-*.whl",
@@ -33,7 +39,7 @@ EXTRA = {
         # and wrapt 1.0 predates Python 3.
         "packaging>=22",
         "wrapt>=1.14",
-    ]
+    ],
 }
 
 # Tests that need the workspace rather than installed packages.
