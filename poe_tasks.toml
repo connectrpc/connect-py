@@ -5,7 +5,6 @@ help = "Bump the project version and regenerate files that embed it"
 sequence = [
   { cmd = "uv version --active --bump=${_version}" },
   { cmd = "uv version --active --directory protoc-gen-connectrpc --bump=${_version}" },
-  # Generated files record the version of protoc-gen-connectrpc that wrote them.
   "generate",
 ]
 args = [{ name = "_version", required = true, help = "The type of version bump to apply", choices = [
