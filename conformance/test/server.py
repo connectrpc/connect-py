@@ -816,7 +816,16 @@ async def main() -> None:
 
         asyncio.get_event_loop().add_signal_handler(signal.SIGTERM, serve_task.cancel)
 
-        port = await port_future
+        await asyncio.wait(
+            {port_future, serve_task}, return_when=asyncio.FIRST_COMPLETED
+        )
+        if not port_future.done():
+            # The server failed or was stopped before reporting its port, such as
+            # when the runner gives up waiting for it. Exit rather than wait for
+            # a port that won't come.
+            await serve_task
+            return
+        port = port_future.result()
         response = ServerCompatResponse()
         response.host = "127.0.0.1"
         response.port = port

@@ -1,13 +1,12 @@
 from __future__ import annotations
 
 import os
-import subprocess
 import sys
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 import pytest
-from _util import VERSION_CONFORMANCE, coverage_env, maybe_patch_args_with_debug
+from _util import coverage_env, maybe_patch_args_with_debug, run_conformance
 
 if TYPE_CHECKING:
     from coverage import Coverage
@@ -55,27 +54,12 @@ def test_server_sync(server: str, cov: Coverage) -> None:
             # gunicorn doesn't support HTTP/2 or 3
             opts += ["--skip", "**/HTTPVersion:2/**", "--skip", "**/HTTPVersion:3/**"]
 
-    result = subprocess.run(
-        [
-            "go",
-            "run",
-            f"connectrpc.com/conformance/cmd/connectconformance@{VERSION_CONFORMANCE}",
-            "--conf",
-            _config_path,
-            "--mode",
-            "server",
-            *opts,
-            *_known_flaky,
-            "--",
-            *args,
-        ],
-        capture_output=True,
-        text=True,
-        check=False,
-        env=coverage_env(cov),
+    failure = run_conformance(
+        ["--conf", _config_path, "--mode", "server", *opts, *_known_flaky, "--", *args],
+        coverage_env(cov),
     )
-    if result.returncode != 0:
-        pytest.fail(f"\n{result.stdout}\n{result.stderr}")
+    if failure is not None:
+        pytest.fail(failure)
 
 
 @pytest.mark.parametrize("server", ["pyvoy", "pyvoy-trio", "uvicorn"])
@@ -88,11 +72,8 @@ def test_server_async(server: str, cov: Coverage) -> None:
         case "uvicorn":
             # uvicorn doesn't support HTTP/2 or 3
             opts = ["--skip", "**/HTTPVersion:2/**", "--skip", "**/HTTPVersion:3/**"]
-    result = subprocess.run(
+    failure = run_conformance(
         [
-            "go",
-            "run",
-            f"connectrpc.com/conformance/cmd/connectconformance@{VERSION_CONFORMANCE}",
             "-v",
             "--conf",
             _config_path,
@@ -108,10 +89,7 @@ def test_server_async(server: str, cov: Coverage) -> None:
             "--",
             *args,
         ],
-        capture_output=True,
-        text=True,
-        check=False,
-        env=coverage_env(cov),
+        coverage_env(cov),
     )
-    if result.returncode != 0:
-        pytest.fail(f"\n{result.stdout}\n{result.stderr}")
+    if failure is not None:
+        pytest.fail(failure)

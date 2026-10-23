@@ -1,12 +1,11 @@
 from __future__ import annotations
 
-import subprocess
 import sys
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 import pytest
-from _util import VERSION_CONFORMANCE, coverage_env, maybe_patch_args_with_debug
+from _util import coverage_env, maybe_patch_args_with_debug, run_conformance
 
 if TYPE_CHECKING:
     from coverage import Coverage
@@ -42,11 +41,8 @@ def test_client_sync(cov: Coverage | None) -> None:
         [sys.executable, _client_py_path, "--mode", "sync"]
     )
 
-    result = subprocess.run(
+    failure = run_conformance(
         [
-            "go",
-            "run",
-            f"connectrpc.com/conformance/cmd/connectconformance@{VERSION_CONFORMANCE}",
             "--conf",
             _config_path,
             "--mode",
@@ -57,13 +53,10 @@ def test_client_sync(cov: Coverage | None) -> None:
             "--",
             *args,
         ],
-        capture_output=True,
-        text=True,
-        check=False,
-        env=coverage_env(cov),
+        coverage_env(cov),
     )
-    if result.returncode != 0:
-        pytest.fail(f"\n{result.stdout}\n{result.stderr}")
+    if failure is not None:
+        pytest.fail(failure)
 
 
 def test_client_async(cov: Coverage | None) -> None:
@@ -71,11 +64,8 @@ def test_client_async(cov: Coverage | None) -> None:
         [sys.executable, _client_py_path, "--mode", "async"]
     )
 
-    result = subprocess.run(
+    failure = run_conformance(
         [
-            "go",
-            "run",
-            f"connectrpc.com/conformance/cmd/connectconformance@{VERSION_CONFORMANCE}",
             "--conf",
             _config_path,
             "--mode",
@@ -85,10 +75,7 @@ def test_client_async(cov: Coverage | None) -> None:
             "--",
             *args,
         ],
-        capture_output=True,
-        text=True,
-        check=False,
-        env=coverage_env(cov),
+        coverage_env(cov),
     )
-    if result.returncode != 0:
-        pytest.fail(f"\n{result.stdout}\n{result.stderr}")
+    if failure is not None:
+        pytest.fail(failure)
