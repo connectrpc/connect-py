@@ -154,8 +154,6 @@ class OpenTelemetryInterceptor:
         parent_otel_ctx = None
         if self._client:
             span_kind = SpanKind.CLIENT
-            carrier = ctx.request_headers
-            self._propagator.inject(carrier, setter=_DEFAULT_TEXTMAP_SETTER)
         else:
             span_kind = SpanKind.SERVER
             parent_span = get_current_span()
@@ -174,6 +172,10 @@ class OpenTelemetryInterceptor:
         with self._tracer.start_as_current_span(
             span_name, kind=span_kind, attributes=attrs, context=parent_otel_ctx
         ) as span:
+            if self._client:
+                self._propagator.inject(
+                    ctx.request_headers, setter=_DEFAULT_TEXTMAP_SETTER
+                )
             yield span
 
     def _get_error_attributes(

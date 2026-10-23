@@ -61,6 +61,7 @@ _INTERCEPTOR_SYNC = _CONNECTRPC_INTERCEPTOR.ident("InterceptorSync", type_only=T
 _CONNECTRPC_METHOD = Module("connectrpc.method")
 _METHOD_INFO = _CONNECTRPC_METHOD.ident("MethodInfo")
 _IDEMPOTENCY_LEVEL = _CONNECTRPC_METHOD.ident("IdempotencyLevel")
+_STREAM_TYPE = _CONNECTRPC_METHOD.ident("StreamType")
 _CONNECTRPC_REQUEST = Module("connectrpc.request")
 _HEADERS = _CONNECTRPC_REQUEST.ident("Headers", type_only=True)
 _REQUEST_CONTEXT = _CONNECTRPC_REQUEST.ident("RequestContext", type_only=True)
@@ -244,6 +245,13 @@ def _generate_async_stubs(f: File, service: DescService, options: Options) -> No
                                     _idempotency_level(method),
                                     ",",
                                 )
+                                f.print(
+                                    "stream_type=",
+                                    _STREAM_TYPE,
+                                    ".",
+                                    _stream_type(method),
+                                    ",",
+                                )
                             f.print("),")
                             f.print("function=svc.", _method_local_name(method), ",")
                         f.print("),")
@@ -320,6 +328,9 @@ def _generate_async_stubs(f: File, service: DescService, options: Options) -> No
                             ".",
                             _idempotency_level(method),
                             ",",
+                        )
+                        f.print(
+                            "stream_type=", _STREAM_TYPE, ".", _stream_type(method), ","
                         )
                     f.print("),")
                     f.print("headers=headers,")
@@ -411,6 +422,13 @@ def _generate_sync_stubs(f: File, service: DescService, options: Options) -> Non
                                     _idempotency_level(method),
                                     ",",
                                 )
+                                f.print(
+                                    "stream_type=",
+                                    _STREAM_TYPE,
+                                    ".",
+                                    _stream_type(method),
+                                    ",",
+                                )
                             f.print("),")
                             f.print(
                                 "function=service.", _method_local_name(method), ","
@@ -478,6 +496,9 @@ def _generate_sync_stubs(f: File, service: DescService, options: Options) -> Non
                             ".",
                             _idempotency_level(method),
                             ",",
+                        )
+                        f.print(
+                            "stream_type=", _STREAM_TYPE, ".", _stream_type(method), ","
                         )
                     f.print("),")
                     f.print("headers=headers,")
@@ -648,6 +669,18 @@ def _idempotency_level(desc: DescMethod) -> str:
             return "IDEMPOTENT"
     msg = f"Unknown idempotency level: {desc.idempotency}"
     raise ValueError(msg)
+
+
+def _stream_type(method: DescMethod) -> str:
+    match method.method_kind:
+        case "unary":
+            return "UNARY"
+        case "client_streaming":
+            return "CLIENT_STREAM"
+        case "server_streaming":
+            return "SERVER_STREAM"
+        case "bidi_streaming":
+            return "BIDI_STREAM"
 
 
 def _supports_get(desc: DescMethod) -> bool:

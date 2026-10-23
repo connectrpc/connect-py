@@ -18,6 +18,12 @@ committing:
 $ git commit -s -m "your commit message"
 ```
 
+To catch a missing sign-off before CI does, install the commit hooks in `prek.toml`:
+
+```console
+$ uvx prek install
+```
+
 ## Setting Up Your Development Environment
 
 ### Prerequisites

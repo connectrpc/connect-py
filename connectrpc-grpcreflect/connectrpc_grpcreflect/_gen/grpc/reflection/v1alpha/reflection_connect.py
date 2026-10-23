@@ -11,7 +11,7 @@ from typing import Protocol, TYPE_CHECKING
 from connectrpc.client import ConnectClient, ConnectClientSync
 from connectrpc.code import Code
 from connectrpc.errors import ConnectError
-from connectrpc.method import IdempotencyLevel, MethodInfo
+from connectrpc.method import IdempotencyLevel, MethodInfo, StreamType
 from connectrpc.server import ConnectASGIApplication, ConnectWSGIApplication, DEFAULT_READ_MAX_BYTES, Endpoint, EndpointSync
 from protobuf import DescService
 
@@ -60,6 +60,7 @@ class ServerReflectionASGIApplication(ConnectASGIApplication[ServerReflection]):
                         input=ServerReflectionRequest,
                         output=ServerReflectionResponse,
                         idempotency_level=IdempotencyLevel.UNKNOWN,
+                        stream_type=StreamType.BIDI_STREAM,
                     ),
                     function=svc.server_reflection_info,
                 ),
@@ -96,6 +97,7 @@ class ServerReflectionClient(ConnectClient):
                 input=ServerReflectionRequest,
                 output=ServerReflectionResponse,
                 idempotency_level=IdempotencyLevel.UNKNOWN,
+                stream_type=StreamType.BIDI_STREAM,
             ),
             headers=headers,
             timeout_ms=timeout_ms,
@@ -132,6 +134,7 @@ class ServerReflectionWSGIApplication(ConnectWSGIApplication):
                         input=ServerReflectionRequest,
                         output=ServerReflectionResponse,
                         idempotency_level=IdempotencyLevel.UNKNOWN,
+                        stream_type=StreamType.BIDI_STREAM,
                     ),
                     function=service.server_reflection_info,
                 ),
@@ -168,6 +171,7 @@ class ServerReflectionClientSync(ConnectClientSync):
                 input=ServerReflectionRequest,
                 output=ServerReflectionResponse,
                 idempotency_level=IdempotencyLevel.UNKNOWN,
+                stream_type=StreamType.BIDI_STREAM,
             ),
             headers=headers,
             timeout_ms=timeout_ms,

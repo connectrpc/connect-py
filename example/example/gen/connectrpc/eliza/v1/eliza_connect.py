@@ -11,7 +11,7 @@ from typing import Protocol, TYPE_CHECKING
 from connectrpc.client import ConnectClient, ConnectClientSync
 from connectrpc.code import Code
 from connectrpc.errors import ConnectError
-from connectrpc.method import IdempotencyLevel, MethodInfo
+from connectrpc.method import IdempotencyLevel, MethodInfo, StreamType
 from connectrpc.server import ConnectASGIApplication, ConnectWSGIApplication, DEFAULT_READ_MAX_BYTES, Endpoint, EndpointSync
 from protobuf import DescService
 
@@ -82,6 +82,7 @@ class ElizaServiceASGIApplication(ConnectASGIApplication[ElizaService]):
                         input=SayRequest,
                         output=SayResponse,
                         idempotency_level=IdempotencyLevel.NO_SIDE_EFFECTS,
+                        stream_type=StreamType.UNARY,
                     ),
                     function=svc.say,
                 ),
@@ -92,6 +93,7 @@ class ElizaServiceASGIApplication(ConnectASGIApplication[ElizaService]):
                         input=ConverseRequest,
                         output=ConverseResponse,
                         idempotency_level=IdempotencyLevel.UNKNOWN,
+                        stream_type=StreamType.BIDI_STREAM,
                     ),
                     function=svc.converse,
                 ),
@@ -102,6 +104,7 @@ class ElizaServiceASGIApplication(ConnectASGIApplication[ElizaService]):
                         input=IntroduceRequest,
                         output=IntroduceResponse,
                         idempotency_level=IdempotencyLevel.UNKNOWN,
+                        stream_type=StreamType.SERVER_STREAM,
                     ),
                     function=svc.introduce,
                 ),
@@ -146,6 +149,7 @@ class ElizaServiceClient(ConnectClient):
                 input=SayRequest,
                 output=SayResponse,
                 idempotency_level=IdempotencyLevel.NO_SIDE_EFFECTS,
+                stream_type=StreamType.UNARY,
             ),
             headers=headers,
             timeout_ms=timeout_ms,
@@ -171,6 +175,7 @@ class ElizaServiceClient(ConnectClient):
                 input=ConverseRequest,
                 output=ConverseResponse,
                 idempotency_level=IdempotencyLevel.UNKNOWN,
+                stream_type=StreamType.BIDI_STREAM,
             ),
             headers=headers,
             timeout_ms=timeout_ms,
@@ -194,6 +199,7 @@ class ElizaServiceClient(ConnectClient):
                 input=IntroduceRequest,
                 output=IntroduceResponse,
                 idempotency_level=IdempotencyLevel.UNKNOWN,
+                stream_type=StreamType.SERVER_STREAM,
             ),
             headers=headers,
             timeout_ms=timeout_ms,
@@ -252,6 +258,7 @@ class ElizaServiceWSGIApplication(ConnectWSGIApplication):
                         input=SayRequest,
                         output=SayResponse,
                         idempotency_level=IdempotencyLevel.NO_SIDE_EFFECTS,
+                        stream_type=StreamType.UNARY,
                     ),
                     function=service.say,
                 ),
@@ -262,6 +269,7 @@ class ElizaServiceWSGIApplication(ConnectWSGIApplication):
                         input=ConverseRequest,
                         output=ConverseResponse,
                         idempotency_level=IdempotencyLevel.UNKNOWN,
+                        stream_type=StreamType.BIDI_STREAM,
                     ),
                     function=service.converse,
                 ),
@@ -272,6 +280,7 @@ class ElizaServiceWSGIApplication(ConnectWSGIApplication):
                         input=IntroduceRequest,
                         output=IntroduceResponse,
                         idempotency_level=IdempotencyLevel.UNKNOWN,
+                        stream_type=StreamType.SERVER_STREAM,
                     ),
                     function=service.introduce,
                 ),
@@ -316,6 +325,7 @@ class ElizaServiceClientSync(ConnectClientSync):
                 input=SayRequest,
                 output=SayResponse,
                 idempotency_level=IdempotencyLevel.NO_SIDE_EFFECTS,
+                stream_type=StreamType.UNARY,
             ),
             headers=headers,
             timeout_ms=timeout_ms,
@@ -341,6 +351,7 @@ class ElizaServiceClientSync(ConnectClientSync):
                 input=ConverseRequest,
                 output=ConverseResponse,
                 idempotency_level=IdempotencyLevel.UNKNOWN,
+                stream_type=StreamType.BIDI_STREAM,
             ),
             headers=headers,
             timeout_ms=timeout_ms,
@@ -364,6 +375,7 @@ class ElizaServiceClientSync(ConnectClientSync):
                 input=IntroduceRequest,
                 output=IntroduceResponse,
                 idempotency_level=IdempotencyLevel.UNKNOWN,
+                stream_type=StreamType.SERVER_STREAM,
             ),
             headers=headers,
             timeout_ms=timeout_ms,

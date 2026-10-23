@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-__all__ = ["IdempotencyLevel", "MethodInfo"]
+__all__ = ["IdempotencyLevel", "MethodInfo", "StreamType"]
 
 
 import enum
@@ -55,6 +55,22 @@ class IdempotencyLevel(enum.Enum):
     """
 
 
+class StreamType(enum.Enum):
+    """The directionality of an RPC method."""
+
+    UNARY = enum.auto()
+    """An RPC with one request and one response."""
+
+    CLIENT_STREAM = enum.auto()
+    """A client-streaming RPC."""
+
+    SERVER_STREAM = enum.auto()
+    """A server-streaming RPC."""
+
+    BIDI_STREAM = enum.auto()
+    """A bidirectional-streaming RPC."""
+
+
 @dataclass(kw_only=True, frozen=True, slots=True)
 class MethodInfo(Generic[REQ, RES]):
     """Information about a RPC method within a service."""
@@ -73,3 +89,6 @@ class MethodInfo(Generic[REQ, RES]):
 
     idempotency_level: IdempotencyLevel
     """The [IdempotencyLevel][] of the method."""
+
+    stream_type: StreamType
+    """The [StreamType][] of the method."""

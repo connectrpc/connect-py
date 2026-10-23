@@ -1,0 +1,5 @@
+default_install_hook_types = ["commit-msg", "pre-push"]
+
+[[repos]]
+repo = "builtin"
+hooks = [{ id = "check-commit-trailers", args = ["--require=Signed-off-by"] }]
