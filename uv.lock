@@ -227,6 +227,7 @@ test = [
     { name = "pytest" },
     { name = "pytest-asyncio" },
     { name = "pytest-timeout" },
+    { name = "trio" },
     { name = "zstandard" },
 ]
 
@@ -282,6 +283,7 @@ test = [
     { name = "pytest", specifier = "==9.1.1" },
     { name = "pytest-asyncio", specifier = "==1.4.0" },
     { name = "pytest-timeout", specifier = "==2.5.0" },
+    { name = "trio", specifier = "==0.34.0" },
     { name = "zstandard", specifier = "==0.25.0" },
 ]
 
