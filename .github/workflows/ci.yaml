@@ -142,6 +142,6 @@ jobs:
       - run: uv build
         working-directory: connectrpc-grpcreflect
 
-      - name: check dependency floors
+      - name: check wheels at dependency floors
         # The oldest supported Python, which allows the oldest dependencies.
-        run: uv run --python 3.11 scripts/check_dependency_floors.py dist/*.whl
+        run: uv run --python 3.11 scripts/check_wheels.py dist/*.whl

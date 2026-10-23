@@ -78,7 +78,7 @@ dev = [
   "protoc-gen-py==0.6.0",
 ]
 
-# What the unit tests need, which the dependency floor check installs with the
+# What the unit tests need, which scripts/check_wheels.py installs with the
 # wheel. Requirements here can hold connectrpc's dependencies above their floors,
 # so dev tools belong in the dev group.
 test = [

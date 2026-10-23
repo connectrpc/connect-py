@@ -55,7 +55,7 @@ connectrpc = "connectrpc_otel:ConnectInstrumentor"
 [dependency-groups]
 dev = [{ include-group = "test" }]
 
-# What the tests need, which the dependency floor check installs with the wheel.
+# What the tests need, which scripts/check_wheels.py installs with the wheel.
 # Requirements shared with the package's own dependencies use the same floors.
 test = [
   "example",
