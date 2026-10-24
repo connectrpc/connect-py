@@ -43,32 +43,25 @@ Repository = "https://github.com/connectrpc/connect-py"
 
 [dependency-groups]
 dev = [
+  { include-group = "test" },
+
   # Install all packages to be available in docs building, etc.
   "connectrpc-grpcreflect",
   "connectrpc-otel",
-  "example",
   "protoc-gen-connectrpc",
 
-  "asgiref==3.12.1",
-  "brotli==1.2.0",
   "buf-bin==1.74.0",
   "granian==2.8.4",
   "gunicorn==26.2.0",
-  "hypercorn==0.18.0",
   "poethepoet==0.49.0",
-  "pytest==9.1.1",
-  "pytest-asyncio==1.4.0",
   "pytest-cov==7.1.0",
-  "pytest-timeout==2.5.0",
   "pyvoy==1.3.0",
   "ruff==0.17.1",
   "tombi==1.8.8",
-  "trio==0.34.0",
   "ty==0.0.89",
   "types-grpcio==1.84.0.20260928",
   "types-protobuf==7.35.1.20260906",
   "uvicorn==0.54.0",
-  "zstandard==0.25.0",
 
   # dev dependencies only used in subprojects. Optimal structure would include these
   # in the subproject itself, but then `uv sync` does not install them from the
@@ -80,9 +73,25 @@ dev = [
   "opentelemetry-instrumentation-asgi==0.66b1",
   "opentelemetry-instrumentation-wsgi==0.66b1",
   "opentelemetry-sdk==1.45.1",
-  "protobuf>=5.28",
   "protoc-gen-grpc-py==0.4.0",
   "protoc-gen-py==0.6.0",
+]
+
+# What the unit tests need, which scripts/check_wheels.py installs with the
+# wheel. Requirements here can hold connectrpc's dependencies above their floors,
+# so dev tools belong in the dev group.
+test = [
+  "example",
+
+  "asgiref==3.12.1",
+  "brotli==1.2.0",
+  "hypercorn==0.18.0",
+  "protobuf>=5.28",
+  "pytest==9.1.1",
+  "pytest-asyncio==1.4.0",
+  "pytest-timeout==2.5.0",
+  "trio==0.34.0",
+  "zstandard==0.25.0",
 ]
 
 docs = ["mkdocstrings-python==2.0.9", "zensical==0.0.71"]

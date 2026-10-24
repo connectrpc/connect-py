@@ -53,7 +53,11 @@ Repository = "https://github.com/connectrpc/connect-py"
 connectrpc = "connectrpc_otel:ConnectInstrumentor"
 
 [dependency-groups]
-dev = [
+dev = [{ include-group = "test" }]
+
+# What the tests need, which scripts/check_wheels.py installs with the wheel.
+# Requirements shared with the package's own dependencies use the same floors.
+test = [
   "example",
 
   # auto-instrumentation shouldn't include a dependency on the library being instrumented
@@ -64,9 +68,17 @@ dev = [
   # have a real dependency to avoid any possible version conflicts. But for Python,
   # the ecosystem vastly favors auto-instrumentation, and it is easier to add than remove
   # a transitive dependency, so we go ahead and leave it out.
-  "connectrpc>=0.11.0",
+  #
+  # Without a version, the tests run against this repository's connectrpc.
+  "connectrpc",
 
+  "asgiref==3.12.1",
+  "opentelemetry-instrumentation-asgi>=0.60b1",
+  "opentelemetry-instrumentation-wsgi>=0.60b1",
+  "opentelemetry-sdk>=1.39.1",
   "pytest==9.1.1",
+  "pytest-asyncio==1.4.0",
+  "pytest-timeout==2.5.0",
 ]
 
 [build-system]
