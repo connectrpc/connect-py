@@ -73,6 +73,9 @@ def check(wheel: Path, envs: Path) -> None:
             "--no-sources",
             "--resolution",
             "lowest",
+            # Resolve unreleased wheels if we have bumped the floor to it
+            "--find-links",
+            str(wheel.parent),
             *install,
         ],
         check=True,
