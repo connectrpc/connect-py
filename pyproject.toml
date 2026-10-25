@@ -84,7 +84,7 @@ test = [
   "example",
 
   "asgiref==3.12.1",
-  "brotli==1.2.0",
+  "brotli==1.2.1",
   "hypercorn==0.18.0",
   "protobuf>=5.28",
   "pytest==9.1.1",
