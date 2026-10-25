@@ -18,7 +18,7 @@ from protobuf.plugin import (
     python_keywords,
     run,
 )
-from protobuf.wkt import MethodOptions
+from protobuf.wkt.google.protobuf.descriptor_pb import MethodOptions
 
 if TYPE_CHECKING:
     from protobuf import DescFile, DescMessage, DescMethod, DescService

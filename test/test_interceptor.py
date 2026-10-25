@@ -696,8 +696,12 @@ async def test_metadata_interceptor_closes_stream_async(method: str) -> None:
                 await asyncio.sleep(0)
                 events.append("handler closed")
 
-        def make_various_hats(self, _request, ctx):
-            return self.make_similar_hats(Size(inches=10), ctx)
+        async def make_various_hats(self, request, ctx):
+            # Read the whole request so the server can watch for the disconnect.
+            async for _ in request:
+                pass
+            async for hat in self.make_similar_hats(Size(inches=10), ctx):
+                yield hat
 
     app = HaberdasherASGIApplication(
         EndlessHaberdasher(),
@@ -735,10 +739,6 @@ async def test_metadata_interceptor_closes_stream_async(method: str) -> None:
     async def send(message) -> None:
         if message["type"] == "http.response.body" and message["more_body"]:
             disconnected.set()
-            if method == "MakeVariousHats":
-                # Only a server stream watches receive() for the disconnect; a bidi stream
-                # learns of it from a failed send.
-                raise ConnectError(Code.CANCELED, "Client disconnected")
 
     await asyncio.wait_for(app(scope, receive, send), timeout=5.0)
 

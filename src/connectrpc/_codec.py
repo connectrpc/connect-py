@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any, Protocol
 
 from protobuf import Message, Registry
-from protobuf.wkt import (
+from protobuf.wkt.google.protobuf import (
     api_pb,
     cpp_features_pb,
     descriptor_pb,

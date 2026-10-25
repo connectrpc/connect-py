@@ -1,6 +1,6 @@
 [project]
 name = "connectrpc"
-version = "0.12.1"
+version = "0.13.0"
 description = "Server and client runtime library for Connect RPC"
 readme = "README.md"
 requires-python = ">= 3.11"
@@ -74,7 +74,7 @@ dev = [
   "opentelemetry-instrumentation-wsgi==0.66b1",
   "opentelemetry-sdk==1.45.1",
   "protoc-gen-grpc-py==0.4.0",
-  "protoc-gen-py==0.6.0",
+  "protoc-gen-py==0.7.0",
 ]
 
 # What the unit tests need, which scripts/check_wheels.py installs with the

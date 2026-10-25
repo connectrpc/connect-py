@@ -11,6 +11,7 @@ from __future__ import annotations
 import gc
 import gzip
 import json
+import socket
 import subprocess
 import sys
 import threading
@@ -18,6 +19,7 @@ from concurrent.futures import Future, ThreadPoolExecutor
 from functools import partial
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
+from urllib.parse import urlparse
 
 import pytest
 
@@ -41,7 +43,7 @@ from .connectrpc.example.haberdasher_connect import (
 from .connectrpc.example.haberdasher_pb import Hat, Size
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncIterator, Callable, Iterator
+    from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
 
     from connectrpc.request import RequestContext
 
@@ -96,8 +98,8 @@ class Wrapper:
     """
 
     def __init__(self) -> None:
-        self.app: HaberdasherASGIApplication = HaberdasherASGIApplication(
-            TrioHaberdasher()
+        self.app: Callable[[Any, Any, Any], Awaitable[None]] = (
+            HaberdasherASGIApplication(TrioHaberdasher())
         )
         self.token: trio.lowlevel.TrioToken | None = None
         self._in_flight = 0
@@ -364,9 +366,14 @@ class EndlessHats(Haberdasher):
     async def make_various_hats(
         self, request: AsyncIterator[Size], _ctx: RequestContext[Size, Hat], /
     ) -> AsyncIterator[Hat]:
+        # Reads the whole request, then streams like make_similar_hats.
         try:
-            async for size in request:
+            size = Size()
+            async for message in request:
+                size = message
+            while True:
                 yield Hat(size=size.inches)
+                await trio.sleep(0.01)
         finally:
             await self._clean_up()
 
@@ -377,18 +384,22 @@ class EndlessHats(Haberdasher):
             raise self._cleanup_error
 
 
-def read_hats_then_disconnect(url: str) -> None:
+def read_hats_then_disconnect(url: str, method: str = "MakeSimilarHats") -> None:
     # The client's own connection, so that closing it disconnects the request.
     with (
         SyncHTTPTransport(http_version=HTTPVersion.HTTP1) as transport,
         HaberdasherClientSync(url, http_client=SyncClient(transport)) as client,
     ):
-        hats = client.make_similar_hats(Size(inches=10))
+        if method == "MakeSimilarHats":
+            hats = client.make_similar_hats(Size(inches=10))
+        else:
+            hats = client.make_various_hats(iter([Size(inches=10)]))
         assert [next(hats).size for _ in range(3)] == [10, 10, 10]
         del hats
     gc.collect()
 
 
+@pytest.mark.parametrize("method", ["MakeSimilarHats", "MakeVariousHats"])
 @pytest.mark.parametrize(
     ("cleanup_error", "end_error"),
     [
@@ -400,17 +411,19 @@ def read_hats_then_disconnect(url: str) -> None:
     ],
     ids=["clean", "cleanup-error"],
 )
-def test_disconnect_ends_server_stream(
+def test_disconnect_ends_stream(
     url: str,
     wrapper: Wrapper,
+    method: str,
     cleanup_error: Exception | None,
     end_error: dict[str, str],
 ) -> None:
+    """A disconnect after the request has been read ends the response stream."""
     events: list[str] = []
     wrapper.app = HaberdasherASGIApplication(
         EndlessHats(events, cleanup_error), interceptors=[Recorder(events)]
     )
-    read_hats_then_disconnect(url)
+    read_hats_then_disconnect(url, method)
 
     assert wrapper.done.wait(10)
     assert wrapper.end_error() == end_error
@@ -419,6 +432,37 @@ def test_disconnect_ends_server_stream(
         f"on_end started {end_error['code']}",
         "on_end finished",
     ]
+
+
+def test_disconnect_cancels_blocked_unary(url: str, wrapper: Wrapper) -> None:
+    """A unary handler has nothing to poll, so a disconnect cancels it like a deadline."""
+    events: list[str] = []
+    blocked = threading.Event()
+    wrapper.app = HaberdasherASGIApplication(
+        BlockedHats(blocked, events, in_nursery=False), interceptors=[Recorder(events)]
+    )
+
+    # A raw connection, so that closing it disconnects the request mid-call.
+    parsed = urlparse(url)
+    body = Size(inches=10).to_binary()
+    request = (
+        f"POST /connectrpc.example.Haberdasher/MakeHat HTTP/1.1\r\n"
+        f"Host: {parsed.netloc}\r\n"
+        "Content-Type: application/proto\r\n"
+        f"Content-Length: {len(body)}\r\n\r\n"
+    ).encode() + body
+    with socket.create_connection((parsed.hostname, parsed.port)) as connection:
+        connection.sendall(request)
+        assert blocked.wait(10)
+
+    assert wrapper.done.wait(10)
+    assert wrapper.raised is None
+    assert events == [
+        "handler cleaned up",
+        "on_end started canceled",
+        "on_end finished",
+    ]
+    assert wrapper.error() == {"code": "canceled", "message": "Client disconnected"}
 
 
 class ScopedHats(Haberdasher):
@@ -740,6 +784,25 @@ def test_on_end_after_cancellation_is_bounded(
 
 
 @pytest.mark.parametrize("method", ["MakeHat", "MakeSimilarHats"])
+def test_on_end_is_bounded_by_deadline(
+    client: HaberdasherClientSync, wrapper: Wrapper, method: str
+) -> None:
+    events: list[str] = []
+    wrapper.app = HaberdasherASGIApplication(
+        TrioHaberdasher(), interceptors=[Recorder(events, seconds=5)]
+    )
+
+    with pytest.raises(ConnectError) as exc_info:
+        call(client, method, headers={"connect-timeout-ms": "100"})
+    assert wrapper.done.wait(10)
+
+    assert exc_info.value.code == Code.DEADLINE_EXCEEDED
+    assert wrapper.raised is None
+    assert events == ["on_end started None"]
+    assert wrapper.error() == TIMED_OUT
+
+
+@pytest.mark.parametrize("method", ["MakeHat", "MakeSimilarHats"])
 def test_on_end_is_not_bounded_without_cancellation(
     client: HaberdasherClientSync, wrapper: Wrapper, cleanup_timeout: float, method: str
 ) -> None:
@@ -751,6 +814,48 @@ def test_on_end_is_not_bounded_without_cancellation(
     call(client, method)
 
     assert events == ["on_end started None", "on_end finished"]
+
+
+@pytest.mark.parametrize("method", ["MakeHat", "MakeSimilarHats"])
+def test_base_exception_in_handler(
+    client: HaberdasherClientSync, wrapper: Wrapper, method: str
+) -> None:
+    """A SystemExit from the handler reaches the server and is reported as an error."""
+    events: list[str] = []
+    raised: list[BaseException] = []
+
+    class ExitingHats(Haberdasher):
+        async def make_hat(self, _request: Size, _ctx: RequestContext, /) -> Hat:
+            raise SystemExit(1)
+
+        async def make_similar_hats(
+            self, _request: Size, _ctx: RequestContext, /
+        ) -> AsyncIterator[Hat]:
+            yield Hat(size=1)
+            raise SystemExit(1)
+
+    app = HaberdasherASGIApplication(ExitingHats(), interceptors=[Recorder(events)])
+
+    async def catching_app(scope: Any, receive: Any, send: Any) -> None:
+        # Raised into hypercorn, a SystemExit would stop the module's server.
+        try:
+            await app(scope, receive, send)
+        except SystemExit as e:
+            raised.append(e)
+
+    wrapper.app = catching_app
+
+    with pytest.raises(ConnectError):
+        call(client, method)
+    assert wrapper.done.wait(10)
+
+    assert [type(e) for e in raised] == [SystemExit]
+    assert events == ["on_end started unknown", "on_end finished"]
+    if method == "MakeSimilarHats":
+        assert wrapper.end_error() == {
+            "code": "unknown",
+            "message": "Request was interrupted",
+        }
 
 
 def test_handler_timeout_on_request_stream(

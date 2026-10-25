@@ -7,7 +7,7 @@ import pytest_asyncio
 from connectrpc.errors import ConnectError
 from example.gen.connectrpc.eliza.v1 import eliza_pb
 from protobuf import DescFile, Oneof
-from protobuf.wkt import (
+from protobuf.wkt.google.protobuf.descriptor_pb import (
     DescriptorProto,
     EnumDescriptorProto,
     EnumValueDescriptorProto,

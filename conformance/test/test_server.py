@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import signal
 import subprocess
 import sys
 from pathlib import Path
@@ -15,6 +16,8 @@ if TYPE_CHECKING:
 _current_dir = Path(__file__).parent
 _server_py_path = str(_current_dir / "server.py")
 _config_path = str(_current_dir / "config.yaml")
+
+_RUNNER_TIMEOUT_SECONDS = 300
 
 
 # Servers often run out of file descriptors due to low default ulimit.
@@ -42,6 +45,35 @@ _known_flaky = [
 ]
 
 
+def run_conformance(
+    args: list[str],
+    env: dict[str, str] | None,
+    timeout: float = _RUNNER_TIMEOUT_SECONDS,
+) -> None:
+    """Run the conformance runner, failing with its output if it fails or hangs."""
+    with subprocess.Popen(
+        args,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        env=env,
+        start_new_session=True,
+    ) as process:
+        try:
+            stdout, stderr = process.communicate(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            if hasattr(os, "killpg"):
+                os.killpg(process.pid, signal.SIGKILL)
+            else:
+                process.kill()
+            stdout, stderr = process.communicate()
+            pytest.fail(
+                f"conformance runner did not finish within {timeout}s\n{stdout}\n{stderr}"
+            )
+    if process.returncode != 0:
+        pytest.fail(f"\n{stdout}\n{stderr}")
+
+
 @pytest.mark.parametrize("server", ["gunicorn", "pyvoy"])
 def test_server_sync(server: str, cov: Coverage) -> None:
     args = maybe_patch_args_with_debug(
@@ -55,7 +87,7 @@ def test_server_sync(server: str, cov: Coverage) -> None:
             # gunicorn doesn't support HTTP/2 or 3
             opts += ["--skip", "**/HTTPVersion:2/**", "--skip", "**/HTTPVersion:3/**"]
 
-    result = subprocess.run(
+    run_conformance(
         [
             "go",
             "run",
@@ -69,13 +101,8 @@ def test_server_sync(server: str, cov: Coverage) -> None:
             "--",
             *args,
         ],
-        capture_output=True,
-        text=True,
-        check=False,
-        env=coverage_env(cov),
+        coverage_env(cov),
     )
-    if result.returncode != 0:
-        pytest.fail(f"\n{result.stdout}\n{result.stderr}")
 
 
 @pytest.mark.parametrize("server", ["pyvoy", "pyvoy-trio", "uvicorn"])
@@ -88,7 +115,7 @@ def test_server_async(server: str, cov: Coverage) -> None:
         case "uvicorn":
             # uvicorn doesn't support HTTP/2 or 3
             opts = ["--skip", "**/HTTPVersion:2/**", "--skip", "**/HTTPVersion:3/**"]
-    result = subprocess.run(
+    run_conformance(
         [
             "go",
             "run",
@@ -108,10 +135,5 @@ def test_server_async(server: str, cov: Coverage) -> None:
             "--",
             *args,
         ],
-        capture_output=True,
-        text=True,
-        check=False,
-        env=coverage_env(cov),
+        coverage_env(cov),
     )
-    if result.returncode != 0:
-        pytest.fail(f"\n{result.stdout}\n{result.stderr}")

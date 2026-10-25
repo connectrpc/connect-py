@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
 import random
 import struct
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import pytest
 from pyqwest import Client, SyncClient
@@ -680,6 +681,334 @@ async def test_server_stream_client_disconnect_while_blocked() -> None:
     assert json.loads(end[5:]) == {
         "error": {"code": "canceled", "message": "Client disconnected"}
     }
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("method", "http_method", "content_type"),
+    [
+        pytest.param("MakeHat", "POST", b"application/proto", id="connect_unary"),
+        pytest.param("MakeHat", "GET", b"", id="connect_unary_get"),
+        pytest.param("MakeHat", "POST", b"application/grpc", id="grpc_unary"),
+        pytest.param(
+            "MakeFlexibleHat", "POST", b"application/connect+proto", id="client_stream"
+        ),
+        pytest.param(
+            "MakeVariousHats", "POST", b"application/connect+proto", id="bidi_stream"
+        ),
+    ],
+)
+async def test_client_disconnect_cancels_blocked_handler(
+    method: str, http_method: str, content_type: bytes
+) -> None:
+    """A handler blocked after the request has been read is cancelled on disconnect.
+
+    A disconnect is only delivered by receive(), which also delivers the
+    request body, so a stream handler that reads the whole request is covered
+    the same as a unary one.
+    """
+    events: list[str] = []
+    blocked = asyncio.Event()
+
+    class BlockedHaberdasher(Haberdasher):
+        async def make_hat(self, request, _ctx):
+            await self._block()
+            return Hat(size=request.inches)
+
+        async def make_flexible_hat(self, request, _ctx):
+            async for _ in request:
+                pass
+            await self._block()
+            return Hat()
+
+        async def make_various_hats(self, request, _ctx):
+            async for size in request:
+                yield Hat(size=size.inches)
+            await self._block()
+
+        async def _block(self):
+            try:
+                blocked.set()
+                await asyncio.Event().wait()
+            finally:
+                events.append("handler cleaned up")
+
+    class Recorder:
+        async def on_start(self, ctx):
+            pass
+
+        async def on_end(self, _token, _ctx, error):
+            code = error.code.value if isinstance(error, ConnectError) else error
+            events.append(f"on_end {code}")
+
+    app = HaberdasherASGIApplication(BlockedHaberdasher(), interceptors=[Recorder()])
+
+    request_bytes = Size(inches=10).to_binary()
+    query_string = b""
+    if http_method == "GET":
+        request_body = b""
+        message = base64.urlsafe_b64encode(request_bytes).rstrip(b"=")
+        query_string = b"encoding=proto&base64=1&message=" + message
+    elif content_type == b"application/proto":
+        request_body = request_bytes
+    else:
+        request_body = struct.pack(">BI", 0, len(request_bytes)) + request_bytes
+    sent_request = False
+    sent: list[dict] = []
+
+    async def receive() -> HTTPRequestEvent | HTTPDisconnectEvent:
+        nonlocal sent_request
+        if not sent_request:
+            sent_request = True
+            return {"type": "http.request", "body": request_body, "more_body": False}
+        await blocked.wait()
+        return {"type": "http.disconnect"}
+
+    async def send(message):
+        sent.append(message)
+
+    path = f"/connectrpc.example.Haberdasher/{method}"
+    scope: HTTPScope = {
+        "type": "http",
+        "asgi": {"spec_version": "2.0", "version": "3.0"},
+        "http_version": "2",
+        "method": http_method,
+        "scheme": "http",
+        "path": path,
+        "raw_path": path.encode(),
+        "query_string": query_string,
+        "root_path": "",
+        "headers": [(b"content-type", content_type)] if content_type else [],
+        "client": None,
+        "server": None,
+        "extensions": {"http.response.trailers": {}},
+    }
+
+    # Without the watch, the handler blocks until the test's timeout.
+    await asyncio.wait_for(app(scope, receive, send), timeout=1.0)
+
+    assert events == ["handler cleaned up", "on_end canceled"]
+    types = [m["type"].removeprefix("http.response.") for m in sent]
+    if content_type == b"application/grpc":
+        assert types == ["start", "body", "trailers"]
+        trailers = dict(sent[-1]["headers"])
+        assert trailers[b"grpc-status"] == b"1"
+        assert trailers[b"grpc-message"] == b"Client%20disconnected"
+    elif method == "MakeHat":
+        assert types == ["start", "body"]
+        assert sent[0]["status"] == 499
+        assert json.loads(sent[1]["body"]) == {
+            "code": "canceled",
+            "message": "Client disconnected",
+        }
+    else:
+        # The bidi handler echoes the request message before it blocks.
+        assert types == ["start", "body", "body"][: 2 + (method == "MakeVariousHats")]
+        end = sent[-1]["body"]
+        assert end[0] & 0b10, "last body is the end-of-stream message"
+        assert json.loads(end[5:]) == {
+            "error": {"code": "canceled", "message": "Client disconnected"}
+        }
+
+
+@pytest.mark.asyncio
+async def test_client_disconnects_as_deadline_fires() -> None:
+    """A disconnect noticed while the deadline's cancellation is in flight is harmless.
+
+    The client's own deadline is the same as the server's, so it typically
+    disconnects at the same moment the server's deadline fires.
+    """
+    events: list[str] = []
+    cancelled = asyncio.Event()
+
+    class BlockedHaberdasher(Haberdasher):
+        async def make_similar_hats(self, request, _ctx):
+            try:
+                yield Hat(size=request.inches)
+                await asyncio.Event().wait()
+            finally:
+                events.append("handler cleaned up")
+                cancelled.set()
+                # Let the watch report the disconnect before the scope exits.
+                await asyncio.sleep(0)
+                await asyncio.sleep(0)
+
+    class Recorder:
+        async def on_start(self, ctx):
+            pass
+
+        async def on_end(self, _token, _ctx, error):
+            code = error.code.value if isinstance(error, ConnectError) else error
+            events.append(f"on_end {code}")
+
+    app = HaberdasherASGIApplication(BlockedHaberdasher(), interceptors=[Recorder()])
+    request_bytes = Size(inches=10).to_binary()
+    request_body = struct.pack(">BI", 0, len(request_bytes)) + request_bytes
+    sent_request = False
+    sent: list[bytes] = []
+
+    async def receive() -> HTTPRequestEvent | HTTPDisconnectEvent:
+        nonlocal sent_request
+        if not sent_request:
+            sent_request = True
+            return {"type": "http.request", "body": request_body, "more_body": False}
+        await cancelled.wait()
+        return {"type": "http.disconnect"}
+
+    async def send(message):
+        if message["type"] == "http.response.body":
+            sent.append(message["body"])
+
+    scope = _make_similar_hats_scope()
+    scope["headers"] = [*scope["headers"], (b"connect-timeout-ms", b"20")]
+
+    # Give the loop the clock of Windows before Python 3.13, which advances in
+    # steps of about 16ms: the deadline then fires while the clock still reads
+    # before it, so the outcome can't be decided by reading the clock.
+    loop: Any = asyncio.get_running_loop()
+    resolution = loop._clock_resolution = 0.0156
+    real_time = loop.time
+    loop.time = lambda: real_time() // resolution * resolution
+
+    await asyncio.wait_for(app(scope, receive, send), timeout=1.0)
+
+    assert events == ["handler cleaned up", "on_end deadline_exceeded"]
+    end = sent[-1]
+    assert end[0] & 0b10, "last body is the end-of-stream message"
+    assert json.loads(end[5:]) == {
+        "error": {"code": "deadline_exceeded", "message": "Request timed out"}
+    }
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("unary", [False, True], ids=["stream", "unary"])
+async def test_failed_send_ends_response(unary: bool) -> None:
+    """A send the server rejects is raised to it, with nothing sent after it.
+
+    Sending an error response or the end of the stream after that would only
+    fail again, replacing the error that explains what happened.
+    """
+    errors: list[Exception | None] = []
+
+    class SimpleHaberdasher(Haberdasher):
+        async def make_hat(self, request, _ctx):
+            return Hat(size=request.inches)
+
+        async def make_similar_hats(self, request, _ctx):
+            yield Hat(size=request.inches)
+
+    class Recorder:
+        async def on_start(self, ctx):
+            pass
+
+        async def on_end(self, _token, _ctx, error):
+            errors.append(error)
+
+    app = HaberdasherASGIApplication(SimpleHaberdasher(), interceptors=[Recorder()])
+    request_bytes = Size(inches=10).to_binary()
+    if unary:
+        method, content_type, request_body = (
+            "MakeHat",
+            b"application/proto",
+            request_bytes,
+        )
+    else:
+        method, content_type = "MakeSimilarHats", b"application/connect+proto"
+        request_body = struct.pack(">BI", 0, len(request_bytes)) + request_bytes
+    sent_request = False
+    sent: list[dict] = []
+    connection_lost = OSError("connection lost")
+
+    async def receive() -> HTTPRequestEvent:
+        nonlocal sent_request
+        if not sent_request:
+            sent_request = True
+            return {"type": "http.request", "body": request_body, "more_body": False}
+        await asyncio.Event().wait()
+        raise AssertionError
+
+    async def send(message):
+        sent.append(message)
+        if message["type"] == "http.response.body":
+            raise connection_lost
+
+    path = f"/connectrpc.example.Haberdasher/{method}"
+    scope: HTTPScope = {
+        "type": "http",
+        "asgi": {"spec_version": "2.0", "version": "3.0"},
+        "http_version": "1.1",
+        "method": "POST",
+        "scheme": "http",
+        "path": path,
+        "raw_path": path.encode(),
+        "query_string": b"",
+        "root_path": "",
+        "headers": [(b"content-type", content_type)],
+        "client": None,
+        "server": None,
+        "extensions": None,
+    }
+
+    with pytest.raises(OSError, match="connection lost") as exc_info:
+        await app(scope, receive, send)
+
+    assert exc_info.value is connection_lost
+    assert [m["type"] for m in sent] == ["http.response.start", "http.response.body"]
+    # A unary response is sent after on_end; a stream's failure reaches it.
+    assert errors == [None] if unary else [connection_lost]
+
+
+@pytest.mark.asyncio
+async def test_server_cancelled_with_failed_send() -> None:
+    """The cancellation propagates even if the error response can't be sent."""
+    blocked = asyncio.Event()
+
+    class BlockedHaberdasher(Haberdasher):
+        async def make_hat(self, request, _ctx):
+            blocked.set()
+            await asyncio.Event().wait()
+            return Hat(size=request.inches)
+
+    app = HaberdasherASGIApplication(BlockedHaberdasher())
+    sent_request = False
+
+    async def receive() -> HTTPRequestEvent:
+        nonlocal sent_request
+        if not sent_request:
+            sent_request = True
+            return {
+                "type": "http.request",
+                "body": Size(inches=10).to_binary(),
+                "more_body": False,
+            }
+        await asyncio.Event().wait()
+        raise AssertionError
+
+    async def send(_message):
+        msg = "connection lost"
+        raise OSError(msg)
+
+    scope: HTTPScope = {
+        "type": "http",
+        "asgi": {"spec_version": "2.0", "version": "3.0"},
+        "http_version": "1.1",
+        "method": "POST",
+        "scheme": "http",
+        "path": "/connectrpc.example.Haberdasher/MakeHat",
+        "raw_path": b"/connectrpc.example.Haberdasher/MakeHat",
+        "query_string": b"",
+        "root_path": "",
+        "headers": [(b"content-type", b"application/proto")],
+        "client": None,
+        "server": None,
+        "extensions": None,
+    }
+
+    task = asyncio.create_task(app(scope, receive, send))
+    await blocked.wait()
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
 
 
 def _make_similar_hats_scope() -> HTTPScope:
