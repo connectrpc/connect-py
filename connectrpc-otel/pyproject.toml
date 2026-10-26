@@ -72,12 +72,12 @@ test = [
   # Without a version, the tests run against this repository's connectrpc.
   "connectrpc",
 
-  "asgiref==3.12.1",
+  "asgiref==3.13.0",
   "opentelemetry-instrumentation-asgi>=0.60b1",
   "opentelemetry-instrumentation-wsgi>=0.60b1",
   "opentelemetry-sdk>=1.39.1",
   "pytest==9.1.1",
-  "pytest-asyncio==1.4.0",
+  "pytest-asyncio==1.4.1",
   "pytest-timeout==2.5.0",
 ]
 

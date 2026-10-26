@@ -50,16 +50,16 @@ dev = [
   "connectrpc-otel",
   "protoc-gen-connectrpc",
 
-  "buf-bin==1.74.0",
-  "granian==2.8.4",
+  "buf-bin==1.75.0",
+  "granian==2.8.5",
   "gunicorn==26.2.0",
   "poethepoet==0.49.0",
   "pytest-cov==7.1.0",
   "pyvoy==1.3.0",
-  "ruff==0.17.1",
-  "tombi==1.8.8",
-  "ty==0.0.89",
-  "types-grpcio==1.84.0.20260928",
+  "ruff==0.17.2",
+  "tombi==1.9.5",
+  "ty==0.0.91",
+  "types-grpcio==1.84.0.20261021",
   "types-protobuf==7.35.1.20260906",
   "uvicorn==0.54.0",
 
@@ -83,18 +83,18 @@ dev = [
 test = [
   "example",
 
-  "asgiref==3.12.1",
+  "asgiref==3.13.0",
   "brotli==1.2.1",
   "hypercorn==0.18.0",
   "protobuf>=5.28",
   "pytest==9.1.1",
-  "pytest-asyncio==1.4.0",
+  "pytest-asyncio==1.4.1",
   "pytest-timeout==2.5.0",
   "trio==0.34.0",
   "zstandard==0.25.0",
 ]
 
-docs = ["mkdocstrings-python==2.0.9", "zensical==0.0.71"]
+docs = ["mkdocstrings-python==2.0.10", "zensical==0.0.72"]
 
 [build-system]
 requires = ["uv_build>=0.13.0,<0.14.0"]
