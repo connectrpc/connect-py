@@ -1,0 +1,32 @@
+syntax = "proto3";
+
+package connectrpc.example;
+
+message DeprecatedRequest {}
+
+message DeprecatedResponse {}
+
+// A deprecated service.
+service DeprecatedService {
+  option deprecated = true;
+
+  rpc Unary(DeprecatedRequest) returns (DeprecatedResponse);
+}
+
+// A service with deprecated methods.
+service ServiceWithDeprecatedMethods {
+  // A method named deprecated shadows the name generated code would otherwise
+  // use to mark the deprecated methods after it.
+  rpc Deprecated(DeprecatedRequest) returns (DeprecatedResponse);
+
+  // A deprecated unary method.
+  rpc Unary(DeprecatedRequest) returns (DeprecatedResponse) {
+    option deprecated = true;
+  }
+
+  rpc ServerStream(DeprecatedRequest) returns (stream DeprecatedResponse) {
+    option deprecated = true;
+  }
+
+  rpc NotDeprecated(DeprecatedRequest) returns (DeprecatedResponse);
+}

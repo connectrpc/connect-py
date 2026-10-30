@@ -269,7 +269,7 @@ test = [
 
 [package.metadata]
 requires-dist = [
-    { name = "protobuf-py", specifier = ">=0.6.0" },
+    { name = "protobuf-py", specifier = ">=0.7.0" },
     { name = "pyqwest", specifier = ">=0.12.0" },
     { name = "typing-extensions", specifier = ">=4.16.0" },
 ]
@@ -1332,7 +1332,7 @@ dependencies = [
 ]
 
 [package.metadata]
-requires-dist = [{ name = "protobuf-py", specifier = ">=0.6.0" }]
+requires-dist = [{ name = "protobuf-py", specifier = ">=0.7.0" }]
 
 [[package]]
 name = "protoc-gen-grpc-py"

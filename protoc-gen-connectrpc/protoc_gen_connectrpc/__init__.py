@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import TYPE_CHECKING
 
+from protobuf import DescService
 from protobuf.plugin import (
     File,
     Ident,
@@ -21,7 +22,7 @@ from protobuf.plugin import (
 from protobuf.wkt.google.protobuf.descriptor_pb import MethodOptions
 
 if TYPE_CHECKING:
-    from protobuf import DescFile, DescMessage, DescMethod, DescService
+    from protobuf import DescFile, DescMessage, DescMethod
 
 _COLLECTIONS_ABC = Module("collections.abc")
 _ASYNC_GENERATOR = _COLLECTIONS_ABC.ident("AsyncGenerator", type_only=True)
@@ -31,6 +32,9 @@ _ITERATOR = _COLLECTIONS_ABC.ident("Iterator", type_only=True)
 _MAPPING = _COLLECTIONS_ABC.ident("Mapping", type_only=True)
 _TYPING = Module("typing")
 _PROTOCOL = _TYPING.ident("Protocol")
+_DEPRECATED = Module("typing_extensions").ident("deprecated")
+# Use a private alias to prevent collisions with method names in class scope.
+_DEPRECATED_ALIAS = "_deprecated"
 
 _PROTOBUF = Module("protobuf")
 _DESC_SERVICE = _PROTOBUF.ident("DescService")
@@ -134,6 +138,9 @@ def _generate_file(f: File, desc: DescFile, options: Options) -> None:
         f.print("_PROTO_BINARY_CODEC = ", _GOOGLE_PROTOBUF_BINARY_CODEC, "()")
         f.print("_GZIP_COMPRESSION = ", _GZIP_COMPRESSION, "()")
         f.print()
+    if any(s.deprecated or any(m.deprecated for m in s.methods) for s in desc.services):
+        f.print(_DEPRECATED_ALIAS, " = ", _DEPRECATED)
+        f.print()
     for service in desc.services:
         if not options.io or options.io == _IOOption.ASYNC:
             _generate_async_stubs(f, service, options)
@@ -146,12 +153,14 @@ def _generate_async_stubs(f: File, service: DescService, options: Options) -> No
     default_server_codecs = (
         "_DEFAULT_CODECS" if options.protobuf == _ProtobufOption.GOOGLE else "None"
     )
+    _maybe_print_deprecated(f, service)
     with f.scope("class ", service_name, "(", _PROTOCOL, "):"):
         _print_docstring(f, service)
         if not service.methods and options.protobuf == _ProtobufOption.GOOGLE:
             f.print("pass")
         for method in service.methods:
             def_prefix, request_type, response_type = _async_signature(method, options)
+            _maybe_print_deprecated(f, method)
             with f.scope(
                 def_prefix,
                 "def ",
@@ -180,6 +189,7 @@ def _generate_async_stubs(f: File, service: DescService, options: Options) -> No
         _generate_desc_method(f, service, options)
 
     f.print()
+    _maybe_print_deprecated(f, service)
     with f.scope(
         "class ",
         service_name,
@@ -271,6 +281,7 @@ def _generate_async_stubs(f: File, service: DescService, options: Options) -> No
             f.print(f'return "/{service.type_name}"')
     f.print()
     f.print()
+    _maybe_print_deprecated(f, service)
     with f.scope("class ", service_name, "Client(", _CONNECT_CLIENT, "):"):
         _print_docstring(f, service)
 
@@ -281,6 +292,7 @@ def _generate_async_stubs(f: File, service: DescService, options: Options) -> No
         for method in service.methods:
             def_prefix, request_type, response_type = _async_signature(method, options)
 
+            _maybe_print_deprecated(f, method)
             with f.scope(def_prefix, "def ", _method_local_name(method), "("):
                 f.print("self,")
                 f.print("request: ", *request_type, ",")
@@ -346,12 +358,14 @@ def _generate_sync_stubs(f: File, service: DescService, options: Options) -> Non
     default_codecs = (
         "_DEFAULT_CODECS" if options.protobuf == _ProtobufOption.GOOGLE else "None"
     )
+    _maybe_print_deprecated(f, service)
     with f.scope("class ", service_name, "Sync(", _PROTOCOL, "):"):
         _print_docstring(f, service)
         if not service.methods and options.protobuf == _ProtobufOption.GOOGLE:
             f.print("pass")
         for method in service.methods:
             request_type, response_type = _sync_signature(method, options)
+            _maybe_print_deprecated(f, method)
             with f.scope(
                 "def ",
                 _method_local_name(method),
@@ -379,6 +393,7 @@ def _generate_sync_stubs(f: File, service: DescService, options: Options) -> Non
         _generate_desc_method(f, service, options)
 
     f.print()
+    _maybe_print_deprecated(f, service)
     with f.scope(
         "class ", service_name, "WSGIApplication(", _CONNECT_WSGI_APPLICATION, "):"
     ):
@@ -450,6 +465,7 @@ def _generate_sync_stubs(f: File, service: DescService, options: Options) -> Non
             f.print(f'return "/{service.type_name}"')
     f.print()
     f.print()
+    _maybe_print_deprecated(f, service)
     with f.scope("class ", service_name, "ClientSync(", _CONNECT_CLIENT_SYNC, "):"):
         _print_docstring(f, service)
 
@@ -460,6 +476,7 @@ def _generate_sync_stubs(f: File, service: DescService, options: Options) -> Non
         for method in service.methods:
             request_type, response_type = _sync_signature(method, options)
 
+            _maybe_print_deprecated(f, method)
             with f.scope("def ", _method_local_name(method), "("):
                 f.print("self,")
                 f.print("request: ", *request_type, ",")
@@ -584,6 +601,19 @@ def _print_docstring(f: File, desc: DescService | DescMethod) -> None:
     with f.doc():
         for line in comment_lines:
             f.print(line)
+
+
+def _maybe_print_deprecated(f: File, desc: DescService | DescMethod) -> None:
+    if not desc.deprecated:
+        return
+    name = (
+        desc.type_name
+        if isinstance(desc, DescService)
+        else f"{desc.parent.type_name}.{desc.name}"
+    )
+    # category=None only marks the element for type checkers, without emitting
+    # a DeprecationWarning at runtime.
+    f.print("@", _DEPRECATED_ALIAS, '("', name, ' is deprecated.", category=None)')
 
 
 def _generate_desc_method(f: File, service: DescService, options: Options) -> None:
