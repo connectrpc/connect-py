@@ -51,15 +51,15 @@ dev = [
   "protoc-gen-connectrpc",
 
   "buf-bin==1.75.0",
-  "granian==2.8.5",
+  "granian==2.8.7",
   "gunicorn==26.2.0",
   "poethepoet==0.49.0",
   "pytest-cov==7.1.0",
   "pyvoy==1.3.0",
-  "ruff==0.17.2",
-  "tombi==1.9.5",
-  "ty==0.0.92",
-  "types-grpcio==1.84.0.20261021",
+  "ruff==0.17.3",
+  "tombi==1.9.8",
+  "ty==0.0.95",
+  "types-grpcio==1.85.0.20261028",
   "types-protobuf==7.35.1.20260906",
   "uvicorn==0.54.0",
 
@@ -73,7 +73,7 @@ dev = [
   "opentelemetry-instrumentation-asgi==0.66b1",
   "opentelemetry-instrumentation-wsgi==0.66b1",
   "opentelemetry-sdk==1.45.1",
-  "protoc-gen-grpc-py==0.4.0",
+  "protoc-gen-grpc-py==0.5.0",
   "protoc-gen-py==0.7.0",
 ]
 
@@ -87,14 +87,14 @@ test = [
   "brotli==1.2.1",
   "hypercorn==0.18.0",
   "protobuf>=5.28",
-  "pytest==9.1.1",
-  "pytest-asyncio==1.4.1",
+  "pytest==9.2.0",
+  "pytest-asyncio==1.4.1.post1",
   "pytest-timeout==2.5.0",
-  "trio==0.34.0",
+  "trio==0.35.0",
   "zstandard==0.25.0",
 ]
 
-docs = ["mkdocstrings-python==2.0.10", "zensical==0.0.72"]
+docs = ["mkdocstrings-python==2.0.10", "zensical==0.0.74"]
 
 [build-system]
 requires = ["uv_build>=0.13.0,<0.14.0"]
@@ -110,6 +110,7 @@ filterwarnings = [
 strict = true
 testpaths = ["test"]
 timeout = 1800  # 30 min
+asyncio_default_fixture_loop_scope = "function"
 
 [tool.ruff]
 # Don't run ruff on generated code from external plugins.
