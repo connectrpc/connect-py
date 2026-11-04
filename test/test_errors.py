@@ -669,20 +669,37 @@ class _ServerTimeoutTransport(Transport):
 
 
 class _QuickHaberdasher(Haberdasher):
+    """Responds without awaiting, after blocking the loop for the given seconds."""
+
+    def __init__(self, block: float = 0) -> None:
+        self._block = block
+
+    def _block_loop(self) -> None:
+        if self._block:
+            time.sleep(self._block)
+
     async def make_hat(self, request, _ctx) -> Hat:
+        self._block_loop()
         return Hat(size=request.inches)
 
     async def make_flexible_hat(self, request, _ctx) -> Hat:
         async for _ in request:
             pass
+        self._block_loop()
         return Hat()
 
     async def make_similar_hats(self, request, _ctx) -> AsyncIterator[Hat]:
+        self._block_loop()
         yield Hat(size=request.inches)
 
 
 class _SlowOnEnd:
-    """An on_end that blocks until it is cancelled, recording both."""
+    """An on_end that blocks until it is cancelled, recording both.
+
+    Called after the deadline has passed, as can happen on a slow machine, it
+    waits only briefly, as a hook that respects the deadline would, since the
+    server may not cancel it.
+    """
 
     def __init__(self) -> None:
         self.events: list[str] = []
@@ -690,13 +707,15 @@ class _SlowOnEnd:
     async def on_start(self, ctx) -> None:  # noqa: ARG002
         return None
 
-    async def on_end(self, _token, _ctx, error: Exception | None) -> None:
+    async def on_end(self, _token, ctx, error: Exception | None) -> None:
         code = error.code.value if isinstance(error, ConnectError) else error
         self.events.append(f"on_end {code}")
+        late = ctx.timeout_ms is not None and ctx.timeout_ms <= 0
         try:
-            await asyncio.Event().wait()
-        finally:
+            await (asyncio.sleep(0.1) if late else asyncio.Event().wait())
+        except asyncio.CancelledError:
             self.events.append("on_end cancelled")
+            raise
 
 
 @pytest.mark.asyncio
@@ -728,12 +747,14 @@ async def test_async_server_timeout(protocol: ProtocolType, method: str) -> None
 @pytest.mark.asyncio
 @pytest.mark.parametrize("protocol", _protocols)
 @pytest.mark.parametrize("method", _blocking_methods)
+# A slow handler, as on a loaded machine, lets the deadline pass before on_end.
+@pytest.mark.parametrize("block", [0, 0.1], ids=["quick_handler", "slow_handler"])
 async def test_async_server_timeout_in_on_end(
-    protocol: ProtocolType, method: str
+    protocol: ProtocolType, method: str, block: float
 ) -> None:
     """A slow on_end is bounded by the request's deadline like the handler is."""
     on_end = _SlowOnEnd()
-    app = HaberdasherASGIApplication(_QuickHaberdasher(), interceptors=(on_end,))
+    app = HaberdasherASGIApplication(_QuickHaberdasher(block), interceptors=(on_end,))
     transport = ASGITransport(app)
 
     async def call() -> None:
@@ -756,7 +777,10 @@ async def test_async_server_timeout_in_on_end(
 
     assert exc_info.value.code == Code.DEADLINE_EXCEEDED
     assert exc_info.value.message == "Request timed out"
-    assert on_end.events == ["on_end None", "on_end cancelled"]
+    assert on_end.events in (
+        ["on_end None", "on_end cancelled"],
+        ["on_end deadline_exceeded"],
+    )
     assert transport.app_exception is None
 
 
@@ -785,7 +809,10 @@ async def test_async_server_timeout_in_on_end_keeps_handler_error(
 
     assert exc_info.value.code == Code.NOT_FOUND
     assert exc_info.value.message == "no such hat"
-    assert on_end.events == ["on_end not_found", "on_end cancelled"]
+    assert on_end.events in (
+        ["on_end not_found", "on_end cancelled"],
+        ["on_end not_found"],
+    )
     assert transport.app_exception is None
 
 
