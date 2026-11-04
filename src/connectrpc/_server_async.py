@@ -14,6 +14,7 @@ from asyncio import (
     get_running_loop,
     sleep,
     timeout_at as asyncio_timeout_at,
+    wait,
 )
 from dataclasses import dataclass, replace
 from http import HTTPStatus
@@ -880,8 +881,9 @@ class AsyncioLoop:
             handle.cancel()
             if task is not None:
                 task.cancel()
-                with contextlib.suppress(CancelledError):
-                    await task
+                # Unlike awaiting the task, this lets a cancellation of the
+                # request itself, such as by its deadline, propagate.
+                await wait((task,))
 
 
 _ASYNCIO_LOOP = AsyncioLoop()
