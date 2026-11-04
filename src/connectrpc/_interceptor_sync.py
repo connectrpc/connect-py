@@ -2,6 +2,9 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, Generic, Protocol, TypeVar, runtime_checkable
 
+from .code import Code
+from .errors import ConnectError
+
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Iterator, Sequence
 
@@ -225,6 +228,13 @@ class MetadataInterceptorInvokerSync(Generic[T]):
         except Exception as e:
             error = e
             raise
+        except GeneratorExit as e:
+            # The server closes the stream before its end when the client
+            # disconnects, or when sending a message fails. The interceptor can't
+            # tell which, but neither is a success.
+            error = ConnectError(Code.CANCELED, "Client disconnected")
+            error.__cause__ = e
+            raise
         finally:
             self._delegate.on_end_sync(token, ctx, error)
 
@@ -240,6 +250,13 @@ class MetadataInterceptorInvokerSync(Generic[T]):
             yield from call_next(request, ctx)
         except Exception as e:
             error = e
+            raise
+        except GeneratorExit as e:
+            # The server closes the stream before its end when the client
+            # disconnects, or when sending a message fails. The interceptor can't
+            # tell which, but neither is a success.
+            error = ConnectError(Code.CANCELED, "Client disconnected")
+            error.__cause__ = e
             raise
         finally:
             self._delegate.on_end_sync(token, ctx, error)

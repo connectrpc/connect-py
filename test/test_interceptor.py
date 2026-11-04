@@ -755,10 +755,22 @@ async def test_metadata_interceptor_closes_stream_async(method: str) -> None:
     ],
 )
 @pytest.mark.parametrize(
+    "leading",
+    [
+        pytest.param(True, id="leading"),
+        # After a message interceptor, the metadata interceptor wraps the handler.
+        pytest.param(False, id="after_message_interceptor"),
+    ],
+)
+@pytest.mark.parametrize(
     "protocol", [ProtocolType.CONNECT, ProtocolType.GRPC, ProtocolType.GRPC_WEB]
 )
 def test_metadata_interceptor_closes_stream_sync(
-    protocol: ProtocolType, chunks: int | None, hats: int, cancelled: bool
+    protocol: ProtocolType,
+    chunks: int | None,
+    hats: int,
+    cancelled: bool,
+    leading: bool,
 ) -> None:
     """Closing the response before its end closes the handler's stream and reports a
     cancellation to on_end, while closing a completed response reports no error."""
@@ -781,8 +793,12 @@ def test_metadata_interceptor_closes_stream_sync(
             finally:
                 events.append("handler closed")
 
+    metadata = ErrorRecordingInterceptorSync()
     app = HaberdasherWSGIApplication(
-        TwoHatHaberdasherSync(), interceptors=(ErrorRecordingInterceptorSync(),)
+        TwoHatHaberdasherSync(),
+        interceptors=(metadata,)
+        if leading
+        else (_PassthroughUnaryInterceptor(), metadata),
     )
 
     def closing_app(environ, start_response):
