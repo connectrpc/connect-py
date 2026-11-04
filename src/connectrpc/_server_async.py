@@ -35,6 +35,7 @@ from ._interceptor_async import (
     ServerStreamInterceptor,
     UnaryInterceptor,
     _aclose,
+    _throw_into,
     resolve_interceptors,
     split_leading_metadata_interceptors,
 )
@@ -926,12 +927,20 @@ async def _close_response_stream(
     loop: AsyncioLoop | TrioLoop,
     error: BaseException | None,
 ) -> None:
-    """Close the handler's generator to allow possibly async cleanup."""
-    if error is not None and loop.is_cancellation(error):
+    """Close the handler's generator, giving it the error that ended the request.
+
+    While the server awaits a send, the generator is suspended at a yield, so
+    a cancellation or a failed send is raised in the server rather than in
+    the handler. Throwing the error into the generator lets the handler, and
+    the interceptors wrapping it, see why the request ended.
+    """
+    if error is None:
+        await _aclose(stream)
+    elif loop.is_cancellation(error):
         with loop.async_cleanup(), contextlib.suppress(Exception):
-            await _aclose(stream)
-        return
-    await _aclose(stream)
+            await _throw_into(stream, error)
+    else:
+        await _throw_into(stream, error)
 
 
 async def _request_stream(

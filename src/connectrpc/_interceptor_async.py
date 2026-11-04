@@ -236,18 +236,21 @@ class MetadataInterceptorInvoker(Generic[T]):
             responses = call_next(request, ctx)
             try:
                 async for response in responses:
-                    yield response
+                    try:
+                        yield response
+                    except BaseException as e:
+                        # An exception at a yield is always from the consumer, i.e.
+                        # for cancelation, propagate that into the responses generator
+                        # too.
+                        await _throw_into(responses, e)
+                        raise
             finally:
                 await _aclose(responses)
         except Exception as e:
             error = e
             raise
         except BaseException as e:
-            # The server closes the stream before its end when the request is
-            # cut short while it waits on something else, such as a send, or
-            # when sending a message fails. The interceptor can't tell which,
-            # but neither is a success.
-            if _is_cancellation(e) or isinstance(e, GeneratorExit):
+            if _is_cancellation(e):
                 error = ConnectError(Code.CANCELED, "Request was cancelled")
             raise
         finally:
@@ -265,18 +268,21 @@ class MetadataInterceptorInvoker(Generic[T]):
             responses = call_next(request, ctx)
             try:
                 async for response in responses:
-                    yield response
+                    try:
+                        yield response
+                    except BaseException as e:
+                        # An exception at a yield is always from the consumer, i.e.
+                        # for cancelation, propagate that into the responses generator
+                        # too.
+                        await _throw_into(responses, e)
+                        raise
             finally:
                 await _aclose(responses)
         except Exception as e:
             error = e
             raise
         except BaseException as e:
-            # The server closes the stream before its end when the request is
-            # cut short while it waits on something else, such as a send, or
-            # when sending a message fails. The interceptor can't tell which,
-            # but neither is a success.
-            if _is_cancellation(e) or isinstance(e, GeneratorExit):
+            if _is_cancellation(e):
                 error = ConnectError(Code.CANCELED, "Request was cancelled")
             raise
         finally:
@@ -294,6 +300,37 @@ def _is_cancellation(error: BaseException) -> bool:
     # A cancelled trio nursery raises its cancellation in an exception group.
     return isinstance(error, BaseExceptionGroup) and any(
         _is_cancellation(e) for e in error.exceptions
+    )
+
+
+async def _throw_into(stream: AsyncIterator[object], error: BaseException) -> None:
+    """End the stream by throwing the error into it."""
+    athrow = getattr(stream, "athrow", None)
+    if athrow is None or isinstance(error, GeneratorExit):
+        await _aclose(stream)
+        return
+    try:
+        await athrow(error)
+    except StopAsyncIteration:
+        return
+    except BaseException as e:
+        if _contains(e, error):
+            return
+        # The generator's cleanup raised a different error, or it was
+        # cancelled during cleanup, for example by a cleanup deadline.
+        raise
+    await _aclose(stream)
+
+
+def _contains(error: BaseException, cause: BaseException) -> bool:
+    """Return whether error is cause, or an exception group that contains cause.
+
+    A trio nursery wraps an exception raised in its body in a group.
+    """
+    if error is cause:
+        return True
+    return isinstance(error, BaseExceptionGroup) and any(
+        _contains(e, cause) for e in error.exceptions
     )
 
 
