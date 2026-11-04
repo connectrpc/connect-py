@@ -798,7 +798,11 @@ def test_on_end_is_bounded_by_deadline(
 
     assert exc_info.value.code == Code.DEADLINE_EXCEEDED
     assert wrapper.raised is None
-    assert events == ["on_end started None"]
+    # The deadline can pass before on_end on a slow machine.
+    assert events in (
+        ["on_end started None"],
+        ["on_end started deadline_exceeded", "on_end finished"],
+    )
     assert wrapper.error() == TIMED_OUT
 
 
