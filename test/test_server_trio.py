@@ -803,6 +803,12 @@ def test_handler_cleanup_after_cancellation_is_bounded(
             2,
             id="two_interceptors",
         ),
+        # The server closes the handler's stream, which the interceptor wraps.
+        pytest.param(
+            lambda events: [PassThrough(), Recorder(events, seconds=60)],
+            1,
+            id="after_message_interceptor",
+        ),
     ],
 )
 def test_on_end_after_cancellation_is_bounded(

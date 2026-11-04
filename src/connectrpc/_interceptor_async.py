@@ -243,7 +243,11 @@ class MetadataInterceptorInvoker(Generic[T]):
             error = e
             raise
         except BaseException as e:
-            if _is_cancellation(e):
+            # The server closes the stream before its end when the request is
+            # cut short while it waits on something else, such as a send, or
+            # when sending a message fails. The interceptor can't tell which,
+            # but neither is a success.
+            if _is_cancellation(e) or isinstance(e, GeneratorExit):
                 error = ConnectError(Code.CANCELED, "Request was cancelled")
             raise
         finally:
@@ -268,7 +272,11 @@ class MetadataInterceptorInvoker(Generic[T]):
             error = e
             raise
         except BaseException as e:
-            if _is_cancellation(e):
+            # The server closes the stream before its end when the request is
+            # cut short while it waits on something else, such as a send, or
+            # when sending a message fails. The interceptor can't tell which,
+            # but neither is a success.
+            if _is_cancellation(e) or isinstance(e, GeneratorExit):
                 error = ConnectError(Code.CANCELED, "Request was cancelled")
             raise
         finally:
