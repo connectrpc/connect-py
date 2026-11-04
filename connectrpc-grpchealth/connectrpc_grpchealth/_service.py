@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import threading
-from typing import TYPE_CHECKING, Protocol
+from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 from connectrpc.code import Code
 from connectrpc.errors import ConnectError
@@ -28,13 +28,13 @@ ServingStatus = HealthCheckResponse.ServingStatus
 
 
 class Checker(Protocol):
-    """Reports the health of each service to the health service.
+    """Reports the health of each service to [HealthService][connectrpc_grpchealth.HealthService].
 
-    The methods may be called concurrently from any thread, and under ASGI they
-    are called on the event loop, so they must not block.
+    The methods may be called concurrently. To support Watch, the checker also
+    implements [Watcher][connectrpc_grpchealth.Watcher].
     """
 
-    def check(self, service: str) -> ServingStatus | None:
+    async def check(self, service: str) -> ServingStatus | None:
         """Return the status of a service, or None if the service is unknown.
 
         Args:
@@ -44,12 +44,49 @@ class Checker(Protocol):
         """
         ...
 
-    def list(self) -> Mapping[str, ServingStatus]:
+    async def list(self) -> Mapping[str, ServingStatus]:
         """Return the status of every known service, keyed by service name."""
         ...
 
+
+class CheckerSync(Protocol):
+    """Reports the health of each service to [HealthServiceSync][connectrpc_grpchealth.HealthServiceSync].
+
+    The methods may be called concurrently from any thread. To support Watch,
+    the checker also implements [Watcher][connectrpc_grpchealth.Watcher].
+    """
+
+    def check_sync(self, service: str) -> ServingStatus | None:
+        """Return the status of a service, or None if the service is unknown.
+
+        Args:
+            service: The fully-qualified protobuf service name, or the empty
+                string for the status of the server as a whole.
+
+        """
+        ...
+
+    def list_sync(self) -> Mapping[str, ServingStatus]:
+        """Return the status of every known service, keyed by service name."""
+        ...
+
+
+@runtime_checkable
+class Watcher(Protocol):
+    """Notifies the health service when the status of a service may change.
+
+    A [Checker][connectrpc_grpchealth.Checker] or
+    [CheckerSync][connectrpc_grpchealth.CheckerSync] that also implements Watcher
+    supports the Watch RPC. Otherwise, Watch fails with
+    [Code.UNIMPLEMENTED][connectrpc.code.Code.UNIMPLEMENTED], and gRPC clients
+    that check health with Watch treat the server as always serving.
+    """
+
     def watch(self, service: str, on_change: Callable[[], None]) -> Callable[[], None]:
         """Call on_change from any thread whenever the service's status may change.
+
+        It may be called concurrently from any thread, and under ASGI it is
+        called on the event loop, so it must not block.
 
         Args:
             service: The fully-qualified protobuf service name, or the empty
@@ -64,7 +101,7 @@ class Checker(Protocol):
         ...
 
 
-class StaticChecker(Checker):
+class StaticChecker(Checker, CheckerSync, Watcher):
     """Health statuses set explicitly for each service.
 
     The checker reports [ServingStatus.SERVING][connectrpc_grpchealth.ServingStatus]
@@ -107,14 +144,20 @@ class StaticChecker(Checker):
         for callback in callbacks:
             callback()
 
-    def check(self, service: str) -> ServingStatus | None:
+    async def check(self, service: str) -> ServingStatus | None:
+        return self.check_sync(service)
+
+    async def list(self) -> Mapping[str, ServingStatus]:
+        return self.list_sync()
+
+    def check_sync(self, service: str) -> ServingStatus | None:
         with self._lock:
             status = self._statuses.get(service)
         if status is None and not service:
             return ServingStatus.SERVING
         return status
 
-    def list(self) -> Mapping[str, ServingStatus]:
+    def list_sync(self) -> Mapping[str, ServingStatus]:
         with self._lock:
             return {"": ServingStatus.SERVING, **self._statuses}
 
@@ -140,10 +183,12 @@ class HealthService(Health):
 
         Serve it with [HealthASGIApplication][connectrpc_grpchealth.HealthASGIApplication].
 
-        Under asyncio, a call to Watch ends as soon as its client disconnects.
-        Under trio, the server notices a disconnect only when the call next
-        sends a status, so the call ends at its deadline or at the next status
-        change of the watched service, whichever comes first.
+        Watch is supported if the checker implements
+        [Watcher][connectrpc_grpchealth.Watcher]. Under asyncio, a call to Watch
+        ends as soon as its client disconnects. Under trio, the server notices a
+        disconnect only when the call next sends a status, so the call ends at
+        its deadline or at the next status change of the watched service,
+        whichever comes first.
 
         Args:
             checker: The checker that reports the status of each service.
@@ -156,27 +201,28 @@ class HealthService(Health):
         request: HealthCheckRequest,
         _ctx: RequestContext[HealthCheckRequest, HealthCheckResponse],
     ) -> HealthCheckResponse:
-        return _check(self._checker, request.service)
+        return _check_response(await self._checker.check(request.service), request)
 
     async def list(
         self,
         _request: HealthListRequest,
         _ctx: RequestContext[HealthListRequest, HealthListResponse],
     ) -> HealthListResponse:
-        return _list(self._checker)
+        return _list_response(await self._checker.list())
 
     async def watch(
         self,
         request: HealthCheckRequest,
         _ctx: RequestContext[HealthCheckRequest, HealthCheckResponse],
     ) -> AsyncIterator[HealthCheckResponse]:
+        watcher = _watcher(self._checker)
         waiter = _current_waiter()
-        stop = self._checker.watch(request.service, waiter.notify)
+        stop = watcher.watch(request.service, waiter.notify)
         try:
             last: ServingStatus | None = None
             while True:
                 waiter.reset()
-                status = _watch_status(self._checker, request.service)
+                status = _watch_status(await self._checker.check(request.service))
                 if status != last:
                     last = status
                     yield HealthCheckResponse(status=status)
@@ -189,15 +235,17 @@ class HealthService(Health):
 class HealthServiceSync(HealthSync):
     """Synchronous service implementation for gRPC health checking."""
 
-    def __init__(self, checker: Checker) -> None:
+    def __init__(self, checker: CheckerSync) -> None:
         """Create a service for gRPC health checking.
 
         Serve it with [HealthWSGIApplication][connectrpc_grpchealth.HealthWSGIApplication].
 
-        Each call to Watch occupies a server thread while it is open. The
-        server notices a disconnect only when the call next sends a status, so
-        a call whose client disconnects ends at its deadline or at the next
-        status change of the watched service, whichever comes first.
+        Watch is supported if the checker implements
+        [Watcher][connectrpc_grpchealth.Watcher]. Each call to Watch occupies a
+        server thread while it is open. The server notices a disconnect only
+        when the call next sends a status, so a call whose client disconnects
+        ends at its deadline or at the next status change of the watched
+        service, whichever comes first.
 
         Args:
             checker: The checker that reports the status of each service.
@@ -210,27 +258,28 @@ class HealthServiceSync(HealthSync):
         request: HealthCheckRequest,
         _ctx: RequestContext[HealthCheckRequest, HealthCheckResponse],
     ) -> HealthCheckResponse:
-        return _check(self._checker, request.service)
+        return _check_response(self._checker.check_sync(request.service), request)
 
     def list(
         self,
         _request: HealthListRequest,
         _ctx: RequestContext[HealthListRequest, HealthListResponse],
     ) -> HealthListResponse:
-        return _list(self._checker)
+        return _list_response(self._checker.list_sync())
 
     def watch(
         self,
         request: HealthCheckRequest,
         ctx: RequestContext[HealthCheckRequest, HealthCheckResponse],
     ) -> Iterator[HealthCheckResponse]:
+        watcher = _watcher(self._checker)
         changed = threading.Event()
-        stop = self._checker.watch(request.service, changed.set)
+        stop = watcher.watch(request.service, changed.set)
         try:
             last: ServingStatus | None = None
             while True:
                 changed.clear()
-                status = _watch_status(self._checker, request.service)
+                status = _watch_status(self._checker.check_sync(request.service))
                 if status != last:
                     last = status
                     yield HealthCheckResponse(status=status)
@@ -270,26 +319,32 @@ def _current_waiter() -> _AsyncioWaiter | _TrioWaiter:
     return _AsyncioWaiter()
 
 
-def _check(checker: Checker, service: str) -> HealthCheckResponse:
-    status = checker.check(service)
+def _watcher(checker: Checker | CheckerSync) -> Watcher:
+    if not isinstance(checker, Watcher):
+        raise ConnectError(Code.UNIMPLEMENTED, "watching health state is not supported")
+    return checker
+
+
+def _check_response(
+    status: ServingStatus | None, request: HealthCheckRequest
+) -> HealthCheckResponse:
     if status is None:
-        raise ConnectError(Code.NOT_FOUND, f"unknown service {service}")
+        raise ConnectError(Code.NOT_FOUND, f"unknown service {request.service}")
     return HealthCheckResponse(status=status)
 
 
-def _list(checker: Checker) -> HealthListResponse:
+def _list_response(statuses: Mapping[str, ServingStatus]) -> HealthListResponse:
     return HealthListResponse(
         statuses={
             service: HealthCheckResponse(status=status)
-            for service, status in checker.list().items()
+            for service, status in statuses.items()
         }
     )
 
 
 # Unlike Check, Watch reports an unknown service in the stream and keeps it open
 # so the client sees the service once it's registered.
-def _watch_status(checker: Checker, service: str) -> ServingStatus:
-    status = checker.check(service)
+def _watch_status(status: ServingStatus | None) -> ServingStatus:
     return ServingStatus.SERVICE_UNKNOWN if status is None else status
 
 

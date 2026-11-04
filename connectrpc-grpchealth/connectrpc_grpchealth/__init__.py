@@ -4,12 +4,14 @@ from __future__ import annotations
 
 __all__ = [
     "Checker",
+    "CheckerSync",
     "HealthASGIApplication",
     "HealthService",
     "HealthServiceSync",
     "HealthWSGIApplication",
     "ServingStatus",
     "StaticChecker",
+    "Watcher",
 ]
 
 from ._gen.grpc.health.v1.health_connect import (
@@ -18,8 +20,10 @@ from ._gen.grpc.health.v1.health_connect import (
 )
 from ._service import (
     Checker,
+    CheckerSync,
     HealthService,
     HealthServiceSync,
     ServingStatus,
     StaticChecker,
+    Watcher,
 )

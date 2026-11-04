@@ -19,6 +19,7 @@ from pyqwest.testing import ASGITransport, WSGITransport
 
 from connectrpc_grpchealth import (
     Checker,
+    CheckerSync,
     HealthASGIApplication,
     HealthService,
     HealthServiceSync,
@@ -37,7 +38,7 @@ from connectrpc_grpchealth._gen.grpc.health.v1.health_pb import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncIterator, Callable, Iterator, Mapping
+    from collections.abc import AsyncIterator, Iterator, Mapping
 
     from hypercorn.typing import ASGIFramework
 
@@ -179,18 +180,20 @@ async def test_list(client: AnyHealthClient, checker: StaticChecker) -> None:
     }
 
 
-class _OnDemandChecker(Checker):
-    """Computes each status when it's asked for."""
+class _OnDemandChecker(Checker, CheckerSync):
+    """Computes each status when it's asked for, and can't be watched."""
 
-    def check(self, service: str) -> ServingStatus | None:
+    async def check(self, service: str) -> ServingStatus | None:
+        return self.check_sync(service)
+
+    async def list(self) -> Mapping[str, ServingStatus]:
+        return self.list_sync()
+
+    def check_sync(self, service: str) -> ServingStatus | None:
         return ServingStatus.NOT_SERVING if service == ELIZA else None
 
-    def list(self) -> Mapping[str, ServingStatus]:
+    def list_sync(self) -> Mapping[str, ServingStatus]:
         return {ELIZA: ServingStatus.NOT_SERVING}
-
-    # The statuses never change, so there is nothing to notify.
-    def watch(self, service: str, on_change: Callable[[], None]) -> Callable[[], None]:  # noqa: ARG002
-        return lambda: None
 
 
 @pytest.mark.asyncio
@@ -207,6 +210,11 @@ async def test_custom_checker(client: AnyHealthClient) -> None:
     assert dict(response.statuses) == {
         ELIZA: HealthCheckResponse(status=ServingStatus.NOT_SERVING)
     }
+    with pytest.raises(
+        ConnectError, match="watching health state is not supported"
+    ) as e:
+        await anext(_watch(client, ELIZA))
+    assert e.value.code == Code.UNIMPLEMENTED
 
 
 @pytest.mark.asyncio
