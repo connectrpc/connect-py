@@ -681,6 +681,26 @@ def _request_stream(
             yield from reader.feed(chunk)
 
 
+def _end_stream(stream: Iterator[object], error: Exception | None) -> None:
+    """End the handler's stream, throwing in the error that ended the response.
+
+    The handler, and the interceptors wrapping it, then see the error at the
+    yield they are suspended at.
+    """
+    throw = getattr(stream, "throw", None)
+    if error is not None and throw is not None:
+        try:
+            throw(error)
+        except StopIteration:
+            return
+        except Exception as e:
+            if e is not error:
+                raise
+            return
+    if (close := getattr(stream, "close", None)) is not None:
+        close()
+
+
 def _response_stream(
     first_response: _RES,
     environ: WSGIEnvironment,
@@ -712,9 +732,9 @@ def _response_stream(
         error.__cause__ = e
         raise
     finally:
-        # Close the handler's stream so its cleanup runs before on_end.
-        if (close := getattr(response_stream, "close", None)) is not None:
-            close()
+        # End the handler's stream so its cleanup runs before on_end, giving
+        # it the error that ended the response.
+        _end_stream(response_stream, error)
         # End the run before ending the response so on_end can still modify
         # response trailers. This is a no-op if the run already ended.
         error = metadata_run.end(error)
