@@ -1,9 +1,8 @@
 from __future__ import annotations
 
-import sys
-from asyncio import CancelledError
 from typing import TYPE_CHECKING, Any, Generic, Protocol, TypeVar, runtime_checkable
 
+from ._loop import current_loop
 from .code import Code
 from .errors import ConnectError
 
@@ -198,7 +197,7 @@ class MetadataInterceptorInvoker(Generic[T]):
             error = e
             raise
         except BaseException as e:
-            if _is_cancellation(e):
+            if current_loop().is_cancellation(e):
                 error = ConnectError(Code.CANCELED, "Request was cancelled")
             raise
         finally:
@@ -218,7 +217,7 @@ class MetadataInterceptorInvoker(Generic[T]):
             error = e
             raise
         except BaseException as e:
-            if _is_cancellation(e):
+            if current_loop().is_cancellation(e):
                 error = ConnectError(Code.CANCELED, "Request was cancelled")
             raise
         finally:
@@ -250,7 +249,7 @@ class MetadataInterceptorInvoker(Generic[T]):
             error = e
             raise
         except BaseException as e:
-            if _is_cancellation(e):
+            if current_loop().is_cancellation(e):
                 error = ConnectError(Code.CANCELED, "Request was cancelled")
             raise
         finally:
@@ -282,25 +281,11 @@ class MetadataInterceptorInvoker(Generic[T]):
             error = e
             raise
         except BaseException as e:
-            if _is_cancellation(e):
+            if current_loop().is_cancellation(e):
                 error = ConnectError(Code.CANCELED, "Request was cancelled")
             raise
         finally:
             await self._delegate.on_end(token, ctx, error)
-
-
-def _is_cancellation(error: BaseException) -> bool:
-    """Whether the error is a cancellation under asyncio or, if it is in use, trio."""
-    if isinstance(error, CancelledError):
-        return True
-    # Only applications running under trio import it.
-    trio = sys.modules.get("trio")
-    if trio is not None and isinstance(error, trio.Cancelled):
-        return True
-    # A cancelled trio nursery raises its cancellation in an exception group.
-    return isinstance(error, BaseExceptionGroup) and any(
-        _is_cancellation(e) for e in error.exceptions
-    )
 
 
 async def _throw_into(stream: AsyncIterator[object], error: BaseException) -> None:
@@ -386,7 +371,7 @@ class MetadataInterceptorsRun:
             except Exception as e:  # noqa: BLE001 # invoking user callback
                 error = e
             except BaseException as e:
-                if not _is_cancellation(e):
+                if not current_loop().is_cancellation(e):
                     raise
                 cancellation = e
                 error = ConnectError(Code.CANCELED, "Request was cancelled")
