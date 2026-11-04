@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sys
 from asyncio import CancelledError
 from typing import TYPE_CHECKING, Any, Generic, Protocol, TypeVar, runtime_checkable
 
@@ -193,11 +194,12 @@ class MetadataInterceptorInvoker(Generic[T]):
         error: Exception | None = None
         try:
             return await call_next(request, ctx)
-        except CancelledError:
-            error = ConnectError(Code.CANCELED, "Request was cancelled")
-            raise
         except Exception as e:
             error = e
+            raise
+        except BaseException as e:
+            if _is_cancellation(e):
+                error = ConnectError(Code.CANCELED, "Request was cancelled")
             raise
         finally:
             await self._delegate.on_end(token, ctx, error)
@@ -212,11 +214,12 @@ class MetadataInterceptorInvoker(Generic[T]):
         error: Exception | None = None
         try:
             return await call_next(request, ctx)
-        except CancelledError:
-            error = ConnectError(Code.CANCELED, "Request was cancelled")
-            raise
         except Exception as e:
             error = e
+            raise
+        except BaseException as e:
+            if _is_cancellation(e):
+                error = ConnectError(Code.CANCELED, "Request was cancelled")
             raise
         finally:
             await self._delegate.on_end(token, ctx, error)
@@ -236,11 +239,12 @@ class MetadataInterceptorInvoker(Generic[T]):
                     yield response
             finally:
                 await _aclose(responses)
-        except CancelledError:
-            error = ConnectError(Code.CANCELED, "Request was cancelled")
-            raise
         except Exception as e:
             error = e
+            raise
+        except BaseException as e:
+            if _is_cancellation(e):
+                error = ConnectError(Code.CANCELED, "Request was cancelled")
             raise
         finally:
             await self._delegate.on_end(token, ctx, error)
@@ -260,14 +264,29 @@ class MetadataInterceptorInvoker(Generic[T]):
                     yield response
             finally:
                 await _aclose(responses)
-        except CancelledError:
-            error = ConnectError(Code.CANCELED, "Request was cancelled")
-            raise
         except Exception as e:
             error = e
             raise
+        except BaseException as e:
+            if _is_cancellation(e):
+                error = ConnectError(Code.CANCELED, "Request was cancelled")
+            raise
         finally:
             await self._delegate.on_end(token, ctx, error)
+
+
+def _is_cancellation(error: BaseException) -> bool:
+    """Whether the error is a cancellation under asyncio or, if it is in use, trio."""
+    if isinstance(error, CancelledError):
+        return True
+    # Only applications running under trio import it.
+    trio = sys.modules.get("trio")
+    if trio is not None and isinstance(error, trio.Cancelled):
+        return True
+    # A cancelled trio nursery raises its cancellation in an exception group.
+    return isinstance(error, BaseExceptionGroup) and any(
+        _is_cancellation(e) for e in error.exceptions
+    )
 
 
 async def _aclose(stream: AsyncIterator[object]) -> None:
@@ -314,16 +333,18 @@ class MetadataInterceptorsRun:
         interceptors. Cancellation propagates after all started interceptors
         have been unwound.
         """
-        cancellation: CancelledError | None = None
+        cancellation: BaseException | None = None
         while self._started:
             interceptor, token = self._started.pop()
             try:
                 await interceptor.on_end(token, self._ctx, error)
-            except CancelledError as e:
-                cancellation = e
-                error = ConnectError(Code.CANCELED, "Request was cancelled")
             except Exception as e:  # noqa: BLE001 # invoking user callback
                 error = e
+            except BaseException as e:
+                if not _is_cancellation(e):
+                    raise
+                cancellation = e
+                error = ConnectError(Code.CANCELED, "Request was cancelled")
         if cancellation is not None:
             raise cancellation
         return error
