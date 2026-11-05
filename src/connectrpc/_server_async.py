@@ -5,16 +5,6 @@ import contextlib
 import functools
 import inspect
 from abc import ABC, abstractmethod
-from asyncio import (
-    CancelledError,
-    Event,
-    Task,
-    Timeout,
-    create_task,
-    get_running_loop,
-    sleep,
-    timeout_at as asyncio_timeout_at,
-)
 from dataclasses import dataclass, replace
 from http import HTTPStatus
 from typing import TYPE_CHECKING, Any, Generic, Protocol, TypeVar, cast
@@ -35,9 +25,11 @@ from ._interceptor_async import (
     ServerStreamInterceptor,
     UnaryInterceptor,
     _aclose,
+    _throw_into,
     resolve_interceptors,
     split_leading_metadata_interceptors,
 )
+from ._loop import AsyncioLoop, current_loop
 from ._protocol import ConnectWireError, HTTPError, ServerProtocol
 from ._protocol_connect import CONNECT_UNARY_CONTENT_TYPE_PREFIX, ConnectServerProtocol
 from ._protocol_grpc import GRPCServerProtocol
@@ -56,6 +48,7 @@ from .request import Headers, RequestContext
 
 if TYPE_CHECKING:
     # We don't use asgiref code so only import from it for type checking
+    from asyncio import Timeout
     from collections.abc import (
         AsyncGenerator,
         AsyncIterator,
@@ -65,7 +58,6 @@ if TYPE_CHECKING:
         Mapping,
         Sequence,
     )
-    from contextlib import AbstractContextManager
 
     from asgiref.typing import (
         ASGIReceiveCallable,
@@ -364,7 +356,7 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
         send: ASGISendCallable,
         endpoints: Mapping[str, Endpoint],
     ) -> None:
-        loop = _current_loop()
+        loop = current_loop()
         receiver = _RequestReceiver(receive, loop.event())
         sender = _ResponseSender(send)
         ctx: RequestContext | None = None
@@ -433,9 +425,14 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
                         )
                     codec = self._codecs.get(codec_name)
                     if not codec:
+                        accept_post = (
+                            "application/json, application/proto"
+                            if isinstance(endpoint, EndpointUnary)
+                            else "application/connect+json, application/connect+proto"
+                        )
                         raise HTTPError(
                             HTTPStatus.UNSUPPORTED_MEDIA_TYPE,
-                            [("Accept-Post", "application/json, application/proto")],
+                            [("Accept-Post", accept_post)],
                         )
 
                     metadata_run = MetadataInterceptorsRun(
@@ -598,7 +595,7 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
                 message = base64.urlsafe_b64decode(message + "===")
             except Exception as e:
                 raise ConnectError(
-                    Code.INVALID_ARGUMENT, "Invalid base64 encoding"
+                    Code.INVALID_ARGUMENT, f"Invalid base64 encoding: {e!s}"
                 ) from e
         else:
             message = message.encode("utf-8")
@@ -803,100 +800,6 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
         return resolved_endpoints
 
 
-class AsyncioLoop:
-    """The request handler's event loop operations under asyncio."""
-
-    async def checkpoint(self) -> None:
-        """Give the loop a chance to deliver a cancellation."""
-        await sleep(0)
-
-    def time(self) -> float:
-        """Return the loop's clock, which deadlines are measured on."""
-        return get_running_loop().time()
-
-    def event(self) -> _Event:
-        """Return an event of the loop."""
-        return Event()
-
-    def timeout_at(self, deadline: float | None) -> Timeout:
-        """Return a context whose body raises TimeoutError once the deadline passes.
-
-        The context's expired() tells whether that happened, since the body can
-        raise a TimeoutError of its own.
-        """
-        return asyncio_timeout_at(deadline)
-
-    def is_cancellation(self, error: BaseException) -> bool:
-        """Whether the error is a loop cancellation."""
-        return isinstance(error, CancelledError)
-
-    def async_cleanup(self) -> AbstractContextManager[object]:
-        """Return a context in which cleanup can await after a cancellation."""
-        # asyncio only delivers cancellation once so async logic works as normal during cleanup
-        return contextlib.nullcontext()
-
-    @contextlib.asynccontextmanager
-    async def watch_for_disconnect(
-        self,
-        receive: _RequestReceiver,
-        scope: Timeout | TrioTimeout,
-        *,
-        cancel: bool = False,  # noqa: ARG002 # asyncio always cancels
-    ) -> AsyncGenerator[None]:
-        """Cut the request's deadline short when the client disconnects.
-
-        A handler blocked at an await is cancelled there, as by the deadline,
-        so the body has nothing to poll and the watch yields None. asyncio
-        delivers the cancellation once, so the handler's cleanup still runs
-        as normal.
-        """
-        task: Task[None] | None = None
-
-        async def watch() -> None:
-            await receive.body_done.wait()
-            # An error from receive() would otherwise replace the response's
-            # outcome when the watch ends.
-            with contextlib.suppress(Exception):
-                while not receive.disconnected:
-                    await receive()
-            # The deadline may have fired in the meantime, and a scope that is
-            # expiring can't be rescheduled; its cancellation is already on
-            # its way.
-            if receive.disconnected and not scope.expired():
-                scope.reschedule(get_running_loop().time())
-
-        def start() -> None:
-            nonlocal task
-            task = create_task(watch())
-
-        # Only a body that suspends can be cancelled, so start the watch from
-        # the loop, which runs once the body suspends. A body that completes
-        # without suspending never pays for the task.
-        handle = get_running_loop().call_soon(start)
-        try:
-            yield
-        finally:
-            handle.cancel()
-            if task is not None:
-                task.cancel()
-                with contextlib.suppress(CancelledError):
-                    await task
-
-
-_ASYNCIO_LOOP = AsyncioLoop()
-
-
-def _current_loop() -> AsyncioLoop | TrioLoop:
-    try:
-        get_running_loop()
-    except RuntimeError:
-        # Not asyncio, so trio: the only other event loop that ASGI servers run.
-        from ._server_trio import TrioLoop  # noqa: PLC0415
-
-        return TrioLoop()
-    return _ASYNCIO_LOOP
-
-
 def _timeout_error(
     timeout: Timeout | TrioTimeout,
     receive: _RequestReceiver,
@@ -926,12 +829,20 @@ async def _close_response_stream(
     loop: AsyncioLoop | TrioLoop,
     error: BaseException | None,
 ) -> None:
-    """Close the handler's generator to allow possibly async cleanup."""
-    if error is not None and loop.is_cancellation(error):
+    """Close the handler's generator, giving it the error that ended the request.
+
+    While the server awaits a send, the generator is suspended at a yield, so
+    a cancellation or a failed send is raised in the server rather than in
+    the handler. Throwing the error into the generator lets the handler, and
+    the interceptors wrapping it, see why the request ended.
+    """
+    if error is None:
+        await _aclose(stream)
+    elif loop.is_cancellation(error):
         with loop.async_cleanup(), contextlib.suppress(Exception):
-            await _aclose(stream)
-        return
-    await _aclose(stream)
+            await _throw_into(stream, error)
+    else:
+        await _throw_into(stream, error)
 
 
 async def _request_stream(

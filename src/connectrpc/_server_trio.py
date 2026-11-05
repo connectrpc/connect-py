@@ -29,7 +29,7 @@ _CLEANUP_TIMEOUT = 1.0
 
 
 class TrioLoop:
-    """See _server_async.AsyncioLoop for what each operation is for."""
+    """See _loop.AsyncioLoop for what each operation is for."""
 
     async def checkpoint(self) -> None:
         await trio.lowlevel.checkpoint()

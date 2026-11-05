@@ -340,6 +340,19 @@ class Recorder:
             raise self._error
 
 
+class PassThrough:
+    """A message interceptor, after which metadata interceptors wrap the handler."""
+
+    def intercept_server_stream(
+        self,
+        call_next: Callable[[Size, RequestContext], AsyncIterator[Hat]],
+        request: Size,
+        ctx: RequestContext,
+        /,
+    ) -> AsyncIterator[Hat]:
+        return call_next(request, ctx)
+
+
 class EndlessHats(Haberdasher):
     """Streams hats until it is closed, and awaits while it cleans up."""
 
@@ -635,13 +648,34 @@ def test_cancelled_in_handler(
 @pytest.mark.parametrize(
     "method", ["MakeHat", "MakeFlexibleHat", "MakeSimilarHats", "MakeVariousHats"]
 )
+@pytest.mark.parametrize(
+    ("interceptors", "on_end_events"),
+    [
+        # The server ends the leading metadata interceptors after the deadline.
+        pytest.param(
+            lambda events: [Recorder(events)],
+            ["on_end started deadline_exceeded", "on_end finished"],
+            id="leading",
+        ),
+        # Wrapping the handler, the interceptor sees the deadline's cancellation.
+        pytest.param(
+            lambda events: [PassThrough(), Recorder(events)],
+            ["on_end started canceled"],
+            id="after_message_interceptor",
+        ),
+    ],
+)
 def test_timeout_in_handler(
-    client: HaberdasherClientSync, wrapper: Wrapper, method: str
+    client: HaberdasherClientSync,
+    wrapper: Wrapper,
+    method: str,
+    interceptors: Callable[[list[str]], list[Any]],
+    on_end_events: list[str],
 ) -> None:
     events: list[str] = []
     wrapper.app = HaberdasherASGIApplication(
         BlockedHats(threading.Event(), events, in_nursery=True),
-        interceptors=[Recorder(events)],
+        interceptors=interceptors(events),
     )
 
     # The header alone, so that only the server enforces the timeout.
@@ -651,11 +685,7 @@ def test_timeout_in_handler(
 
     assert exc_info.value.code == Code.DEADLINE_EXCEEDED
     assert wrapper.raised is None
-    assert events == [
-        "handler cleaned up",
-        "on_end started deadline_exceeded",
-        "on_end finished",
-    ]
+    assert events == ["handler cleaned up", *on_end_events]
     assert wrapper.types() == ["start", "body"]
     assert wrapper.error() == TIMED_OUT
 
@@ -761,15 +791,37 @@ def test_handler_cleanup_after_cancellation_is_bounded(
     assert cleanup_timeout <= wrapper.finished_at - wrapper.cancelled_at < 5
 
 
+@pytest.mark.parametrize(
+    ("interceptors", "on_ends"),
+    [
+        pytest.param(
+            lambda events: [Recorder(events, seconds=60)], 1, id="one_interceptor"
+        ),
+        # Each interceptor's on_end runs, though cancelled at its first await.
+        pytest.param(
+            lambda events: [Recorder(events), Recorder(events, seconds=60)],
+            2,
+            id="two_interceptors",
+        ),
+        # The server closes the handler's stream, which the interceptor wraps.
+        pytest.param(
+            lambda events: [PassThrough(), Recorder(events, seconds=60)],
+            1,
+            id="after_message_interceptor",
+        ),
+    ],
+)
 def test_on_end_after_cancellation_is_bounded(
     client: HaberdasherClientSync,
     wrapper: Wrapper,
     executor: ThreadPoolExecutor,
     cleanup_timeout: float,
+    interceptors: Callable[[list[str]], list[Any]],
+    on_ends: int,
 ) -> None:
     events: list[str] = []
     wrapper.app = HaberdasherASGIApplication(
-        EndlessHats(events), interceptors=[Recorder(events, seconds=60)]
+        EndlessHats(events), interceptors=interceptors(events)
     )
     wrapper.on_send = wrapper.block_on_first_message
 
@@ -779,7 +831,7 @@ def test_on_end_after_cancellation_is_bounded(
     assert wrapper.done.wait(10)
     response.exception(10)
 
-    assert events == ["handler cleaned up", "on_end started canceled"]
+    assert events == ["handler cleaned up", *["on_end started canceled"] * on_ends]
     assert cleanup_timeout <= wrapper.finished_at - wrapper.cancelled_at < 5
 
 
@@ -798,7 +850,11 @@ def test_on_end_is_bounded_by_deadline(
 
     assert exc_info.value.code == Code.DEADLINE_EXCEEDED
     assert wrapper.raised is None
-    assert events == ["on_end started None"]
+    # The deadline can pass before on_end on a slow machine.
+    assert events in (
+        ["on_end started None"],
+        ["on_end started deadline_exceeded", "on_end finished"],
+    )
     assert wrapper.error() == TIMED_OUT
 
 

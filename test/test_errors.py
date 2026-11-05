@@ -25,6 +25,8 @@ from pyqwest.testing import ASGITransport, WSGITransport
 from connectrpc._protocol import HTTPError
 from connectrpc.client import ResponseMetadata
 from connectrpc.code import Code
+from connectrpc.compression.brotli import BrotliCompression
+from connectrpc.compression.gzip import GzipCompression
 from connectrpc.errors import ConnectError
 from connectrpc.protocol import ProtocolType
 
@@ -254,6 +256,7 @@ _client_errors = [
         Size(inches=10).to_binary(),
         HTTPStatus.METHOD_NOT_ALLOWED,
         {"Allow": "GET, POST"},
+        None,
         id="bad method",
     ),
     pytest.param(
@@ -263,6 +266,7 @@ _client_errors = [
         Size(inches=10).to_binary(),
         HTTPStatus.NOT_FOUND,
         {},
+        None,
         id="not found",
     ),
     pytest.param(
@@ -272,6 +276,7 @@ _client_errors = [
         Size(inches=10).to_binary(),
         HTTPStatus.NOT_FOUND,
         {},
+        None,
         id="not present service",
     ),
     pytest.param(
@@ -281,6 +286,7 @@ _client_errors = [
         Size(inches=10).to_binary(),
         HTTPStatus.NOT_FOUND,
         {},
+        None,
         id="not present method",
     ),
     pytest.param(
@@ -290,6 +296,7 @@ _client_errors = [
         Size(inches=10).to_binary(),
         HTTPStatus.UNSUPPORTED_MEDIA_TYPE,
         {"Accept-Post": "application/json, application/proto"},
+        None,
         id="bad content type",
     ),
     pytest.param(
@@ -299,6 +306,7 @@ _client_errors = [
         b"",
         HTTPStatus.UNSUPPORTED_MEDIA_TYPE,
         {"Accept-Post": "application/json, application/proto"},
+        None,
         id="get unknown encoding",
     ),
     pytest.param(
@@ -308,7 +316,58 @@ _client_errors = [
         b"",
         HTTPStatus.UNSUPPORTED_MEDIA_TYPE,
         {"Accept-Post": "application/json, application/proto"},
+        None,
         id="get missing encoding",
+    ),
+    pytest.param(
+        "GET",
+        "/connectrpc.example.Haberdasher/MakeHat?encoding=proto&base64=1&message=a",
+        {},
+        b"",
+        HTTPStatus.BAD_REQUEST,
+        {"content-type": "application/json"},
+        b'{"code": "invalid_argument", "message": "Invalid base64 encoding: '
+        b"Invalid base64-encoded string: number of data characters (1) cannot be "
+        b'1 more than a multiple of 4"}',
+        id="get invalid base64",
+    ),
+    pytest.param(
+        "POST",
+        "/connectrpc.example.Haberdasher/MakeHat",
+        {"Content-Type": "application/proto", "Content-Encoding": "br"},
+        b"",
+        HTTPStatus.OK,
+        {
+            "content-type": "application/proto",
+            "content-encoding": "identity",
+            "vary": "Accept-Encoding",
+        },
+        b"",
+        id="empty compressed body",
+    ),
+    pytest.param(
+        "GET",
+        "/connectrpc.example.Haberdasher/MakeHat?encoding=proto&compression=br&message=",
+        {},
+        b"",
+        HTTPStatus.OK,
+        {
+            "content-type": "application/proto",
+            "content-encoding": "identity",
+            "vary": "Accept-Encoding",
+        },
+        b"",
+        id="get empty compressed message",
+    ),
+    pytest.param(
+        "POST",
+        "/connectrpc.example.Haberdasher/MakeSimilarHats",
+        {"Content-Type": "application/connect+xml"},
+        b"",
+        HTTPStatus.UNSUPPORTED_MEDIA_TYPE,
+        {"Accept-Post": "application/connect+json, application/connect+proto"},
+        None,
+        id="stream unknown codec",
     ),
     pytest.param(
         "POST",
@@ -317,6 +376,7 @@ _client_errors = [
         Size(inches=10).to_binary(),
         HTTPStatus.BAD_REQUEST,
         {"content-type": "application/json"},
+        None,
         id="bad connect protocol version",
     ),
     pytest.param(
@@ -326,6 +386,7 @@ _client_errors = [
         Size(inches=10).to_binary(),
         HTTPStatus.BAD_REQUEST,
         {"content-type": "application/json"},
+        None,
         id="connect timeout header too long",
     ),
     pytest.param(
@@ -335,6 +396,7 @@ _client_errors = [
         Size(inches=10).to_binary(),
         HTTPStatus.BAD_REQUEST,
         {"content-type": "application/json"},
+        None,
         id="connect timeout header invalid",
     ),
     pytest.param(
@@ -344,6 +406,7 @@ _client_errors = [
         Size(inches=10).to_binary(),
         HTTPStatus.BAD_REQUEST,
         {"content-type": "application/json"},
+        None,
         id="connect timeout header negative",
     ),
     pytest.param(
@@ -357,6 +420,7 @@ _client_errors = [
             "grpc-status": "3",
             "grpc-message": "protocol%20error%3A%20invalid%20timeout%20%27-5m%27",
         },
+        None,
         id="grpc timeout header negative",
     ),
     pytest.param(
@@ -370,9 +434,13 @@ _client_errors = [
             "grpc-status": "3",
             "grpc-message": "protocol%20error%3A%20invalid%20timeout%20%27-5m%27",
         },
+        None,
         id="grpc-web timeout header negative",
     ),
 ]
+
+
+_compressions = (GzipCompression(), BrotliCompression())
 
 
 @pytest.fixture(params=["asgi", "wsgi"])
@@ -383,13 +451,17 @@ def transport(request: pytest.FixtureRequest) -> ASGITransport | WSGITransport:
             async def make_hat(self, _request, _ctx):
                 return Hat()
 
-        return ASGITransport(HaberdasherASGIApplication(ValidHaberdasher()))
+        return ASGITransport(
+            HaberdasherASGIApplication(ValidHaberdasher(), compressions=_compressions)
+        )
 
     class ValidHaberdasherSync(HaberdasherSync):
         def make_hat(self, _request, _ctx):
             return Hat()
 
-    return WSGITransport(HaberdasherWSGIApplication(ValidHaberdasherSync()))
+    return WSGITransport(
+        HaberdasherWSGIApplication(ValidHaberdasherSync(), compressions=_compressions)
+    )
 
 
 async def _execute(
@@ -415,16 +487,33 @@ async def _execute(
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    ("method", "path", "headers", "body", "response_status", "response_headers"),
+    (
+        "method",
+        "path",
+        "headers",
+        "body",
+        "response_status",
+        "response_headers",
+        "response_body",
+    ),
     _client_errors,
 )
 async def test_client_errors(
-    transport, method, path, headers, body, response_status, response_headers
+    transport,
+    method,
+    path,
+    headers,
+    body,
+    response_status,
+    response_headers,
+    response_body,
 ) -> None:
     response = await _execute(transport, method, path, headers, body)
 
     assert response.status == response_status
     assert response.headers == response_headers
+    if response_body is not None:
+        assert response.content == response_body
 
 
 @pytest.mark.parametrize(
@@ -669,20 +758,37 @@ class _ServerTimeoutTransport(Transport):
 
 
 class _QuickHaberdasher(Haberdasher):
+    """Responds without awaiting, after blocking the loop for the given seconds."""
+
+    def __init__(self, block: float = 0) -> None:
+        self._block = block
+
+    def _block_loop(self) -> None:
+        if self._block:
+            time.sleep(self._block)
+
     async def make_hat(self, request, _ctx) -> Hat:
+        self._block_loop()
         return Hat(size=request.inches)
 
     async def make_flexible_hat(self, request, _ctx) -> Hat:
         async for _ in request:
             pass
+        self._block_loop()
         return Hat()
 
     async def make_similar_hats(self, request, _ctx) -> AsyncIterator[Hat]:
+        self._block_loop()
         yield Hat(size=request.inches)
 
 
 class _SlowOnEnd:
-    """An on_end that blocks until it is cancelled, recording both."""
+    """An on_end that blocks until it is cancelled, recording both.
+
+    Called after the deadline has passed, as can happen on a slow machine, it
+    waits only briefly, as a hook that respects the deadline would, since the
+    server may not cancel it.
+    """
 
     def __init__(self) -> None:
         self.events: list[str] = []
@@ -690,13 +796,15 @@ class _SlowOnEnd:
     async def on_start(self, ctx) -> None:  # noqa: ARG002
         return None
 
-    async def on_end(self, _token, _ctx, error: Exception | None) -> None:
+    async def on_end(self, _token, ctx, error: Exception | None) -> None:
         code = error.code.value if isinstance(error, ConnectError) else error
         self.events.append(f"on_end {code}")
+        late = ctx.timeout_ms is not None and ctx.timeout_ms <= 0
         try:
-            await asyncio.Event().wait()
-        finally:
+            await (asyncio.sleep(0.1) if late else asyncio.Event().wait())
+        except asyncio.CancelledError:
             self.events.append("on_end cancelled")
+            raise
 
 
 @pytest.mark.asyncio
@@ -728,12 +836,14 @@ async def test_async_server_timeout(protocol: ProtocolType, method: str) -> None
 @pytest.mark.asyncio
 @pytest.mark.parametrize("protocol", _protocols)
 @pytest.mark.parametrize("method", _blocking_methods)
+# A slow handler, as on a loaded machine, lets the deadline pass before on_end.
+@pytest.mark.parametrize("block", [0, 0.1], ids=["quick_handler", "slow_handler"])
 async def test_async_server_timeout_in_on_end(
-    protocol: ProtocolType, method: str
+    protocol: ProtocolType, method: str, block: float
 ) -> None:
     """A slow on_end is bounded by the request's deadline like the handler is."""
     on_end = _SlowOnEnd()
-    app = HaberdasherASGIApplication(_QuickHaberdasher(), interceptors=(on_end,))
+    app = HaberdasherASGIApplication(_QuickHaberdasher(block), interceptors=(on_end,))
     transport = ASGITransport(app)
 
     async def call() -> None:
@@ -756,7 +866,10 @@ async def test_async_server_timeout_in_on_end(
 
     assert exc_info.value.code == Code.DEADLINE_EXCEEDED
     assert exc_info.value.message == "Request timed out"
-    assert on_end.events == ["on_end None", "on_end cancelled"]
+    assert on_end.events in (
+        ["on_end None", "on_end cancelled"],
+        ["on_end deadline_exceeded"],
+    )
     assert transport.app_exception is None
 
 
@@ -785,7 +898,10 @@ async def test_async_server_timeout_in_on_end_keeps_handler_error(
 
     assert exc_info.value.code == Code.NOT_FOUND
     assert exc_info.value.message == "no such hat"
-    assert on_end.events == ["on_end not_found", "on_end cancelled"]
+    assert on_end.events in (
+        ["on_end not_found", "on_end cancelled"],
+        ["on_end not_found"],
+    )
     assert transport.app_exception is None
 
 

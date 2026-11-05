@@ -421,7 +421,8 @@ class ConnectWSGIApplication(ABC):
             compression = self._compressions.get(compression_name)
             if not compression:
                 raise unknown_compression_error(compression_name, self._compressions)
-            req_body = decompress(compression, req_body, self._read_max_bytes)
+            if req_body:  # Don't decompress empty body
+                req_body = decompress(compression, req_body, self._read_max_bytes)
             return decode_message(codec, req_body, endpoint.method.input)
 
         except Exception as e:
@@ -463,7 +464,8 @@ class ConnectWSGIApplication(ABC):
             compression = self._compressions.get(compression_name)
             if not compression:
                 raise unknown_compression_error(compression_name, self._compressions)
-            message = decompress(compression, message, self._read_max_bytes)
+            if message:  # Don't decompress empty message
+                message = decompress(compression, message, self._read_max_bytes)
 
             return decode_message(codec, message, endpoint.method.input)
 
@@ -681,6 +683,26 @@ def _request_stream(
             yield from reader.feed(chunk)
 
 
+def _end_stream(stream: Iterator[object], error: Exception | None) -> None:
+    """End the handler's stream, throwing in the error that ended the response.
+
+    The handler, and the interceptors wrapping it, then see the error at the
+    yield they are suspended at.
+    """
+    throw = getattr(stream, "throw", None)
+    if error is not None and throw is not None:
+        try:
+            throw(error)
+        except StopIteration:
+            return
+        except Exception as e:
+            if e is not error:
+                raise
+            return
+    if (close := getattr(stream, "close", None)) is not None:
+        close()
+
+
 def _response_stream(
     first_response: _RES,
     environ: WSGIEnvironment,
@@ -702,13 +724,19 @@ def _response_stream(
         error = e
         _drain_request_body(environ, request_body)
     except BaseException as e:
-        # A GeneratorExit is the app server closing the response, not a handler error.
-        if not isinstance(e, GeneratorExit):
-            # Save the error for on_end, then let the exception reach the app server.
+        # Save the error for on_end, then let the exception reach the app server.
+        if isinstance(e, GeneratorExit):
+            # The app server closed the response before its end, such as when the
+            # client disconnected.
+            error = ConnectError(Code.CANCELED, "Client disconnected")
+        else:
             error = ConnectError(Code.UNKNOWN, "Request was interrupted")
-            error.__cause__ = e
+        error.__cause__ = e
         raise
     finally:
+        # End the handler's stream so its cleanup runs before on_end, giving
+        # it the error that ended the response.
+        _end_stream(response_stream, error)
         # End the run before ending the response so on_end can still modify
         # response trailers. This is a no-op if the run already ended.
         error = metadata_run.end(error)

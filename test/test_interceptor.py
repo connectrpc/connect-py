@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import itertools
+from collections.abc import Generator
 from typing import TYPE_CHECKING
 
 import pytest
@@ -13,6 +14,7 @@ from pyqwest.testing import ASGITransport, WSGITransport
 from connectrpc.client import ResponseMetadata
 from connectrpc.code import Code
 from connectrpc.errors import ConnectError
+from connectrpc.protocol import ProtocolType
 
 from ._util import call
 from .connectrpc.example.haberdasher_connect import (
@@ -566,6 +568,120 @@ async def test_non_hoisted_metadata_interceptor_reports_cancellation(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("method", ["MakeSimilarHats", "MakeVariousHats"])
+@pytest.mark.parametrize(
+    "send_error",
+    [
+        pytest.param(None, id="cancelled"),
+        pytest.param(OSError("lost"), id="send-failed"),
+    ],
+)
+async def test_request_ended_during_send_reaches_handler_async(
+    method: str, send_error: Exception | None
+) -> None:
+    """A request that ends during a send reports the cause to the handler.
+
+    While the server awaits a send, the handler's generator is suspended at a
+    yield, so a cancellation or the send's error is raised in the server. The
+    server throws it into the generator, and both the handler and the
+    metadata interceptor wrapping it see it.
+    """
+    events: list[object] = []
+
+    class Observer:
+        async def on_start(self, ctx):  # noqa: ARG002
+            return None
+
+        async def on_end(self, _token, _ctx, error):
+            events.append(error)
+
+    class EndlessHaberdasher(Haberdasher):
+        async def make_similar_hats(self, request, _ctx):
+            try:
+                while True:
+                    yield Hat(size=request.inches)
+            except BaseException as e:
+                events.append(f"handler: {type(e).__name__}")
+                raise
+
+        async def make_various_hats(self, request, _ctx):
+            # The server watches for a disconnect once the request is read.
+            async for _ in request:
+                pass
+            try:
+                while True:
+                    yield Hat(size=10)
+            except BaseException as e:
+                events.append(f"handler: {type(e).__name__}")
+                raise
+
+    app = HaberdasherASGIApplication(
+        EndlessHaberdasher(), interceptors=(_PassthroughUnaryInterceptor(), Observer())
+    )
+    path = f"/connectrpc.example.Haberdasher/{method}"
+    scope: HTTPScope = {
+        "type": "http",
+        "asgi": {"spec_version": "2.0", "version": "3.0"},
+        "http_version": "1.1",
+        "method": "POST",
+        "scheme": "http",
+        "path": path,
+        "raw_path": path.encode(),
+        "query_string": b"",
+        "root_path": "",
+        "headers": [(b"content-type", b"application/connect+proto")],
+        "client": None,
+        "server": None,
+        "extensions": None,
+    }
+    request = Size(inches=10).to_binary()
+    body = b"\x00" + len(request).to_bytes(4, "big") + request
+    sent_request = False
+    blocked = asyncio.Event()
+
+    async def receive() -> HTTPRequestEvent | HTTPDisconnectEvent:
+        nonlocal sent_request
+        if not sent_request:
+            sent_request = True
+            return {"type": "http.request", "body": body, "more_body": False}
+        await asyncio.Event().wait()
+        return {"type": "http.disconnect"}
+
+    async def send(message) -> None:
+        if message["type"] != "http.response.body" or blocked.is_set():
+            return
+        blocked.set()
+        if send_error is not None:
+            raise send_error
+        await asyncio.Event().wait()
+
+    task = asyncio.create_task(app(scope, receive, send))
+    try:
+        await asyncio.wait_for(blocked.wait(), timeout=5.0)
+        if send_error is None:
+            task.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await task
+        else:
+            with pytest.raises(OSError, match="lost"):
+                await task
+    finally:
+        if not task.done():
+            task.cancel()
+        with contextlib.suppress(BaseException):
+            await task
+
+    if send_error is None:
+        assert events[0] == "handler: CancelledError"
+        assert isinstance(events[1], ConnectError)
+        assert events[1].code == Code.CANCELED
+    else:
+        assert events[0] == "handler: OSError"
+        assert events[1] is send_error
+    assert len(events) == 2
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     "middle_raises",
     [pytest.param(False, id="canceled-error"), pytest.param(True, id="cleanup-error")],
@@ -743,6 +859,92 @@ async def test_metadata_interceptor_closes_stream_async(method: str) -> None:
     await asyncio.wait_for(app(scope, receive, send), timeout=5.0)
 
     assert events == ["metadata start", "handler closed", "metadata end"]
+
+
+@pytest.mark.parametrize(
+    ("chunks", "hats", "cancelled"),
+    [
+        pytest.param(1, 1, True, id="disconnect"),
+        pytest.param(None, 2, False, id="complete"),
+    ],
+)
+@pytest.mark.parametrize(
+    "leading",
+    [
+        pytest.param(True, id="leading"),
+        # After a message interceptor, the metadata interceptor wraps the handler.
+        pytest.param(False, id="after_message_interceptor"),
+    ],
+)
+@pytest.mark.parametrize(
+    "protocol", [ProtocolType.CONNECT, ProtocolType.GRPC, ProtocolType.GRPC_WEB]
+)
+def test_metadata_interceptor_closes_stream_sync(
+    protocol: ProtocolType,
+    chunks: int | None,
+    hats: int,
+    cancelled: bool,
+    leading: bool,
+) -> None:
+    """Closing the response before its end closes the handler's stream and reports a
+    cancellation to on_end, while closing a completed response reports no error."""
+    events: list[str] = []
+    errors: list[Exception | None] = []
+
+    class ErrorRecordingInterceptorSync:
+        def on_start_sync(self, _ctx):
+            return None
+
+        def on_end_sync(self, _token, _ctx, error):
+            events.append("metadata end")
+            errors.append(error)
+
+    class TwoHatHaberdasherSync(HaberdasherSync):
+        def make_similar_hats(self, request, _ctx):
+            try:
+                yield Hat(size=request.inches)
+                yield Hat(size=request.inches)
+            finally:
+                events.append("handler closed")
+
+    metadata = ErrorRecordingInterceptorSync()
+    app = HaberdasherWSGIApplication(
+        TwoHatHaberdasherSync(),
+        interceptors=(metadata,)
+        if leading
+        else (_PassthroughUnaryInterceptor(), metadata),
+    )
+
+    def closing_app(environ, start_response):
+        # Close the response as an app server does, after sending the given number of
+        # chunks, or all of them.
+        response = app(environ, start_response)
+        assert isinstance(response, Generator)
+        try:
+            yield from itertools.islice(response, chunks)
+        finally:
+            response.close()
+
+    received: list[Hat] = []
+    with (
+        HaberdasherClientSync(
+            "http://localhost",
+            protocol=protocol,
+            http_client=SyncClient(WSGITransport(closing_app)),
+        ) as client,
+        contextlib.suppress(ConnectError),
+    ):
+        received.extend(client.make_similar_hats(Size(inches=10)))
+
+    assert len(received) == hats
+    assert events == ["handler closed", "metadata end"]
+    assert len(errors) == 1
+    if cancelled:
+        assert isinstance(errors[0], ConnectError)
+        assert errors[0].code == Code.CANCELED
+        assert errors[0].message == "Client disconnected"
+    else:
+        assert errors[0] is None
 
 
 class _ResponseMetadataInterceptor:
