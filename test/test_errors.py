@@ -346,6 +346,20 @@ _client_errors = [
         id="empty compressed body",
     ),
     pytest.param(
+        "GET",
+        "/connectrpc.example.Haberdasher/MakeHat?encoding=proto&compression=br&message=",
+        {},
+        b"",
+        HTTPStatus.OK,
+        {
+            "content-type": "application/proto",
+            "content-encoding": "identity",
+            "vary": "Accept-Encoding",
+        },
+        b"",
+        id="get empty compressed message",
+    ),
+    pytest.param(
         "POST",
         "/connectrpc.example.Haberdasher/MakeSimilarHats",
         {"Content-Type": "application/connect+xml"},
