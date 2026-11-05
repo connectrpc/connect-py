@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from asyncio import CancelledError
 from typing import TYPE_CHECKING, Any, Generic, Protocol, TypeVar, runtime_checkable
 
+from ._loop import current_loop
 from .code import Code
 from .errors import ConnectError
 
@@ -193,11 +193,12 @@ class MetadataInterceptorInvoker(Generic[T]):
         error: Exception | None = None
         try:
             return await call_next(request, ctx)
-        except CancelledError:
-            error = ConnectError(Code.CANCELED, "Request was cancelled")
-            raise
         except Exception as e:
             error = e
+            raise
+        except BaseException as e:
+            if current_loop().is_cancellation(e):
+                error = ConnectError(Code.CANCELED, "Request was cancelled")
             raise
         finally:
             await self._delegate.on_end(token, ctx, error)
@@ -212,11 +213,12 @@ class MetadataInterceptorInvoker(Generic[T]):
         error: Exception | None = None
         try:
             return await call_next(request, ctx)
-        except CancelledError:
-            error = ConnectError(Code.CANCELED, "Request was cancelled")
-            raise
         except Exception as e:
             error = e
+            raise
+        except BaseException as e:
+            if current_loop().is_cancellation(e):
+                error = ConnectError(Code.CANCELED, "Request was cancelled")
             raise
         finally:
             await self._delegate.on_end(token, ctx, error)
@@ -233,14 +235,22 @@ class MetadataInterceptorInvoker(Generic[T]):
             responses = call_next(request, ctx)
             try:
                 async for response in responses:
-                    yield response
+                    try:
+                        yield response
+                    except BaseException as e:
+                        # An exception at a yield is always from the consumer, i.e.
+                        # for cancelation, propagate that into the responses generator
+                        # too.
+                        await _throw_into(responses, e)
+                        raise
             finally:
                 await _aclose(responses)
-        except CancelledError:
-            error = ConnectError(Code.CANCELED, "Request was cancelled")
-            raise
         except Exception as e:
             error = e
+            raise
+        except BaseException as e:
+            if current_loop().is_cancellation(e):
+                error = ConnectError(Code.CANCELED, "Request was cancelled")
             raise
         finally:
             await self._delegate.on_end(token, ctx, error)
@@ -257,17 +267,56 @@ class MetadataInterceptorInvoker(Generic[T]):
             responses = call_next(request, ctx)
             try:
                 async for response in responses:
-                    yield response
+                    try:
+                        yield response
+                    except BaseException as e:
+                        # An exception at a yield is always from the consumer, i.e.
+                        # for cancelation, propagate that into the responses generator
+                        # too.
+                        await _throw_into(responses, e)
+                        raise
             finally:
                 await _aclose(responses)
-        except CancelledError:
-            error = ConnectError(Code.CANCELED, "Request was cancelled")
-            raise
         except Exception as e:
             error = e
             raise
+        except BaseException as e:
+            if current_loop().is_cancellation(e):
+                error = ConnectError(Code.CANCELED, "Request was cancelled")
+            raise
         finally:
             await self._delegate.on_end(token, ctx, error)
+
+
+async def _throw_into(stream: AsyncIterator[object], error: BaseException) -> None:
+    """End the stream by throwing the error into it."""
+    athrow = getattr(stream, "athrow", None)
+    if athrow is None or isinstance(error, GeneratorExit):
+        await _aclose(stream)
+        return
+    try:
+        await athrow(error)
+    except StopAsyncIteration:
+        return
+    except BaseException as e:
+        if _contains(e, error):
+            return
+        # The generator's cleanup raised a different error, or it was
+        # cancelled during cleanup, for example by a cleanup deadline.
+        raise
+    await _aclose(stream)
+
+
+def _contains(error: BaseException, cause: BaseException) -> bool:
+    """Return whether error is cause, or an exception group that contains cause.
+
+    A trio nursery wraps an exception raised in its body in a group.
+    """
+    if error is cause:
+        return True
+    return isinstance(error, BaseExceptionGroup) and any(
+        _contains(e, cause) for e in error.exceptions
+    )
 
 
 async def _aclose(stream: AsyncIterator[object]) -> None:
@@ -314,16 +363,18 @@ class MetadataInterceptorsRun:
         interceptors. Cancellation propagates after all started interceptors
         have been unwound.
         """
-        cancellation: CancelledError | None = None
+        cancellation: BaseException | None = None
         while self._started:
             interceptor, token = self._started.pop()
             try:
                 await interceptor.on_end(token, self._ctx, error)
-            except CancelledError as e:
-                cancellation = e
-                error = ConnectError(Code.CANCELED, "Request was cancelled")
             except Exception as e:  # noqa: BLE001 # invoking user callback
                 error = e
+            except BaseException as e:
+                if not current_loop().is_cancellation(e):
+                    raise
+                cancellation = e
+                error = ConnectError(Code.CANCELED, "Request was cancelled")
         if cancellation is not None:
             raise cancellation
         return error

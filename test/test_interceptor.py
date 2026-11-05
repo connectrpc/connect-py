@@ -566,6 +566,120 @@ async def test_non_hoisted_metadata_interceptor_reports_cancellation(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("method", ["MakeSimilarHats", "MakeVariousHats"])
+@pytest.mark.parametrize(
+    "send_error",
+    [
+        pytest.param(None, id="cancelled"),
+        pytest.param(OSError("lost"), id="send-failed"),
+    ],
+)
+async def test_request_ended_during_send_reaches_handler_async(
+    method: str, send_error: Exception | None
+) -> None:
+    """A request that ends during a send reports the cause to the handler.
+
+    While the server awaits a send, the handler's generator is suspended at a
+    yield, so a cancellation or the send's error is raised in the server. The
+    server throws it into the generator, and both the handler and the
+    metadata interceptor wrapping it see it.
+    """
+    events: list[object] = []
+
+    class Observer:
+        async def on_start(self, ctx):  # noqa: ARG002
+            return None
+
+        async def on_end(self, _token, _ctx, error):
+            events.append(error)
+
+    class EndlessHaberdasher(Haberdasher):
+        async def make_similar_hats(self, request, _ctx):
+            try:
+                while True:
+                    yield Hat(size=request.inches)
+            except BaseException as e:
+                events.append(f"handler: {type(e).__name__}")
+                raise
+
+        async def make_various_hats(self, request, _ctx):
+            # The server watches for a disconnect once the request is read.
+            async for _ in request:
+                pass
+            try:
+                while True:
+                    yield Hat(size=10)
+            except BaseException as e:
+                events.append(f"handler: {type(e).__name__}")
+                raise
+
+    app = HaberdasherASGIApplication(
+        EndlessHaberdasher(), interceptors=(_PassthroughUnaryInterceptor(), Observer())
+    )
+    path = f"/connectrpc.example.Haberdasher/{method}"
+    scope: HTTPScope = {
+        "type": "http",
+        "asgi": {"spec_version": "2.0", "version": "3.0"},
+        "http_version": "1.1",
+        "method": "POST",
+        "scheme": "http",
+        "path": path,
+        "raw_path": path.encode(),
+        "query_string": b"",
+        "root_path": "",
+        "headers": [(b"content-type", b"application/connect+proto")],
+        "client": None,
+        "server": None,
+        "extensions": None,
+    }
+    request = Size(inches=10).to_binary()
+    body = b"\x00" + len(request).to_bytes(4, "big") + request
+    sent_request = False
+    blocked = asyncio.Event()
+
+    async def receive() -> HTTPRequestEvent | HTTPDisconnectEvent:
+        nonlocal sent_request
+        if not sent_request:
+            sent_request = True
+            return {"type": "http.request", "body": body, "more_body": False}
+        await asyncio.Event().wait()
+        return {"type": "http.disconnect"}
+
+    async def send(message) -> None:
+        if message["type"] != "http.response.body" or blocked.is_set():
+            return
+        blocked.set()
+        if send_error is not None:
+            raise send_error
+        await asyncio.Event().wait()
+
+    task = asyncio.create_task(app(scope, receive, send))
+    try:
+        await asyncio.wait_for(blocked.wait(), timeout=5.0)
+        if send_error is None:
+            task.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await task
+        else:
+            with pytest.raises(OSError, match="lost"):
+                await task
+    finally:
+        if not task.done():
+            task.cancel()
+        with contextlib.suppress(BaseException):
+            await task
+
+    if send_error is None:
+        assert events[0] == "handler: CancelledError"
+        assert isinstance(events[1], ConnectError)
+        assert events[1].code == Code.CANCELED
+    else:
+        assert events[0] == "handler: OSError"
+        assert events[1] is send_error
+    assert len(events) == 2
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     "middle_raises",
     [pytest.param(False, id="canceled-error"), pytest.param(True, id="cleanup-error")],
