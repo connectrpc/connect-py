@@ -421,7 +421,8 @@ class ConnectWSGIApplication(ABC):
             compression = self._compressions.get(compression_name)
             if not compression:
                 raise unknown_compression_error(compression_name, self._compressions)
-            req_body = decompress(compression, req_body, self._read_max_bytes)
+            if req_body:  # Don't decompress empty body
+                req_body = decompress(compression, req_body, self._read_max_bytes)
             return decode_message(codec, req_body, endpoint.method.input)
 
         except Exception as e:
