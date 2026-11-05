@@ -425,9 +425,14 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
                         )
                     codec = self._codecs.get(codec_name)
                     if not codec:
+                        accept_post = (
+                            "application/json, application/proto"
+                            if isinstance(endpoint, EndpointUnary)
+                            else "application/connect+json, application/connect+proto"
+                        )
                         raise HTTPError(
                             HTTPStatus.UNSUPPORTED_MEDIA_TYPE,
-                            [("Accept-Post", "application/json, application/proto")],
+                            [("Accept-Post", accept_post)],
                         )
 
                     metadata_run = MetadataInterceptorsRun(
@@ -590,7 +595,7 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
                 message = base64.urlsafe_b64decode(message + "===")
             except Exception as e:
                 raise ConnectError(
-                    Code.INVALID_ARGUMENT, "Invalid base64 encoding"
+                    Code.INVALID_ARGUMENT, f"Invalid base64 encoding: {e!s}"
                 ) from e
         else:
             message = message.encode("utf-8")
