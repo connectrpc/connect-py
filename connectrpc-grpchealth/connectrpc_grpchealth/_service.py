@@ -3,6 +3,8 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import threading
+import time
+from collections.abc import AsyncGenerator, Generator
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 from connectrpc.code import Code
@@ -30,8 +32,8 @@ ServingStatus = HealthCheckResponse.ServingStatus
 class Checker(Protocol):
     """Reports the health of each service to [HealthService][connectrpc_grpchealth.HealthService].
 
-    The methods may be called concurrently. To support Watch, the checker also
-    implements [Watcher][connectrpc_grpchealth.Watcher].
+    The methods may be called concurrently. To support Watch, the checker must
+    also implement [Watcher][connectrpc_grpchealth.Watcher].
     """
 
     async def check(self, service: str) -> ServingStatus | None:
@@ -53,7 +55,7 @@ class CheckerSync(Protocol):
     """Reports the health of each service to [HealthServiceSync][connectrpc_grpchealth.HealthServiceSync].
 
     The methods may be called concurrently from any thread. To support Watch,
-    the checker also implements [Watcher][connectrpc_grpchealth.Watcher].
+    the checker must also implement [WatcherSync][connectrpc_grpchealth.WatcherSync].
     """
 
     def check_sync(self, service: str) -> ServingStatus | None:
@@ -73,35 +75,60 @@ class CheckerSync(Protocol):
 
 @runtime_checkable
 class Watcher(Protocol):
-    """Notifies the health service when the status of a service may change.
+    """Reports changes in the health of a service to [HealthService][connectrpc_grpchealth.HealthService].
 
-    A [Checker][connectrpc_grpchealth.Checker] or
-    [CheckerSync][connectrpc_grpchealth.CheckerSync] that also implements Watcher
+    A [Checker][connectrpc_grpchealth.Checker] that also implements Watcher
     supports the Watch RPC. Otherwise, Watch fails with
     [Code.UNIMPLEMENTED][connectrpc.code.Code.UNIMPLEMENTED], and gRPC clients
-    that check health with Watch treat the server as always serving.
+    that check health with Watch treat the server as healthy.
     """
 
-    def watch(self, service: str, on_change: Callable[[], None]) -> Callable[[], None]:
-        """Call on_change from any thread whenever the service's status may change.
+    def watch(self, service: str) -> AsyncIterator[ServingStatus | None]:
+        """Yield the status of a service now and again whenever it may have changed.
 
-        It may be called concurrently from any thread, and under ASGI it is
-        called on the event loop, so it must not block.
+        The status is None while the service is unknown. Watch sends a status
+        only when it differs from the last one sent, so yielding an unchanged
+        status is harmless.
 
         Args:
             service: The fully-qualified protobuf service name, or the empty
                 string for the status of the server as a whole.
-            on_change: Called after each change. It returns quickly and may be
-                called after the watch stops.
-
-        Returns:
-            A function that stops the watch.
 
         """
         ...
 
 
-class StaticChecker(Checker, CheckerSync, Watcher):
+@runtime_checkable
+class WatcherSync(Protocol):
+    """Reports changes in the health of a service to [HealthServiceSync][connectrpc_grpchealth.HealthServiceSync].
+
+    A [CheckerSync][connectrpc_grpchealth.CheckerSync] that also implements
+    WatcherSync supports the Watch RPC. Otherwise, Watch fails with
+    [Code.UNIMPLEMENTED][connectrpc.code.Code.UNIMPLEMENTED], and gRPC clients
+    that check health with Watch treat the server as healthy.
+    """
+
+    def watch_sync(
+        self, service: str, timeout: float | None
+    ) -> Iterator[ServingStatus | None]:
+        """Yield the status of a service now and again whenever it may have changed.
+
+        The status is None while the service is unknown. Watch sends a status
+        only when it differs from the last one sent, so yielding an unchanged
+        status is harmless.
+
+        Args:
+            service: The fully-qualified protobuf service name, or the empty
+                string for the status of the server as a whole.
+            timeout: Seconds until the call's deadline, or None if it has none.
+                The iterator ends once they pass, which frees the server
+                thread that runs the call.
+
+        """
+        ...
+
+
+class StaticChecker(Checker, CheckerSync, Watcher, WatcherSync):
     """Health statuses set explicitly for each service.
 
     The checker reports [ServingStatus.SERVING][connectrpc_grpchealth.ServingStatus]
@@ -161,18 +188,40 @@ class StaticChecker(Checker, CheckerSync, Watcher):
         with self._lock:
             return {"": ServingStatus.SERVING, **self._statuses}
 
-    def watch(self, service: str, on_change: Callable[[], None]) -> Callable[[], None]:
+    async def watch(self, service: str) -> AsyncIterator[ServingStatus | None]:
+        waiter = _current_waiter()
+        with self._notify(service, waiter.notify):
+            while True:
+                waiter.reset()
+                yield self.check_sync(service)
+                await waiter.wait()
+
+    def watch_sync(
+        self, service: str, timeout: float | None
+    ) -> Iterator[ServingStatus | None]:
+        deadline = None if timeout is None else time.monotonic() + timeout
+        changed = threading.Event()
+        with self._notify(service, changed.set):
+            while True:
+                changed.clear()
+                yield self.check_sync(service)
+                remaining = None if deadline is None else deadline - time.monotonic()
+                if not changed.wait(remaining):
+                    return
+
+    @contextlib.contextmanager
+    def _notify(self, service: str, on_change: Callable[[], None]) -> Iterator[None]:
+        """Call on_change after each change to the service's status."""
         with self._lock:
             self._watchers.setdefault(service, set()).add(on_change)
-
-        def stop() -> None:
+        try:
+            yield
+        finally:
             with self._lock:
                 callbacks = self._watchers[service]
                 callbacks.discard(on_change)
                 if not callbacks:
                     del self._watchers[service]
-
-        return stop
 
 
 class HealthService(Health):
@@ -215,21 +264,19 @@ class HealthService(Health):
         request: HealthCheckRequest,
         _ctx: RequestContext[HealthCheckRequest, HealthCheckResponse],
     ) -> AsyncIterator[HealthCheckResponse]:
-        watcher = _watcher(self._checker)
-        waiter = _current_waiter()
-        stop = watcher.watch(request.service, waiter.notify)
+        if not isinstance(self._checker, Watcher):
+            raise _watch_unimplemented()
+        statuses = self._checker.watch(request.service)
         try:
             last: ServingStatus | None = None
-            while True:
-                waiter.reset()
-                status = _watch_status(await self._checker.check(request.service))
-                if status != last:
-                    last = status
-                    yield HealthCheckResponse(status=status)
-                # The server ends the call at its deadline.
-                await waiter.wait()
+            # The server ends the call at its deadline.
+            async for status in statuses:
+                if (current := _watch_status(status)) != last:
+                    last = current
+                    yield HealthCheckResponse(status=current)
         finally:
-            stop()
+            if isinstance(statuses, AsyncGenerator):
+                await statuses.aclose()
 
 
 class HealthServiceSync(HealthSync):
@@ -241,11 +288,11 @@ class HealthServiceSync(HealthSync):
         Serve it with [HealthWSGIApplication][connectrpc_grpchealth.HealthWSGIApplication].
 
         Watch is supported if the checker implements
-        [Watcher][connectrpc_grpchealth.Watcher]. Each call to Watch occupies a
-        server thread while it is open. The server notices a disconnect only
-        when the call next sends a status, so a call whose client disconnects
-        ends at its deadline or at the next status change of the watched
-        service, whichever comes first.
+        [WatcherSync][connectrpc_grpchealth.WatcherSync]. Each call to Watch
+        occupies a server thread while it is open. The server notices a
+        disconnect only when the call next sends a status, so a call whose
+        client disconnects ends at its deadline or at the next status change of
+        the watched service, whichever comes first.
 
         Args:
             checker: The checker that reports the status of each service.
@@ -272,21 +319,20 @@ class HealthServiceSync(HealthSync):
         request: HealthCheckRequest,
         ctx: RequestContext[HealthCheckRequest, HealthCheckResponse],
     ) -> Iterator[HealthCheckResponse]:
-        watcher = _watcher(self._checker)
-        changed = threading.Event()
-        stop = watcher.watch(request.service, changed.set)
+        if not isinstance(self._checker, WatcherSync):
+            raise _watch_unimplemented()
+        statuses = self._checker.watch_sync(request.service, _remaining_seconds(ctx))
         try:
             last: ServingStatus | None = None
-            while True:
-                changed.clear()
-                status = _watch_status(self._checker.check_sync(request.service))
-                if status != last:
-                    last = status
-                    yield HealthCheckResponse(status=status)
-                if not changed.wait(_remaining_seconds(ctx)):
-                    raise _deadline_exceeded()
+            for status in statuses:
+                if (current := _watch_status(status)) != last:
+                    last = current
+                    yield HealthCheckResponse(status=current)
         finally:
-            stop()
+            if isinstance(statuses, Generator):
+                statuses.close()
+        if _remaining_seconds(ctx) == 0:
+            raise _deadline_exceeded()
 
 
 class _AsyncioWaiter:
@@ -319,10 +365,8 @@ def _current_waiter() -> _AsyncioWaiter | _TrioWaiter:
     return _AsyncioWaiter()
 
 
-def _watcher(checker: Checker | CheckerSync) -> Watcher:
-    if not isinstance(checker, Watcher):
-        raise ConnectError(Code.UNIMPLEMENTED, "watching health state is not supported")
-    return checker
+def _watch_unimplemented() -> ConnectError:
+    return ConnectError(Code.UNIMPLEMENTED, "watching health state is not supported")
 
 
 def _check_response(

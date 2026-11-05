@@ -12,6 +12,7 @@ __all__ = [
     "ServingStatus",
     "StaticChecker",
     "Watcher",
+    "WatcherSync",
 ]
 
 from ._gen.grpc.health.v1.health_connect import (
@@ -26,4 +27,5 @@ from ._service import (
     ServingStatus,
     StaticChecker,
     Watcher,
+    WatcherSync,
 )
