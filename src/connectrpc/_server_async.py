@@ -1,21 +1,15 @@
 from __future__ import annotations
 
-import base64
 import contextlib
-import functools
 import inspect
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from http import HTTPStatus
 from typing import TYPE_CHECKING, Any, Generic, Protocol, TypeVar, cast
 from urllib.parse import parse_qs
 
-from ._codec import Codec, get_default_codecs
-from ._compression import (
-    negotiate_compression,
-    resolve_compressions,
-    unknown_compression_error,
-)
+from . import _server_shared
+from ._compression import unknown_compression_error
 from ._envelope import EnvelopeReader, EnvelopeWriter
 from ._interceptor_async import (
     BidiStreamInterceptor,
@@ -31,8 +25,7 @@ from ._interceptor_async import (
 )
 from ._loop import AsyncioLoop, current_loop
 from ._protocol import ConnectWireError, HTTPError, ServerProtocol
-from ._protocol_connect import CONNECT_UNARY_CONTENT_TYPE_PREFIX, ConnectServerProtocol
-from ._protocol_grpc import GRPCServerProtocol
+from ._protocol_connect import ConnectServerProtocol
 from ._protocol_server import negotiate_server_protocol
 from ._server_shared import (
     DEFAULT_READ_MAX_BYTES,
@@ -41,7 +34,6 @@ from ._server_shared import (
     EndpointServerStream,
     EndpointUnary,
 )
-from ._shared import decode_message, decompress
 from .code import Code
 from .errors import ConnectError
 from .request import Headers, RequestContext
@@ -56,7 +48,6 @@ if TYPE_CHECKING:
         Callable,
         Iterable,
         Mapping,
-        Sequence,
     )
 
     from asgiref.typing import (
@@ -68,6 +59,7 @@ if TYPE_CHECKING:
         Scope,
     )
 
+    from ._codec import Codec
     from ._server_trio import TrioLoop, TrioTimeout
     from .compression import Compression
 else:
@@ -80,9 +72,6 @@ else:
 _SVC = TypeVar("_SVC")
 _REQ = TypeVar("_REQ")
 _RES = TypeVar("_RES")
-
-# We don't mutate query params so use a singleton for when they're not set.
-_UNSET_QUERY_PARAMS: dict[str, list[str]] = {}
 
 # While _server_shared.Endpoint is a closed type, we can't indicate that to Python so define
 # a more precise type here.
@@ -163,27 +152,18 @@ class _UnaryResponse:
     async def send(
         self, send: _ResponseSender, response_data: object, ctx: RequestContext
     ) -> None:
-        res_bytes = self.compression.compress(self.codec.encode(response_data))
-        headers: list[tuple[bytes, bytes]] = [
-            (
-                b"content-type",
-                f"{CONNECT_UNARY_CONTENT_TYPE_PREFIX}{self.codec.name()}".encode(),
-            ),
-            (b"content-encoding", self.compression.name().encode()),
-            (b"vary", b"Accept-Encoding"),
-        ]
-        _add_context_headers(headers, ctx)
+        headers, body = _server_shared.encode_unary(
+            response_data, self.codec, self.compression, ctx
+        )
         await send(
             {
                 "type": "http.response.start",
                 "status": 200,
-                "headers": headers,
+                "headers": _encode_headers(headers),
                 "trailers": False,
             }
         )
-        await send(
-            {"type": "http.response.body", "body": res_bytes, "more_body": False}
-        )
+        await send({"type": "http.response.body", "body": body, "more_body": False})
 
 
 @dataclass(slots=True)
@@ -197,22 +177,14 @@ class _StreamResponse:
     request_stream: AsyncGenerator[Any] | None = None
 
     async def send_headers(self, send: _ResponseSender, ctx: RequestContext) -> None:
-        headers = [
-            (b"content-type", self.protocol.content_type(self.codec).encode()),
-            (
-                self.protocol.compression_header_name().encode(),
-                self.compression.name().encode(),
-            ),
-        ]
-        headers.extend(
-            (key.encode(), value.encode())
-            for key, value in ctx.response_headers.allitems()
+        headers = _server_shared.stream_response_headers(
+            self.protocol, self.codec, self.compression, ctx
         )
         await send(
             {
                 "type": "http.response.start",
                 "status": 200,
-                "headers": headers,
+                "headers": _encode_headers(headers),
                 "trailers": self.protocol.uses_trailers(),
             }
         )
@@ -248,7 +220,7 @@ class _StreamResponse:
         return True
 
 
-class ConnectASGIApplication(ABC, Generic[_SVC]):
+class ConnectASGIApplication(_server_shared.ServerBase, ABC, Generic[_SVC]):
     """An ASGI application for the Connect protocol."""
 
     _resolved_endpoints: Mapping[str, Endpoint] | None
@@ -282,17 +254,15 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
                     binary and JSON codecs.
 
         """
-        super().__init__()
+        super().__init__(
+            read_max_bytes=read_max_bytes, compressions=compressions, codecs=codecs
+        )
         self._service = service
         self._endpoints = endpoints
         self._metadata_interceptors, self._interceptors = (
             split_leading_metadata_interceptors(interceptors)
         )
         self._resolved_endpoints = None
-        self._read_max_bytes = read_max_bytes
-        self._compressions = resolve_compressions(compressions)
-        codecs = codecs if codecs is not None else get_default_codecs()
-        self._codecs = {codec.name(): codec for codec in codecs}
 
     async def __call__(
         self, scope: Scope, receive: ASGIReceiveCallable, send: ASGISendCallable
@@ -413,27 +383,20 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
                         deadline = loop.time() + timeout_ms / 1000
                         timeout.reschedule(deadline)
 
-                    if http_method == "GET":
-                        query_string = scope.get("query_string", b"").decode("utf-8")
-                        query_params = parse_qs(query_string, keep_blank_values=True)
-                        codec_name = query_params.get("encoding", ("",))[0]
-                    else:
-                        query_params = _UNSET_QUERY_PARAMS
-                        codec_name = protocol.codec_name_from_content_type(
-                            headers.get("content-type", ""),
-                            stream=not isinstance(endpoint, EndpointUnary),
+                    query_params = (
+                        parse_qs(
+                            scope.get("query_string", b"").decode("utf-8"),
+                            keep_blank_values=True,
                         )
-                    codec = self._codecs.get(codec_name)
-                    if not codec:
-                        accept_post = (
-                            "application/json, application/proto"
-                            if isinstance(endpoint, EndpointUnary)
-                            else "application/connect+json, application/connect+proto"
-                        )
-                        raise HTTPError(
-                            HTTPStatus.UNSUPPORTED_MEDIA_TYPE,
-                            [("Accept-Post", accept_post)],
-                        )
+                        if http_method == "GET"
+                        else None
+                    )
+                    codec = self._resolve_codec(
+                        protocol,
+                        headers,
+                        query_params,
+                        stream=not isinstance(endpoint, EndpointUnary),
+                    )
 
                     metadata_run = MetadataInterceptorsRun(
                         self._metadata_interceptors, ctx
@@ -444,15 +407,11 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
                         protocol, ConnectServerProtocol
                     ):
                         unary = _UnaryResponse(
-                            codec,
-                            negotiate_compression(
-                                headers.get("accept-encoding", ""), self._compressions
-                            ),
+                            codec, self._unary_response_compression(headers)
                         )
                         await metadata_run.start()
                         response_data = await self._call_unary(
                             endpoint,
-                            http_method,
                             headers,
                             codec,
                             query_params,
@@ -552,98 +511,38 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
     async def _call_unary(
         self,
         endpoint: EndpointUnary[_REQ, _RES],
-        http_method: str,
         headers: Headers,
         codec: Codec,
-        query_params: dict[str, list[str]],
+        query_params: dict[str, list[str]] | None,
         receive: _RequestReceiver,
         loop: AsyncioLoop | TrioLoop,
         scope: Timeout | TrioTimeout,
         ctx: RequestContext,
     ) -> _RES:
         """Read a Connect unary request and invoke the handler."""
-        if http_method == "GET":
-            request = await self._read_get_request(endpoint, codec, query_params)
+        if query_params is not None:
+            request = self._decode_unary_get(query_params, codec, endpoint.method.input)
             # There is no body to read before watching for a disconnect.
             receive.body_done.set()
         else:
-            request = await self._read_post_request(endpoint, receive, codec, headers)
+            request = self._decode_unary(
+                await self._read_unary_body(receive),
+                headers.get("content-encoding"),
+                codec,
+                endpoint.method.input,
+            )
         # There is nothing here to poll a flag, so the watch must cancel.
         async with loop.watch_for_disconnect(receive, scope, cancel=True):
             return await endpoint.function(request, ctx)
 
-    async def _read_get_request(
-        self,
-        endpoint: EndpointUnary[_REQ, _RES],
-        codec: Codec,
-        params: dict[str, list[str]],
-    ) -> _REQ:
-        """Handle GET request with query parameters."""
-        # Validation
-        if "message" not in params:
-            raise ConnectError(
-                Code.INVALID_ARGUMENT,
-                "'message' parameter is required for GET requests",
-            )
-
-        # Get and decode message
-        message = params["message"][0]
-        is_base64 = "base64" in params and params["base64"][0] == "1"
-
-        if is_base64:
-            try:
-                message = base64.urlsafe_b64decode(message + "===")
-            except Exception as e:
-                raise ConnectError(
-                    Code.INVALID_ARGUMENT, f"Invalid base64 encoding: {e!s}"
-                ) from e
-        else:
-            message = message.encode("utf-8")
-
-        # Handle compression
-        compression_name = params.get("compression", [""])[0] or "identity"
-        compression = self._compressions.get(compression_name)
-        if not compression:
-            raise unknown_compression_error(compression_name, self._compressions)
-
-        # Decompress and decode message
-        if message:  # Don't decompress empty messages
-            message = decompress(compression, message, self._read_max_bytes)
-
-        # Get the appropriate decoder for the endpoint
-        return decode_message(codec, message, endpoint.method.input)
-
-    async def _read_post_request(
-        self,
-        endpoint: Endpoint[_REQ, _RES],
-        receive: _RequestReceiver,
-        codec: Codec,
-        headers: Headers,
-    ) -> _REQ:
-        """Handle POST request with body."""
-        # Get request body
+    async def _read_unary_body(self, receive: _RequestReceiver) -> bytes:
         chunks: list[bytes] = []
         read_bytes = 0
         async for chunk in _read_body(receive):
             read_bytes += len(chunk)
-            if self._read_max_bytes is not None and read_bytes > self._read_max_bytes:
-                raise ConnectError(
-                    Code.RESOURCE_EXHAUSTED,
-                    f"message is larger than configured max {self._read_max_bytes}",
-                )
+            self._check_read_size(read_bytes)
             chunks.append(chunk)
-        req_body = b"".join(chunks)
-
-        # Handle compression if specified
-        compression_name = headers.get("content-encoding") or "identity"
-        compression = self._compressions.get(compression_name)
-        if not compression:
-            raise unknown_compression_error(compression_name, self._compressions)
-
-        if req_body:  # Don't decompress empty body
-            req_body = decompress(compression, req_body, self._read_max_bytes)
-
-        return decode_message(codec, req_body, endpoint.method.input)
+        return b"".join(chunks)
 
     async def _call_stream(
         self,
@@ -745,43 +644,12 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
         """Respond with the error, unless the response can no longer be replaced."""
         if send.started or send.failed:
             return False
-        headers: list[tuple[bytes, bytes]]
-        body: bytes
-        status: int
-        if isinstance(protocol, GRPCServerProtocol) and not isinstance(exc, HTTPError):
-            # gRPC clients read the status from trailers, so this is a trailers-only
-            # response: HTTP 200 with the gRPC status in the headers.
-            grpc_headers = protocol.trailers_only_headers(ctx, exc)
-            await send(
-                {
-                    "type": "http.response.start",
-                    "status": 200,
-                    "headers": [
-                        (k.encode(), v.encode()) for k, v in grpc_headers.allitems()
-                    ],
-                    "trailers": False,
-                }
-            )
-            await send({"type": "http.response.body", "body": b"", "more_body": False})
-            return True
-        if isinstance(exc, HTTPError):
-            status = exc.status.value
-            headers = [(k.encode("utf-8"), v.encode("utf-8")) for k, v in exc.headers]
-            body = b""
-        else:
-            wire_error = ConnectWireError.from_exception(exc)
-            status = wire_error.to_http_status().code
-            headers = [(b"content-type", b"application/json")]
-            body = wire_error.to_json_bytes()
-
-        if ctx:
-            _add_context_headers(headers, ctx)
-
+        status, _, headers, body = _server_shared.error_response(exc, ctx, protocol)
         await send(
             {
                 "type": "http.response.start",
                 "status": status,
-                "headers": headers,
+                "headers": _encode_headers(headers),
                 "trailers": False,
             }
         )
@@ -789,15 +657,11 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
         return True
 
     def _resolve_endpoints(self, service: _SVC) -> Mapping[str, Endpoint]:
-        resolved_endpoints = self._endpoints(service)
-        if self._interceptors:
-            resolved_endpoints = {
-                path: _apply_interceptors(
-                    endpoint, resolve_interceptors(self._interceptors)
-                )
-                for path, endpoint in resolved_endpoints.items()
-            }
-        return resolved_endpoints
+        return _server_shared.apply_interceptors(
+            self._endpoints(service),
+            resolve_interceptors(self._interceptors),
+            _INTERCEPTOR_KINDS,
+        )
 
 
 def _timeout_error(
@@ -910,47 +774,13 @@ def _process_headers(iterable: Iterable[tuple[bytes, bytes]]) -> Headers:
     return result
 
 
-def _add_context_headers(
-    headers: list[tuple[bytes, bytes]], ctx: RequestContext
-) -> None:
-    headers.extend(
-        (key.encode(), value.encode()) for key, value in ctx.response_headers.allitems()
-    )
-    headers.extend(
-        (f"trailer-{key}".encode(), value.encode())
-        for key, value in ctx.response_trailers.allitems()
-    )
+def _encode_headers(headers: Iterable[tuple[str, str]]) -> list[tuple[bytes, bytes]]:
+    return [(key.encode(), value.encode()) for key, value in headers]
 
 
-def _apply_interceptors(
-    endpoint: Endpoint[_REQ, _RES], interceptors: Sequence[Interceptor]
-) -> Endpoint[_REQ, _RES]:
-    match endpoint:
-        case EndpointUnary():
-            func = endpoint.function
-            for interceptor in reversed(interceptors):
-                if not isinstance(interceptor, UnaryInterceptor):
-                    continue
-                func = functools.partial(interceptor.intercept_unary, func)
-            return replace(endpoint, function=func)
-        case EndpointClientStream():
-            func = endpoint.function
-            for interceptor in reversed(interceptors):
-                if not isinstance(interceptor, ClientStreamInterceptor):
-                    continue
-                func = functools.partial(interceptor.intercept_client_stream, func)
-            return replace(endpoint, function=func)
-        case EndpointServerStream():
-            func = endpoint.function
-            for interceptor in reversed(interceptors):
-                if not isinstance(interceptor, ServerStreamInterceptor):
-                    continue
-                func = functools.partial(interceptor.intercept_server_stream, func)
-            return replace(endpoint, function=func)
-        case EndpointBidiStream():
-            func = endpoint.function
-            for interceptor in reversed(interceptors):
-                if not isinstance(interceptor, BidiStreamInterceptor):
-                    continue
-                func = functools.partial(interceptor.intercept_bidi_stream, func)
-            return replace(endpoint, function=func)
+_INTERCEPTOR_KINDS: dict[type, tuple[type, str]] = {
+    EndpointUnary: (UnaryInterceptor, "intercept_unary"),
+    EndpointClientStream: (ClientStreamInterceptor, "intercept_client_stream"),
+    EndpointServerStream: (ServerStreamInterceptor, "intercept_server_stream"),
+    EndpointBidiStream: (BidiStreamInterceptor, "intercept_bidi_stream"),
+}
