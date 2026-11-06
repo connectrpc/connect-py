@@ -209,9 +209,13 @@ class StaticChecker(Checker, CheckerSync, Watcher, WatcherSync):
             while True:
                 changed.clear()
                 yield self.check_sync(service)
-                remaining = None if deadline is None else deadline - time.monotonic()
-                if not changed.wait(remaining):
-                    return
+                if deadline is None:
+                    changed.wait()
+                    continue
+                # A timed wait can end before the clock reaches the deadline.
+                while not changed.wait(deadline - time.monotonic()):
+                    if time.monotonic() >= deadline:
+                        return
 
     @contextlib.contextmanager
     def _notify(self, service: str, on_change: Callable[[], None]) -> Iterator[None]:

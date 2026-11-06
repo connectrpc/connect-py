@@ -5,6 +5,7 @@ import threading
 from concurrent.futures import Future
 from contextlib import contextmanager
 from functools import partial
+from types import SimpleNamespace
 from typing import TYPE_CHECKING
 
 import pytest
@@ -26,6 +27,7 @@ from connectrpc_grpchealth import (
     HealthWSGIApplication,
     ServingStatus,
     StaticChecker,
+    _service,
 )
 from connectrpc_grpchealth._gen.grpc.health.v1.health_connect import (
     HealthClient,
@@ -243,8 +245,22 @@ async def test_watch_unknown_service(
     await statuses.aclose()
 
 
+class _EarlyEvent(threading.Event):
+    """An event whose timed waits end early, as they can on Windows."""
+
+    def wait(self, timeout: float | None = None) -> bool:
+        if timeout is None:
+            return super().wait()
+        return super().wait(max(timeout - 0.05, 0))
+
+
 @pytest.mark.asyncio
-async def test_watch_deadline(client: AnyHealthClient) -> None:
+@pytest.mark.parametrize("early_wait", [False, True])
+async def test_watch_deadline(
+    monkeypatch: pytest.MonkeyPatch, client: AnyHealthClient, early_wait: bool
+) -> None:
+    if early_wait:
+        monkeypatch.setattr(_service, "threading", SimpleNamespace(Event=_EarlyEvent))
     statuses = _watch(client, ELIZA, timeout_ms=200)
 
     assert await anext(statuses) == ServingStatus.SERVING
