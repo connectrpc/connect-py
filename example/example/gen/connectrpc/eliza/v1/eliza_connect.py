@@ -15,7 +15,7 @@ from connectrpc.client import ConnectClient, ConnectClientSync
 from connectrpc.code import Code
 from connectrpc.errors import ConnectError
 from connectrpc.method import IdempotencyLevel, MethodInfo, StreamType
-from connectrpc.server import ConnectASGIApplication, ConnectWSGIApplication, DEFAULT_READ_MAX_BYTES, Endpoint, EndpointSync
+from connectrpc.server import ConnectASGIApplication, ConnectWSGIApplication, DEFAULT_READ_MAX_BYTES
 from protobuf import DescService
 
 from . import eliza_pb
@@ -77,51 +77,12 @@ class ElizaServiceASGIApplication(ConnectASGIApplication[ElizaService]):
     ) -> None:
         super().__init__(
             service=service,
-            endpoints=lambda svc: {
-                "/connectrpc.eliza.v1.ElizaService/Say": Endpoint.unary(
-                    method=MethodInfo(
-                        name="Say",
-                        service_name="connectrpc.eliza.v1.ElizaService",
-                        input=SayRequest,
-                        output=SayResponse,
-                        idempotency_level=IdempotencyLevel.NO_SIDE_EFFECTS,
-                        stream_type=StreamType.UNARY,
-                    ),
-                    function=svc.say,
-                ),
-                "/connectrpc.eliza.v1.ElizaService/Converse": Endpoint.bidi_stream(
-                    method=MethodInfo(
-                        name="Converse",
-                        service_name="connectrpc.eliza.v1.ElizaService",
-                        input=ConverseRequest,
-                        output=ConverseResponse,
-                        idempotency_level=IdempotencyLevel.UNKNOWN,
-                        stream_type=StreamType.BIDI_STREAM,
-                    ),
-                    function=svc.converse,
-                ),
-                "/connectrpc.eliza.v1.ElizaService/Introduce": Endpoint.server_stream(
-                    method=MethodInfo(
-                        name="Introduce",
-                        service_name="connectrpc.eliza.v1.ElizaService",
-                        input=IntroduceRequest,
-                        output=IntroduceResponse,
-                        idempotency_level=IdempotencyLevel.UNKNOWN,
-                        stream_type=StreamType.SERVER_STREAM,
-                    ),
-                    function=svc.introduce,
-                ),
-            },
+            desc=ElizaService.desc(),
             interceptors=interceptors,
             read_max_bytes=read_max_bytes,
             compressions=compressions,
             codecs=codecs,
         )
-
-    @property
-    def path(self) -> str:
-        """Returns the URL path to mount the application to when serving multiple applications."""
-        return "/connectrpc.eliza.v1.ElizaService"
 
 
 class ElizaServiceClient(ConnectClient):
@@ -243,7 +204,7 @@ class ElizaServiceSync(Protocol):
         """Returns the descriptor for this service."""
         return next(s for s in eliza_pb.desc().services if s.type_name == 'connectrpc.eliza.v1.ElizaService')
 
-class ElizaServiceWSGIApplication(ConnectWSGIApplication):
+class ElizaServiceWSGIApplication(ConnectWSGIApplication[ElizaServiceSync]):
     def __init__(
         self,
         service: ElizaServiceSync,
@@ -253,51 +214,13 @@ class ElizaServiceWSGIApplication(ConnectWSGIApplication):
         codecs: Iterable[Codec] | None = None,
     ) -> None:
         super().__init__(
-            endpoints={
-                "/connectrpc.eliza.v1.ElizaService/Say": EndpointSync.unary(
-                    method=MethodInfo(
-                        name="Say",
-                        service_name="connectrpc.eliza.v1.ElizaService",
-                        input=SayRequest,
-                        output=SayResponse,
-                        idempotency_level=IdempotencyLevel.NO_SIDE_EFFECTS,
-                        stream_type=StreamType.UNARY,
-                    ),
-                    function=service.say,
-                ),
-                "/connectrpc.eliza.v1.ElizaService/Converse": EndpointSync.bidi_stream(
-                    method=MethodInfo(
-                        name="Converse",
-                        service_name="connectrpc.eliza.v1.ElizaService",
-                        input=ConverseRequest,
-                        output=ConverseResponse,
-                        idempotency_level=IdempotencyLevel.UNKNOWN,
-                        stream_type=StreamType.BIDI_STREAM,
-                    ),
-                    function=service.converse,
-                ),
-                "/connectrpc.eliza.v1.ElizaService/Introduce": EndpointSync.server_stream(
-                    method=MethodInfo(
-                        name="Introduce",
-                        service_name="connectrpc.eliza.v1.ElizaService",
-                        input=IntroduceRequest,
-                        output=IntroduceResponse,
-                        idempotency_level=IdempotencyLevel.UNKNOWN,
-                        stream_type=StreamType.SERVER_STREAM,
-                    ),
-                    function=service.introduce,
-                ),
-            },
+            service=service,
+            desc=ElizaServiceSync.desc(),
             interceptors=interceptors,
             read_max_bytes=read_max_bytes,
             compressions=compressions,
             codecs=codecs,
         )
-
-    @property
-    def path(self) -> str:
-        """Returns the URL path to mount the application to when serving multiple applications."""
-        return "/connectrpc.eliza.v1.ElizaService"
 
 
 class ElizaServiceClientSync(ConnectClientSync):

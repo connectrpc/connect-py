@@ -11,15 +11,19 @@ from __future__ import annotations
 
 from typing import Protocol, TYPE_CHECKING
 
+from connectrpc._codegen import google_file_desc
 from connectrpc.client import ConnectClient, ConnectClientSync
 from connectrpc.compat import google_protobuf_binary_codec, google_protobuf_codecs
 from connectrpc.compression.gzip import GzipCompression
 from connectrpc.protocol import ProtocolType
-from connectrpc.server import ConnectASGIApplication, ConnectWSGIApplication, DEFAULT_READ_MAX_BYTES
+from connectrpc.server import ConnectASGIApplication, ConnectWSGIApplication, DEFAULT_READ_MAX_BYTES, Endpoint, EndpointSync
+from protobuf import DescService
 from pyqwest import Client, SyncClient
 
+from .empty_pb2 import DESCRIPTOR
+
 if TYPE_CHECKING:
-    from collections.abc import AsyncGenerator, Iterable
+    from collections.abc import AsyncGenerator, Iterable, Mapping
 
     from connectrpc.codec import Codec
     from connectrpc.compression import Compression
@@ -36,6 +40,10 @@ class NoMethods(Protocol):
     A service without any methods.
     """
     pass
+    @classmethod
+    def desc(cls) -> DescService:
+        """Returns the descriptor for this service."""
+        return next(s for s in google_file_desc(DESCRIPTOR).services if s.type_name == 'connectrpc.example.NoMethods')
 
 class NoMethodsASGIApplication(ConnectASGIApplication[NoMethods]):
     def __init__(
@@ -49,18 +57,16 @@ class NoMethodsASGIApplication(ConnectASGIApplication[NoMethods]):
     ) -> None:
         super().__init__(
             service=service,
-            endpoints=lambda svc: {
-            },
+            desc=NoMethods.desc(),
             interceptors=interceptors,
             read_max_bytes=read_max_bytes,
             compressions=compressions,
             codecs=codecs,
         )
 
-    @property
-    def path(self) -> str:
-        """Returns the URL path to mount the application to when serving multiple applications."""
-        return "/connectrpc.example.NoMethods"
+    def _build_endpoints(self, service: NoMethods) -> Mapping[str, Endpoint]:
+        return {
+        }
 
 
 class NoMethodsClient(ConnectClient):
@@ -97,8 +103,12 @@ class NoMethodsSync(Protocol):
     A service without any methods.
     """
     pass
+    @classmethod
+    def desc(cls) -> DescService:
+        """Returns the descriptor for this service."""
+        return next(s for s in google_file_desc(DESCRIPTOR).services if s.type_name == 'connectrpc.example.NoMethods')
 
-class NoMethodsWSGIApplication(ConnectWSGIApplication):
+class NoMethodsWSGIApplication(ConnectWSGIApplication[NoMethodsSync]):
     def __init__(
         self,
         service: NoMethodsSync,
@@ -108,18 +118,17 @@ class NoMethodsWSGIApplication(ConnectWSGIApplication):
         codecs: Iterable[Codec] | None = _DEFAULT_CODECS,
     ) -> None:
         super().__init__(
-            endpoints={
-            },
+            service=service,
+            desc=NoMethodsSync.desc(),
             interceptors=interceptors,
             read_max_bytes=read_max_bytes,
             compressions=compressions,
             codecs=codecs,
         )
 
-    @property
-    def path(self) -> str:
-        """Returns the URL path to mount the application to when serving multiple applications."""
-        return "/connectrpc.example.NoMethods"
+    def _build_endpoints(self, service: NoMethodsSync) -> Mapping[str, EndpointSync]:
+        return {
+        }
 
 
 class NoMethodsClientSync(ConnectClientSync):

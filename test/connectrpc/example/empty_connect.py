@@ -46,18 +46,12 @@ class NoMethodsASGIApplication(ConnectASGIApplication[NoMethods]):
     ) -> None:
         super().__init__(
             service=service,
-            endpoints=lambda svc: {
-            },
+            desc=NoMethods.desc(),
             interceptors=interceptors,
             read_max_bytes=read_max_bytes,
             compressions=compressions,
             codecs=codecs,
         )
-
-    @property
-    def path(self) -> str:
-        """Returns the URL path to mount the application to when serving multiple applications."""
-        return "/connectrpc.example.NoMethods"
 
 
 class NoMethodsClient(ConnectClient):
@@ -75,7 +69,7 @@ class NoMethodsSync(Protocol):
         """Returns the descriptor for this service."""
         return next(s for s in empty_pb.desc().services if s.type_name == 'connectrpc.example.NoMethods')
 
-class NoMethodsWSGIApplication(ConnectWSGIApplication):
+class NoMethodsWSGIApplication(ConnectWSGIApplication[NoMethodsSync]):
     def __init__(
         self,
         service: NoMethodsSync,
@@ -85,18 +79,13 @@ class NoMethodsWSGIApplication(ConnectWSGIApplication):
         codecs: Iterable[Codec] | None = None,
     ) -> None:
         super().__init__(
-            endpoints={
-            },
+            service=service,
+            desc=NoMethodsSync.desc(),
             interceptors=interceptors,
             read_max_bytes=read_max_bytes,
             compressions=compressions,
             codecs=codecs,
         )
-
-    @property
-    def path(self) -> str:
-        """Returns the URL path to mount the application to when serving multiple applications."""
-        return "/connectrpc.example.NoMethods"
 
 
 class NoMethodsClientSync(ConnectClientSync):

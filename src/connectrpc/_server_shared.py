@@ -1,12 +1,17 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Generic, TypeVar
+from typing import TYPE_CHECKING, Any, Generic, TypeVar
+
+from protobuf.wkt.google.protobuf.descriptor_pb import MethodOptions
+
+from .method import IdempotencyLevel, MethodInfo, StreamType
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
 
-    from .method import MethodInfo
+    from protobuf import DescMethod
+
     from .request import RequestContext
 
 REQ = TypeVar("REQ")
@@ -139,3 +144,41 @@ class EndpointServerStreamSync(EndpointSync[REQ, RES]):
 @dataclass(kw_only=True, frozen=True, slots=True)
 class EndpointBidiStreamSync(EndpointSync[REQ, RES]):
     function: Callable[[Iterator[REQ], RequestContext[REQ, RES]], Iterator[RES]]
+
+
+def method_url(method: DescMethod) -> str:
+    return f"/{method.parent.type_name}/{method.name}"
+
+
+def method_info(method: DescMethod) -> MethodInfo[Any, Any]:
+    """Return the MethodInfo for a method descriptor."""
+    return MethodInfo(
+        name=method.name,
+        service_name=method.parent.type_name,
+        input=method.input.type,
+        output=method.output.type,
+        idempotency_level=_idempotency_level(method),
+        stream_type=_stream_type(method),
+    )
+
+
+def _idempotency_level(method: DescMethod) -> IdempotencyLevel:
+    match method.idempotency:
+        case MethodOptions.IdempotencyLevel.NO_SIDE_EFFECTS:
+            return IdempotencyLevel.NO_SIDE_EFFECTS
+        case MethodOptions.IdempotencyLevel.IDEMPOTENT:
+            return IdempotencyLevel.IDEMPOTENT
+        case _:
+            return IdempotencyLevel.UNKNOWN
+
+
+def _stream_type(method: DescMethod) -> StreamType:
+    match method.method_kind:
+        case "unary":
+            return StreamType.UNARY
+        case "client_streaming":
+            return StreamType.CLIENT_STREAM
+        case "server_streaming":
+            return StreamType.SERVER_STREAM
+        case "bidi_streaming":
+            return StreamType.BIDI_STREAM

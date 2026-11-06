@@ -1378,11 +1378,15 @@ name = "protoc-gen-connectrpc"
 version = "0.13.0"
 source = { editable = "protoc-gen-connectrpc" }
 dependencies = [
+    { name = "connectrpc" },
     { name = "protobuf-py" },
 ]
 
 [package.metadata]
-requires-dist = [{ name = "protobuf-py", specifier = ">=0.7.0" }]
+requires-dist = [
+    { name = "connectrpc", editable = "." },
+    { name = "protobuf-py", specifier = ">=0.7.0" },
+]
 
 [[package]]
 name = "protoc-gen-grpc-py"

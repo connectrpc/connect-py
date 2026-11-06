@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import importlib.metadata
-import re
 from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import TYPE_CHECKING
@@ -21,6 +20,8 @@ from protobuf.plugin import (
 )
 from protobuf.wkt.google.protobuf.descriptor_pb import MethodOptions
 
+from connectrpc._codegen import method_local_name
+
 if TYPE_CHECKING:
     from protobuf import DescFile, DescMessage, DescMethod
 
@@ -36,6 +37,8 @@ _DEPRECATED = Module("typing_extensions").ident("deprecated")
 # Use a private alias to prevent collisions with method names in class scope.
 _DEPRECATED_ALIAS = "_deprecated"
 
+_CONNECTRPC_CODEGEN = Module("connectrpc._codegen")
+_GOOGLE_FILE_DESC = _CONNECTRPC_CODEGEN.ident("google_file_desc")
 _PROTOBUF = Module("protobuf")
 _DESC_SERVICE = _PROTOBUF.ident("DescService")
 
@@ -77,19 +80,6 @@ _ENDPOINT = _CONNECTRPC_SERVER.ident("Endpoint")
 _ENDPOINT_SYNC = _CONNECTRPC_SERVER.ident("EndpointSync")
 _CONNECT_ASGI_APPLICATION = _CONNECTRPC_SERVER.ident("ConnectASGIApplication")
 _CONNECT_WSGI_APPLICATION = _CONNECTRPC_SERVER.ident("ConnectWSGIApplication")
-
-_KEYWORDS = frozenset(
-    python_keywords()
-    | {
-        # While not strictly necessary, we go ahead and share keywords for service and client
-        # to have the same names in generated code for them.
-        "desc",
-        "execute_unary",
-        "execute_client_stream",
-        "execute_server_stream",
-        "execute_bidi_stream",
-    }
-)
 
 
 class _ProtobufOption(StrEnum):
@@ -164,7 +154,7 @@ def _generate_async_stubs(f: File, service: DescService, options: Options) -> No
             with f.scope(
                 def_prefix,
                 "def ",
-                _method_local_name(method),
+                method_local_name(method),
                 "(self, request: ",
                 *request_type,
                 ", ctx: ",
@@ -226,59 +216,14 @@ def _generate_async_stubs(f: File, service: DescService, options: Options) -> No
         with f.scope(") -> None:"):
             with f.scope("super().__init__("):
                 f.print("service=service,")
-                with f.scope("endpoints=lambda svc: {"):
-                    for method in service.methods:
-                        with f.scope(
-                            f'"{_method_url(method)}": ',
-                            _ENDPOINT,
-                            ".",
-                            _endpoint_type(method),
-                            "(",
-                        ):
-                            with f.scope("method=", _METHOD_INFO, "("):
-                                f.print('name="', method.name, '",')
-                                f.print('service_name="', method.parent.type_name, '",')
-                                f.print(
-                                    "input=",
-                                    _message_ident(method, method.input, options),
-                                    ",",
-                                )
-                                f.print(
-                                    "output=",
-                                    _message_ident(method, method.output, options),
-                                    ",",
-                                )
-                                f.print(
-                                    "idempotency_level=",
-                                    _IDEMPOTENCY_LEVEL,
-                                    ".",
-                                    _idempotency_level(method),
-                                    ",",
-                                )
-                                f.print(
-                                    "stream_type=",
-                                    _STREAM_TYPE,
-                                    ".",
-                                    _stream_type(method),
-                                    ",",
-                                )
-                            f.print("),")
-                            f.print("function=svc.", _method_local_name(method), ",")
-                        f.print("),")
-                f.print("},")
+                f.print("desc=", service_name, ".desc(),")
                 f.print("interceptors=interceptors,")
                 f.print("read_max_bytes=read_max_bytes,")
                 f.print("compressions=compressions,")
                 f.print("codecs=codecs,")
             f.print(")")
-        f.print()
-        f.print("@property")
-        with f.scope("def path(self) -> str:"):
-            with f.doc(
-                "Returns the URL path to mount the application to when serving multiple applications."
-            ):
-                pass
-            f.print(f'return "/{service.type_name}"')
+        if options.protobuf == _ProtobufOption.GOOGLE:
+            _generate_build_endpoints(f, service, options, is_sync=False)
     f.print()
     f.print()
     _maybe_print_deprecated(f, service)
@@ -293,7 +238,7 @@ def _generate_async_stubs(f: File, service: DescService, options: Options) -> No
             def_prefix, request_type, response_type = _async_signature(method, options)
 
             _maybe_print_deprecated(f, method)
-            with f.scope(def_prefix, "def ", _method_local_name(method), "("):
+            with f.scope(def_prefix, "def ", method_local_name(method), "("):
                 f.print("self,")
                 f.print("request: ", *request_type, ",")
                 f.print("*,")
@@ -368,7 +313,7 @@ def _generate_sync_stubs(f: File, service: DescService, options: Options) -> Non
             _maybe_print_deprecated(f, method)
             with f.scope(
                 "def ",
-                _method_local_name(method),
+                method_local_name(method),
                 "(self, request: ",
                 *request_type,
                 ", ctx: ",
@@ -395,7 +340,13 @@ def _generate_sync_stubs(f: File, service: DescService, options: Options) -> Non
     f.print()
     _maybe_print_deprecated(f, service)
     with f.scope(
-        "class ", service_name, "WSGIApplication(", _CONNECT_WSGI_APPLICATION, "):"
+        "class ",
+        service_name,
+        "WSGIApplication(",
+        _CONNECT_WSGI_APPLICATION,
+        "[",
+        service_name,
+        "Sync]):",
     ):
         with f.scope("def __init__("):
             f.print("self,")
@@ -408,61 +359,15 @@ def _generate_sync_stubs(f: File, service: DescService, options: Options) -> Non
             )
         with f.scope(") -> None:"):
             with f.scope("super().__init__("):
-                with f.scope("endpoints={"):
-                    for method in service.methods:
-                        with f.scope(
-                            f'"{_method_url(method)}": ',
-                            _ENDPOINT_SYNC,
-                            ".",
-                            _endpoint_type(method),
-                            "(",
-                        ):
-                            with f.scope("method=", _METHOD_INFO, "("):
-                                f.print('name="', method.name, '",')
-                                f.print('service_name="', method.parent.type_name, '",')
-                                f.print(
-                                    "input=",
-                                    _message_ident(method, method.input, options),
-                                    ",",
-                                )
-                                f.print(
-                                    "output=",
-                                    _message_ident(method, method.output, options),
-                                    ",",
-                                )
-                                f.print(
-                                    "idempotency_level=",
-                                    _IDEMPOTENCY_LEVEL,
-                                    ".",
-                                    _idempotency_level(method),
-                                    ",",
-                                )
-                                f.print(
-                                    "stream_type=",
-                                    _STREAM_TYPE,
-                                    ".",
-                                    _stream_type(method),
-                                    ",",
-                                )
-                            f.print("),")
-                            f.print(
-                                "function=service.", _method_local_name(method), ","
-                            )
-                        f.print("),")
-                f.print("},")
+                f.print("service=service,")
+                f.print("desc=", service_name, "Sync.desc(),")
                 f.print("interceptors=interceptors,")
                 f.print("read_max_bytes=read_max_bytes,")
                 f.print("compressions=compressions,")
                 f.print("codecs=codecs,")
             f.print(")")
-        f.print()
-        f.print("@property")
-        with f.scope("def path(self) -> str:"):
-            with f.doc(
-                "Returns the URL path to mount the application to when serving multiple applications."
-            ):
-                pass
-            f.print(f'return "/{service.type_name}"')
+        if options.protobuf == _ProtobufOption.GOOGLE:
+            _generate_build_endpoints(f, service, options, is_sync=True)
     f.print()
     f.print()
     _maybe_print_deprecated(f, service)
@@ -477,7 +382,7 @@ def _generate_sync_stubs(f: File, service: DescService, options: Options) -> Non
             request_type, response_type = _sync_signature(method, options)
 
             _maybe_print_deprecated(f, method)
-            with f.scope("def ", _method_local_name(method), "("):
+            with f.scope("def ", method_local_name(method), "("):
                 f.print("self,")
                 f.print("request: ", *request_type, ",")
                 f.print("*,")
@@ -616,19 +521,82 @@ def _maybe_print_deprecated(f: File, desc: DescService | DescMethod) -> None:
     f.print("@", _DEPRECATED_ALIAS, '("', name, ' is deprecated.", category=None)')
 
 
+def _generate_build_endpoints(
+    f: File, service: DescService, options: Options, *, is_sync: bool
+) -> None:
+    """Generate an override of the application's _build_endpoints method.
+
+    The descriptor for protobuf-py services does not know the google.protobuf
+    message classes, so we generate the endpoints in generated code.
+    """
+    service_name = escape_public_identifier(service.name, python_keywords())
+    endpoint_ident = _ENDPOINT_SYNC if is_sync else _ENDPOINT
+    service_type = f"{service_name}Sync" if is_sync else service_name
+    f.print()
+    with f.scope(
+        "def _build_endpoints(self, service: ",
+        service_type,
+        ") -> ",
+        _MAPPING,
+        "[str, ",
+        endpoint_ident,
+        "]:",
+    ):
+        with f.scope("return {"):
+            for method in service.methods:
+                with f.scope(
+                    f'"{_method_url(method)}": ',
+                    endpoint_ident,
+                    ".",
+                    _endpoint_type(method),
+                    "(",
+                ):
+                    with f.scope("method=", _METHOD_INFO, "("):
+                        f.print('name="', method.name, '",')
+                        f.print('service_name="', method.parent.type_name, '",')
+                        f.print(
+                            "input=", _message_ident(method, method.input, options), ","
+                        )
+                        f.print(
+                            "output=",
+                            _message_ident(method, method.output, options),
+                            ",",
+                        )
+                        f.print(
+                            "idempotency_level=",
+                            _IDEMPOTENCY_LEVEL,
+                            ".",
+                            _idempotency_level(method),
+                            ",",
+                        )
+                        f.print(
+                            "stream_type=", _STREAM_TYPE, ".", _stream_type(method), ","
+                        )
+                    f.print("),")
+                    f.print("function=service.", method_local_name(method), ",")
+                f.print("),")
+        f.print("}")
+
+
 def _generate_desc_method(f: File, service: DescService, options: Options) -> None:
-    if options.protobuf == _ProtobufOption.PY:
-        f.print("@classmethod")
-        with f.scope("def desc(cls) -> ", _DESC_SERVICE, ":"):
-            with f.doc("Returns the descriptor for this service."):
-                pass
-            f.print(
-                "return next(s for s in ",
-                service.file,
-                ".desc().services if s.type_name == '",
-                service.type_name,
-                "')",
+    f.print("@classmethod")
+    with f.scope("def desc(cls) -> ", _DESC_SERVICE, ":"):
+        with f.doc("Returns the descriptor for this service."):
+            pass
+        if options.protobuf == _ProtobufOption.PY:
+            file_desc: tuple[object, ...] = (service.file, ".desc()")
+        else:
+            descriptor = Module(f".{_module_name(service.file.name)}").ident(
+                "DESCRIPTOR"
             )
+            file_desc = (_GOOGLE_FILE_DESC, "(", descriptor, ")")
+        f.print(
+            "return next(s for s in ",
+            *file_desc,
+            ".services if s.type_name == '",
+            service.type_name,
+            "')",
+        )
 
 
 # https://github.com/grpc/grpc/blob/0dd1b2cad21d89984f9a1b3c6249d649381eeb65/src/compiler/python_generator_helpers.h#L67
@@ -681,10 +649,6 @@ def _client_execute_method(method: DescMethod) -> str:
             return "execute_bidi_stream"
 
 
-def _method_local_name(method: DescMethod) -> str:
-    return escape_public_identifier(_pascal_to_snake_case(method.name), _KEYWORDS)
-
-
 def _method_url(desc: DescMethod) -> str:
     return f"/{desc.parent.type_name}/{desc.name}"
 
@@ -718,16 +682,6 @@ def _supports_get(desc: DescMethod) -> bool:
         desc.method_kind == "unary"
         and desc.idempotency == MethodOptions.IdempotencyLevel.NO_SIDE_EFFECTS
     )
-
-
-_RE_UPPER_TO_LOWER = re.compile("([^_])([A-Z][a-z]+)")
-_RE_LOWER_TO_UPPER = re.compile("([a-z])([A-Z])")
-
-
-def _pascal_to_snake_case(text: str) -> str:
-    """Convert a PascalCase enum name to snake_case."""
-    s1 = _RE_UPPER_TO_LOWER.sub(r"\1_\2", text)
-    return _RE_LOWER_TO_UPPER.sub(r"\1_\2", s1).lower()
 
 
 def main() -> None:

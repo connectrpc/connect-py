@@ -15,7 +15,7 @@ from connectrpc.client import ConnectClient, ConnectClientSync
 from connectrpc.code import Code
 from connectrpc.errors import ConnectError
 from connectrpc.method import IdempotencyLevel, MethodInfo, StreamType
-from connectrpc.server import ConnectASGIApplication, ConnectWSGIApplication, DEFAULT_READ_MAX_BYTES, Endpoint, EndpointSync
+from connectrpc.server import ConnectASGIApplication, ConnectWSGIApplication, DEFAULT_READ_MAX_BYTES
 from protobuf import DescService
 
 from . import service_pb
@@ -189,84 +189,12 @@ class ConformanceServiceASGIApplication(ConnectASGIApplication[ConformanceServic
     ) -> None:
         super().__init__(
             service=service,
-            endpoints=lambda svc: {
-                "/connectrpc.conformance.v1.ConformanceService/Unary": Endpoint.unary(
-                    method=MethodInfo(
-                        name="Unary",
-                        service_name="connectrpc.conformance.v1.ConformanceService",
-                        input=UnaryRequest,
-                        output=UnaryResponse,
-                        idempotency_level=IdempotencyLevel.UNKNOWN,
-                        stream_type=StreamType.UNARY,
-                    ),
-                    function=svc.unary,
-                ),
-                "/connectrpc.conformance.v1.ConformanceService/ServerStream": Endpoint.server_stream(
-                    method=MethodInfo(
-                        name="ServerStream",
-                        service_name="connectrpc.conformance.v1.ConformanceService",
-                        input=ServerStreamRequest,
-                        output=ServerStreamResponse,
-                        idempotency_level=IdempotencyLevel.UNKNOWN,
-                        stream_type=StreamType.SERVER_STREAM,
-                    ),
-                    function=svc.server_stream,
-                ),
-                "/connectrpc.conformance.v1.ConformanceService/ClientStream": Endpoint.client_stream(
-                    method=MethodInfo(
-                        name="ClientStream",
-                        service_name="connectrpc.conformance.v1.ConformanceService",
-                        input=ClientStreamRequest,
-                        output=ClientStreamResponse,
-                        idempotency_level=IdempotencyLevel.UNKNOWN,
-                        stream_type=StreamType.CLIENT_STREAM,
-                    ),
-                    function=svc.client_stream,
-                ),
-                "/connectrpc.conformance.v1.ConformanceService/BidiStream": Endpoint.bidi_stream(
-                    method=MethodInfo(
-                        name="BidiStream",
-                        service_name="connectrpc.conformance.v1.ConformanceService",
-                        input=BidiStreamRequest,
-                        output=BidiStreamResponse,
-                        idempotency_level=IdempotencyLevel.UNKNOWN,
-                        stream_type=StreamType.BIDI_STREAM,
-                    ),
-                    function=svc.bidi_stream,
-                ),
-                "/connectrpc.conformance.v1.ConformanceService/Unimplemented": Endpoint.unary(
-                    method=MethodInfo(
-                        name="Unimplemented",
-                        service_name="connectrpc.conformance.v1.ConformanceService",
-                        input=UnimplementedRequest,
-                        output=UnimplementedResponse,
-                        idempotency_level=IdempotencyLevel.UNKNOWN,
-                        stream_type=StreamType.UNARY,
-                    ),
-                    function=svc.unimplemented,
-                ),
-                "/connectrpc.conformance.v1.ConformanceService/IdempotentUnary": Endpoint.unary(
-                    method=MethodInfo(
-                        name="IdempotentUnary",
-                        service_name="connectrpc.conformance.v1.ConformanceService",
-                        input=IdempotentUnaryRequest,
-                        output=IdempotentUnaryResponse,
-                        idempotency_level=IdempotencyLevel.NO_SIDE_EFFECTS,
-                        stream_type=StreamType.UNARY,
-                    ),
-                    function=svc.idempotent_unary,
-                ),
-            },
+            desc=ConformanceService.desc(),
             interceptors=interceptors,
             read_max_bytes=read_max_bytes,
             compressions=compressions,
             codecs=codecs,
         )
-
-    @property
-    def path(self) -> str:
-        """Returns the URL path to mount the application to when serving multiple applications."""
-        return "/connectrpc.conformance.v1.ConformanceService"
 
 
 class ConformanceServiceClient(ConnectClient):
@@ -663,7 +591,7 @@ class ConformanceServiceSync(Protocol):
         """Returns the descriptor for this service."""
         return next(s for s in service_pb.desc().services if s.type_name == 'connectrpc.conformance.v1.ConformanceService')
 
-class ConformanceServiceWSGIApplication(ConnectWSGIApplication):
+class ConformanceServiceWSGIApplication(ConnectWSGIApplication[ConformanceServiceSync]):
     def __init__(
         self,
         service: ConformanceServiceSync,
@@ -673,84 +601,13 @@ class ConformanceServiceWSGIApplication(ConnectWSGIApplication):
         codecs: Iterable[Codec] | None = None,
     ) -> None:
         super().__init__(
-            endpoints={
-                "/connectrpc.conformance.v1.ConformanceService/Unary": EndpointSync.unary(
-                    method=MethodInfo(
-                        name="Unary",
-                        service_name="connectrpc.conformance.v1.ConformanceService",
-                        input=UnaryRequest,
-                        output=UnaryResponse,
-                        idempotency_level=IdempotencyLevel.UNKNOWN,
-                        stream_type=StreamType.UNARY,
-                    ),
-                    function=service.unary,
-                ),
-                "/connectrpc.conformance.v1.ConformanceService/ServerStream": EndpointSync.server_stream(
-                    method=MethodInfo(
-                        name="ServerStream",
-                        service_name="connectrpc.conformance.v1.ConformanceService",
-                        input=ServerStreamRequest,
-                        output=ServerStreamResponse,
-                        idempotency_level=IdempotencyLevel.UNKNOWN,
-                        stream_type=StreamType.SERVER_STREAM,
-                    ),
-                    function=service.server_stream,
-                ),
-                "/connectrpc.conformance.v1.ConformanceService/ClientStream": EndpointSync.client_stream(
-                    method=MethodInfo(
-                        name="ClientStream",
-                        service_name="connectrpc.conformance.v1.ConformanceService",
-                        input=ClientStreamRequest,
-                        output=ClientStreamResponse,
-                        idempotency_level=IdempotencyLevel.UNKNOWN,
-                        stream_type=StreamType.CLIENT_STREAM,
-                    ),
-                    function=service.client_stream,
-                ),
-                "/connectrpc.conformance.v1.ConformanceService/BidiStream": EndpointSync.bidi_stream(
-                    method=MethodInfo(
-                        name="BidiStream",
-                        service_name="connectrpc.conformance.v1.ConformanceService",
-                        input=BidiStreamRequest,
-                        output=BidiStreamResponse,
-                        idempotency_level=IdempotencyLevel.UNKNOWN,
-                        stream_type=StreamType.BIDI_STREAM,
-                    ),
-                    function=service.bidi_stream,
-                ),
-                "/connectrpc.conformance.v1.ConformanceService/Unimplemented": EndpointSync.unary(
-                    method=MethodInfo(
-                        name="Unimplemented",
-                        service_name="connectrpc.conformance.v1.ConformanceService",
-                        input=UnimplementedRequest,
-                        output=UnimplementedResponse,
-                        idempotency_level=IdempotencyLevel.UNKNOWN,
-                        stream_type=StreamType.UNARY,
-                    ),
-                    function=service.unimplemented,
-                ),
-                "/connectrpc.conformance.v1.ConformanceService/IdempotentUnary": EndpointSync.unary(
-                    method=MethodInfo(
-                        name="IdempotentUnary",
-                        service_name="connectrpc.conformance.v1.ConformanceService",
-                        input=IdempotentUnaryRequest,
-                        output=IdempotentUnaryResponse,
-                        idempotency_level=IdempotencyLevel.NO_SIDE_EFFECTS,
-                        stream_type=StreamType.UNARY,
-                    ),
-                    function=service.idempotent_unary,
-                ),
-            },
+            service=service,
+            desc=ConformanceServiceSync.desc(),
             interceptors=interceptors,
             read_max_bytes=read_max_bytes,
             compressions=compressions,
             codecs=codecs,
         )
-
-    @property
-    def path(self) -> str:
-        """Returns the URL path to mount the application to when serving multiple applications."""
-        return "/connectrpc.conformance.v1.ConformanceService"
 
 
 class ConformanceServiceClientSync(ConnectClientSync):

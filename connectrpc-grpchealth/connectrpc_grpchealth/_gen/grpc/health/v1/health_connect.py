@@ -15,7 +15,7 @@ from connectrpc.client import ConnectClient, ConnectClientSync
 from connectrpc.code import Code
 from connectrpc.errors import ConnectError
 from connectrpc.method import IdempotencyLevel, MethodInfo, StreamType
-from connectrpc.server import ConnectASGIApplication, ConnectWSGIApplication, DEFAULT_READ_MAX_BYTES, Endpoint, EndpointSync
+from connectrpc.server import ConnectASGIApplication, ConnectWSGIApplication, DEFAULT_READ_MAX_BYTES
 from protobuf import DescService
 
 from . import health_pb
@@ -101,51 +101,12 @@ class HealthASGIApplication(ConnectASGIApplication[Health]):
     ) -> None:
         super().__init__(
             service=service,
-            endpoints=lambda svc: {
-                "/grpc.health.v1.Health/Check": Endpoint.unary(
-                    method=MethodInfo(
-                        name="Check",
-                        service_name="grpc.health.v1.Health",
-                        input=HealthCheckRequest,
-                        output=HealthCheckResponse,
-                        idempotency_level=IdempotencyLevel.UNKNOWN,
-                        stream_type=StreamType.UNARY,
-                    ),
-                    function=svc.check,
-                ),
-                "/grpc.health.v1.Health/List": Endpoint.unary(
-                    method=MethodInfo(
-                        name="List",
-                        service_name="grpc.health.v1.Health",
-                        input=HealthListRequest,
-                        output=HealthListResponse,
-                        idempotency_level=IdempotencyLevel.UNKNOWN,
-                        stream_type=StreamType.UNARY,
-                    ),
-                    function=svc.list,
-                ),
-                "/grpc.health.v1.Health/Watch": Endpoint.server_stream(
-                    method=MethodInfo(
-                        name="Watch",
-                        service_name="grpc.health.v1.Health",
-                        input=HealthCheckRequest,
-                        output=HealthCheckResponse,
-                        idempotency_level=IdempotencyLevel.UNKNOWN,
-                        stream_type=StreamType.SERVER_STREAM,
-                    ),
-                    function=svc.watch,
-                ),
-            },
+            desc=Health.desc(),
             interceptors=interceptors,
             read_max_bytes=read_max_bytes,
             compressions=compressions,
             codecs=codecs,
         )
-
-    @property
-    def path(self) -> str:
-        """Returns the URL path to mount the application to when serving multiple applications."""
-        return "/grpc.health.v1.Health"
 
 
 class HealthClient(ConnectClient):
@@ -313,7 +274,7 @@ class HealthSync(Protocol):
         """Returns the descriptor for this service."""
         return next(s for s in health_pb.desc().services if s.type_name == 'grpc.health.v1.Health')
 
-class HealthWSGIApplication(ConnectWSGIApplication):
+class HealthWSGIApplication(ConnectWSGIApplication[HealthSync]):
     def __init__(
         self,
         service: HealthSync,
@@ -323,51 +284,13 @@ class HealthWSGIApplication(ConnectWSGIApplication):
         codecs: Iterable[Codec] | None = None,
     ) -> None:
         super().__init__(
-            endpoints={
-                "/grpc.health.v1.Health/Check": EndpointSync.unary(
-                    method=MethodInfo(
-                        name="Check",
-                        service_name="grpc.health.v1.Health",
-                        input=HealthCheckRequest,
-                        output=HealthCheckResponse,
-                        idempotency_level=IdempotencyLevel.UNKNOWN,
-                        stream_type=StreamType.UNARY,
-                    ),
-                    function=service.check,
-                ),
-                "/grpc.health.v1.Health/List": EndpointSync.unary(
-                    method=MethodInfo(
-                        name="List",
-                        service_name="grpc.health.v1.Health",
-                        input=HealthListRequest,
-                        output=HealthListResponse,
-                        idempotency_level=IdempotencyLevel.UNKNOWN,
-                        stream_type=StreamType.UNARY,
-                    ),
-                    function=service.list,
-                ),
-                "/grpc.health.v1.Health/Watch": EndpointSync.server_stream(
-                    method=MethodInfo(
-                        name="Watch",
-                        service_name="grpc.health.v1.Health",
-                        input=HealthCheckRequest,
-                        output=HealthCheckResponse,
-                        idempotency_level=IdempotencyLevel.UNKNOWN,
-                        stream_type=StreamType.SERVER_STREAM,
-                    ),
-                    function=service.watch,
-                ),
-            },
+            service=service,
+            desc=HealthSync.desc(),
             interceptors=interceptors,
             read_max_bytes=read_max_bytes,
             compressions=compressions,
             codecs=codecs,
         )
-
-    @property
-    def path(self) -> str:
-        """Returns the URL path to mount the application to when serving multiple applications."""
-        return "/grpc.health.v1.Health"
 
 
 class HealthClientSync(ConnectClientSync):
