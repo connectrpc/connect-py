@@ -3,14 +3,17 @@ from __future__ import annotations
 import base64
 import functools
 import traceback
-from abc import ABC, abstractmethod
+from abc import ABC
 from dataclasses import replace
 from http import HTTPStatus
-from typing import TYPE_CHECKING, TypeVar
+from typing import TYPE_CHECKING, Generic, TypeVar, cast, overload
 from urllib.parse import parse_qs
+
+from typing_extensions import deprecated
 
 from . import _server_shared
 from ._codec import Codec, get_default_codecs
+from ._codegen import method_local_name
 from ._compression import (
     negotiate_compression,
     resolve_compressions,
@@ -42,6 +45,8 @@ from ._server_shared import (
     EndpointClientStreamSync,
     EndpointServerStreamSync,
     EndpointUnarySync,
+    method_info,
+    method_url,
 )
 from ._shared import decode_message, decompress
 from .code import Code
@@ -53,6 +58,8 @@ if TYPE_CHECKING:
     from io import BytesIO
     from wsgiref.types import ErrorStream, StartResponse, WSGIEnvironment
 
+    from protobuf import DescService
+
     from .compression import Compression
 else:
     StartResponse = "wsgiref.types.StartResponse"
@@ -61,6 +68,7 @@ else:
 
 _REQ = TypeVar("_REQ")
 _RES = TypeVar("_RES")
+_SVC = TypeVar("_SVC")
 
 _BODY_CHUNK_SIZE = 4096
 
@@ -181,13 +189,26 @@ def _read_body(request_body: _RequestBody) -> Iterator[bytes]:
         yield chunk
 
 
-class ConnectWSGIApplication(ABC):
+class ConnectWSGIApplication(ABC, Generic[_SVC]):
     """A WSGI application for the Connect protocol."""
 
-    @property
-    @abstractmethod
-    def path(self) -> str: ...
+    @overload
+    def __init__(
+        self,
+        *,
+        service: _SVC,
+        desc: DescService,
+        interceptors: Iterable[InterceptorSync] = (),
+        read_max_bytes: int | None = DEFAULT_READ_MAX_BYTES,
+        compressions: Iterable[Compression] | None = None,
+        codecs: Iterable[Codec] | None = None,
+    ) -> None: ...
 
+    @overload
+    @deprecated(
+        "Pass service and desc instead of endpoints. Regenerate code with the current "
+        "version of protoc-gen-connectrpc."
+    )
     def __init__(
         self,
         *,
@@ -196,12 +217,27 @@ class ConnectWSGIApplication(ABC):
         read_max_bytes: int | None = DEFAULT_READ_MAX_BYTES,
         compressions: Iterable[Compression] | None = None,
         codecs: Iterable[Codec] | None = None,
+    ) -> None: ...
+
+    def __init__(
+        self,
+        *,
+        service: _SVC | None = None,
+        desc: DescService | None = None,
+        endpoints: Mapping[str, EndpointSync] | None = None,
+        interceptors: Iterable[InterceptorSync] = (),
+        read_max_bytes: int | None = DEFAULT_READ_MAX_BYTES,
+        compressions: Iterable[Compression] | None = None,
+        codecs: Iterable[Codec] | None = None,
     ) -> None:
         """Initialize the WSGI application.
 
         Args:
-            endpoints: A mapping of URL paths to endpoints. Typically provided directly
-                by generated code from the Connect Python plugin.
+            service: The service instance.
+            desc: The descriptor of the service. Method implementations are looked up on the
+                service instance by name using the same conventions as generated code.
+            endpoints: Deprecated, pass service and desc instead. A mapping of URL paths to
+                endpoints.
             interceptors: A sequence of interceptors to apply to the endpoints.
             read_max_bytes: Maximum size of request messages.
             compressions: Supported compression algorithms. If unset, defaults to gzip.
@@ -211,6 +247,26 @@ class ConnectWSGIApplication(ABC):
 
         """
         super().__init__()
+        self._desc: DescService | None
+        self._path: str | None
+        if desc is not None:
+            if endpoints is not None:
+                msg = "only one of desc or endpoints may be provided"
+                raise ValueError(msg)
+            if service is None:
+                msg = "service must be provided with desc"
+                raise ValueError(msg)
+            self._desc = desc
+            self._path = f"/{desc.type_name}"
+            endpoints = cast(
+                "Mapping[str, EndpointSync]", self._build_endpoints(service)
+            )
+        elif endpoints is not None:
+            self._desc = None
+            self._path = None
+        else:
+            msg = "one of desc or endpoints must be provided"
+            raise ValueError(msg)
         self._metadata_interceptors, interceptors = split_leading_metadata_interceptors(
             interceptors
         )
@@ -230,6 +286,42 @@ class ConnectWSGIApplication(ABC):
         self._compressions = resolve_compressions(compressions)
         codecs = codecs if codecs is not None else get_default_codecs()
         self._codecs = {codec.name(): codec for codec in codecs}
+
+    @property
+    def path(self) -> str:
+        """Returns the URL path to mount the application to when serving multiple applications."""
+        if self._path is None:
+            msg = "path must be overridden when constructed with endpoints"
+            raise NotImplementedError(msg)
+        return self._path
+
+    def _build_endpoints(
+        self, service: _SVC
+    ) -> Mapping[str, _server_shared.EndpointSync]:
+        """Build the endpoints for the service.
+
+        This method is overridden by generated code in protobuf=google mode so must have
+        a stable API.
+        """
+        if self._desc is None:
+            msg = "endpoints cannot be built without desc"
+            raise RuntimeError(msg)
+        endpoints: dict[str, _server_shared.EndpointSync] = {}
+        for method in self._desc.methods:
+            info = method_info(method)
+            function = getattr(service, method_local_name(method))
+            endpoint: EndpointSync
+            match method.method_kind:
+                case "unary":
+                    endpoint = EndpointUnarySync(method=info, function=function)
+                case "client_streaming":
+                    endpoint = EndpointClientStreamSync(method=info, function=function)
+                case "server_streaming":
+                    endpoint = EndpointServerStreamSync(method=info, function=function)
+                case "bidi_streaming":
+                    endpoint = EndpointBidiStreamSync(method=info, function=function)
+            endpoints[method_url(method)] = endpoint
+        return endpoints
 
     def __call__(
         self, environ: WSGIEnvironment, start_response: StartResponse

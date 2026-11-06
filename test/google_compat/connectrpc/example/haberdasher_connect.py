@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from typing import Protocol, TYPE_CHECKING
 
+from connectrpc._codegen import google_file_desc
 from connectrpc.client import ConnectClient, ConnectClientSync
 from connectrpc.code import Code
 from connectrpc.compat import google_protobuf_binary_codec, google_protobuf_codecs
@@ -20,9 +21,10 @@ from connectrpc.method import IdempotencyLevel, MethodInfo, StreamType
 from connectrpc.protocol import ProtocolType
 from connectrpc.server import ConnectASGIApplication, ConnectWSGIApplication, DEFAULT_READ_MAX_BYTES, Endpoint, EndpointSync
 from google.protobuf.empty_pb2 import Empty
+from protobuf import DescService
 from pyqwest import Client, SyncClient
 
-from .haberdasher_pb2 import Hat, Size
+from .haberdasher_pb2 import DESCRIPTOR, Hat, Size
 
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator, AsyncIterator, Iterable, Iterator, Mapping
@@ -75,6 +77,10 @@ class Haberdasher(Protocol):
     async def do_nothing(self, request: Empty, ctx: RequestContext[Empty, Empty], /) -> Empty:
         raise ConnectError(Code.UNIMPLEMENTED, 'Not implemented')
 
+    @classmethod
+    def desc(cls) -> DescService:
+        """Returns the descriptor for this service."""
+        return next(s for s in google_file_desc(DESCRIPTOR).services if s.type_name == 'connectrpc.example.Haberdasher')
 
 class HaberdasherASGIApplication(ConnectASGIApplication[Haberdasher]):
     def __init__(
@@ -88,84 +94,82 @@ class HaberdasherASGIApplication(ConnectASGIApplication[Haberdasher]):
     ) -> None:
         super().__init__(
             service=service,
-            endpoints=lambda svc: {
-                "/connectrpc.example.Haberdasher/MakeHat": Endpoint.unary(
-                    method=MethodInfo(
-                        name="MakeHat",
-                        service_name="connectrpc.example.Haberdasher",
-                        input=Size,
-                        output=Hat,
-                        idempotency_level=IdempotencyLevel.NO_SIDE_EFFECTS,
-                        stream_type=StreamType.UNARY,
-                    ),
-                    function=svc.make_hat,
-                ),
-                "/connectrpc.example.Haberdasher/MakeFlexibleHat": Endpoint.client_stream(
-                    method=MethodInfo(
-                        name="MakeFlexibleHat",
-                        service_name="connectrpc.example.Haberdasher",
-                        input=Size,
-                        output=Hat,
-                        idempotency_level=IdempotencyLevel.UNKNOWN,
-                        stream_type=StreamType.CLIENT_STREAM,
-                    ),
-                    function=svc.make_flexible_hat,
-                ),
-                "/connectrpc.example.Haberdasher/MakeSimilarHats": Endpoint.server_stream(
-                    method=MethodInfo(
-                        name="MakeSimilarHats",
-                        service_name="connectrpc.example.Haberdasher",
-                        input=Size,
-                        output=Hat,
-                        idempotency_level=IdempotencyLevel.NO_SIDE_EFFECTS,
-                        stream_type=StreamType.SERVER_STREAM,
-                    ),
-                    function=svc.make_similar_hats,
-                ),
-                "/connectrpc.example.Haberdasher/MakeVariousHats": Endpoint.bidi_stream(
-                    method=MethodInfo(
-                        name="MakeVariousHats",
-                        service_name="connectrpc.example.Haberdasher",
-                        input=Size,
-                        output=Hat,
-                        idempotency_level=IdempotencyLevel.UNKNOWN,
-                        stream_type=StreamType.BIDI_STREAM,
-                    ),
-                    function=svc.make_various_hats,
-                ),
-                "/connectrpc.example.Haberdasher/ListParts": Endpoint.server_stream(
-                    method=MethodInfo(
-                        name="ListParts",
-                        service_name="connectrpc.example.Haberdasher",
-                        input=Empty,
-                        output=Hat.Part,
-                        idempotency_level=IdempotencyLevel.UNKNOWN,
-                        stream_type=StreamType.SERVER_STREAM,
-                    ),
-                    function=svc.list_parts,
-                ),
-                "/connectrpc.example.Haberdasher/DoNothing": Endpoint.unary(
-                    method=MethodInfo(
-                        name="DoNothing",
-                        service_name="connectrpc.example.Haberdasher",
-                        input=Empty,
-                        output=Empty,
-                        idempotency_level=IdempotencyLevel.UNKNOWN,
-                        stream_type=StreamType.UNARY,
-                    ),
-                    function=svc.do_nothing,
-                ),
-            },
+            desc=Haberdasher.desc(),
             interceptors=interceptors,
             read_max_bytes=read_max_bytes,
             compressions=compressions,
             codecs=codecs,
         )
 
-    @property
-    def path(self) -> str:
-        """Returns the URL path to mount the application to when serving multiple applications."""
-        return "/connectrpc.example.Haberdasher"
+    def _build_endpoints(self, service: Haberdasher) -> Mapping[str, Endpoint]:
+        return {
+            "/connectrpc.example.Haberdasher/MakeHat": Endpoint.unary(
+                method=MethodInfo(
+                    name="MakeHat",
+                    service_name="connectrpc.example.Haberdasher",
+                    input=Size,
+                    output=Hat,
+                    idempotency_level=IdempotencyLevel.NO_SIDE_EFFECTS,
+                    stream_type=StreamType.UNARY,
+                ),
+                function=service.make_hat,
+            ),
+            "/connectrpc.example.Haberdasher/MakeFlexibleHat": Endpoint.client_stream(
+                method=MethodInfo(
+                    name="MakeFlexibleHat",
+                    service_name="connectrpc.example.Haberdasher",
+                    input=Size,
+                    output=Hat,
+                    idempotency_level=IdempotencyLevel.UNKNOWN,
+                    stream_type=StreamType.CLIENT_STREAM,
+                ),
+                function=service.make_flexible_hat,
+            ),
+            "/connectrpc.example.Haberdasher/MakeSimilarHats": Endpoint.server_stream(
+                method=MethodInfo(
+                    name="MakeSimilarHats",
+                    service_name="connectrpc.example.Haberdasher",
+                    input=Size,
+                    output=Hat,
+                    idempotency_level=IdempotencyLevel.NO_SIDE_EFFECTS,
+                    stream_type=StreamType.SERVER_STREAM,
+                ),
+                function=service.make_similar_hats,
+            ),
+            "/connectrpc.example.Haberdasher/MakeVariousHats": Endpoint.bidi_stream(
+                method=MethodInfo(
+                    name="MakeVariousHats",
+                    service_name="connectrpc.example.Haberdasher",
+                    input=Size,
+                    output=Hat,
+                    idempotency_level=IdempotencyLevel.UNKNOWN,
+                    stream_type=StreamType.BIDI_STREAM,
+                ),
+                function=service.make_various_hats,
+            ),
+            "/connectrpc.example.Haberdasher/ListParts": Endpoint.server_stream(
+                method=MethodInfo(
+                    name="ListParts",
+                    service_name="connectrpc.example.Haberdasher",
+                    input=Empty,
+                    output=Hat.Part,
+                    idempotency_level=IdempotencyLevel.UNKNOWN,
+                    stream_type=StreamType.SERVER_STREAM,
+                ),
+                function=service.list_parts,
+            ),
+            "/connectrpc.example.Haberdasher/DoNothing": Endpoint.unary(
+                method=MethodInfo(
+                    name="DoNothing",
+                    service_name="connectrpc.example.Haberdasher",
+                    input=Empty,
+                    output=Empty,
+                    idempotency_level=IdempotencyLevel.UNKNOWN,
+                    stream_type=StreamType.UNARY,
+                ),
+                function=service.do_nothing,
+            ),
+        }
 
 
 class HaberdasherClient(ConnectClient):
@@ -371,8 +375,12 @@ class HaberdasherSync(Protocol):
     def do_nothing(self, request: Empty, ctx: RequestContext[Empty, Empty], /) -> Empty:
         raise ConnectError(Code.UNIMPLEMENTED, 'Not implemented')
 
+    @classmethod
+    def desc(cls) -> DescService:
+        """Returns the descriptor for this service."""
+        return next(s for s in google_file_desc(DESCRIPTOR).services if s.type_name == 'connectrpc.example.Haberdasher')
 
-class HaberdasherWSGIApplication(ConnectWSGIApplication):
+class HaberdasherWSGIApplication(ConnectWSGIApplication[HaberdasherSync]):
     def __init__(
         self,
         service: HaberdasherSync,
@@ -382,84 +390,83 @@ class HaberdasherWSGIApplication(ConnectWSGIApplication):
         codecs: Iterable[Codec] | None = _DEFAULT_CODECS,
     ) -> None:
         super().__init__(
-            endpoints={
-                "/connectrpc.example.Haberdasher/MakeHat": EndpointSync.unary(
-                    method=MethodInfo(
-                        name="MakeHat",
-                        service_name="connectrpc.example.Haberdasher",
-                        input=Size,
-                        output=Hat,
-                        idempotency_level=IdempotencyLevel.NO_SIDE_EFFECTS,
-                        stream_type=StreamType.UNARY,
-                    ),
-                    function=service.make_hat,
-                ),
-                "/connectrpc.example.Haberdasher/MakeFlexibleHat": EndpointSync.client_stream(
-                    method=MethodInfo(
-                        name="MakeFlexibleHat",
-                        service_name="connectrpc.example.Haberdasher",
-                        input=Size,
-                        output=Hat,
-                        idempotency_level=IdempotencyLevel.UNKNOWN,
-                        stream_type=StreamType.CLIENT_STREAM,
-                    ),
-                    function=service.make_flexible_hat,
-                ),
-                "/connectrpc.example.Haberdasher/MakeSimilarHats": EndpointSync.server_stream(
-                    method=MethodInfo(
-                        name="MakeSimilarHats",
-                        service_name="connectrpc.example.Haberdasher",
-                        input=Size,
-                        output=Hat,
-                        idempotency_level=IdempotencyLevel.NO_SIDE_EFFECTS,
-                        stream_type=StreamType.SERVER_STREAM,
-                    ),
-                    function=service.make_similar_hats,
-                ),
-                "/connectrpc.example.Haberdasher/MakeVariousHats": EndpointSync.bidi_stream(
-                    method=MethodInfo(
-                        name="MakeVariousHats",
-                        service_name="connectrpc.example.Haberdasher",
-                        input=Size,
-                        output=Hat,
-                        idempotency_level=IdempotencyLevel.UNKNOWN,
-                        stream_type=StreamType.BIDI_STREAM,
-                    ),
-                    function=service.make_various_hats,
-                ),
-                "/connectrpc.example.Haberdasher/ListParts": EndpointSync.server_stream(
-                    method=MethodInfo(
-                        name="ListParts",
-                        service_name="connectrpc.example.Haberdasher",
-                        input=Empty,
-                        output=Hat.Part,
-                        idempotency_level=IdempotencyLevel.UNKNOWN,
-                        stream_type=StreamType.SERVER_STREAM,
-                    ),
-                    function=service.list_parts,
-                ),
-                "/connectrpc.example.Haberdasher/DoNothing": EndpointSync.unary(
-                    method=MethodInfo(
-                        name="DoNothing",
-                        service_name="connectrpc.example.Haberdasher",
-                        input=Empty,
-                        output=Empty,
-                        idempotency_level=IdempotencyLevel.UNKNOWN,
-                        stream_type=StreamType.UNARY,
-                    ),
-                    function=service.do_nothing,
-                ),
-            },
+            service=service,
+            desc=HaberdasherSync.desc(),
             interceptors=interceptors,
             read_max_bytes=read_max_bytes,
             compressions=compressions,
             codecs=codecs,
         )
 
-    @property
-    def path(self) -> str:
-        """Returns the URL path to mount the application to when serving multiple applications."""
-        return "/connectrpc.example.Haberdasher"
+    def _build_endpoints(self, service: HaberdasherSync) -> Mapping[str, EndpointSync]:
+        return {
+            "/connectrpc.example.Haberdasher/MakeHat": EndpointSync.unary(
+                method=MethodInfo(
+                    name="MakeHat",
+                    service_name="connectrpc.example.Haberdasher",
+                    input=Size,
+                    output=Hat,
+                    idempotency_level=IdempotencyLevel.NO_SIDE_EFFECTS,
+                    stream_type=StreamType.UNARY,
+                ),
+                function=service.make_hat,
+            ),
+            "/connectrpc.example.Haberdasher/MakeFlexibleHat": EndpointSync.client_stream(
+                method=MethodInfo(
+                    name="MakeFlexibleHat",
+                    service_name="connectrpc.example.Haberdasher",
+                    input=Size,
+                    output=Hat,
+                    idempotency_level=IdempotencyLevel.UNKNOWN,
+                    stream_type=StreamType.CLIENT_STREAM,
+                ),
+                function=service.make_flexible_hat,
+            ),
+            "/connectrpc.example.Haberdasher/MakeSimilarHats": EndpointSync.server_stream(
+                method=MethodInfo(
+                    name="MakeSimilarHats",
+                    service_name="connectrpc.example.Haberdasher",
+                    input=Size,
+                    output=Hat,
+                    idempotency_level=IdempotencyLevel.NO_SIDE_EFFECTS,
+                    stream_type=StreamType.SERVER_STREAM,
+                ),
+                function=service.make_similar_hats,
+            ),
+            "/connectrpc.example.Haberdasher/MakeVariousHats": EndpointSync.bidi_stream(
+                method=MethodInfo(
+                    name="MakeVariousHats",
+                    service_name="connectrpc.example.Haberdasher",
+                    input=Size,
+                    output=Hat,
+                    idempotency_level=IdempotencyLevel.UNKNOWN,
+                    stream_type=StreamType.BIDI_STREAM,
+                ),
+                function=service.make_various_hats,
+            ),
+            "/connectrpc.example.Haberdasher/ListParts": EndpointSync.server_stream(
+                method=MethodInfo(
+                    name="ListParts",
+                    service_name="connectrpc.example.Haberdasher",
+                    input=Empty,
+                    output=Hat.Part,
+                    idempotency_level=IdempotencyLevel.UNKNOWN,
+                    stream_type=StreamType.SERVER_STREAM,
+                ),
+                function=service.list_parts,
+            ),
+            "/connectrpc.example.Haberdasher/DoNothing": EndpointSync.unary(
+                method=MethodInfo(
+                    name="DoNothing",
+                    service_name="connectrpc.example.Haberdasher",
+                    input=Empty,
+                    output=Empty,
+                    idempotency_level=IdempotencyLevel.UNKNOWN,
+                    stream_type=StreamType.UNARY,
+                ),
+                function=service.do_nothing,
+            ),
+        }
 
 
 class HaberdasherClientSync(ConnectClientSync):

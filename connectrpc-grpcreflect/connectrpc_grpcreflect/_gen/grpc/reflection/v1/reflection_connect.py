@@ -15,7 +15,7 @@ from connectrpc.client import ConnectClient, ConnectClientSync
 from connectrpc.code import Code
 from connectrpc.errors import ConnectError
 from connectrpc.method import IdempotencyLevel, MethodInfo, StreamType
-from connectrpc.server import ConnectASGIApplication, ConnectWSGIApplication, DEFAULT_READ_MAX_BYTES, Endpoint, EndpointSync
+from connectrpc.server import ConnectASGIApplication, ConnectWSGIApplication, DEFAULT_READ_MAX_BYTES
 from protobuf import DescService
 
 from . import reflection_pb
@@ -55,29 +55,12 @@ class ServerReflectionASGIApplication(ConnectASGIApplication[ServerReflection]):
     ) -> None:
         super().__init__(
             service=service,
-            endpoints=lambda svc: {
-                "/grpc.reflection.v1.ServerReflection/ServerReflectionInfo": Endpoint.bidi_stream(
-                    method=MethodInfo(
-                        name="ServerReflectionInfo",
-                        service_name="grpc.reflection.v1.ServerReflection",
-                        input=ServerReflectionRequest,
-                        output=ServerReflectionResponse,
-                        idempotency_level=IdempotencyLevel.UNKNOWN,
-                        stream_type=StreamType.BIDI_STREAM,
-                    ),
-                    function=svc.server_reflection_info,
-                ),
-            },
+            desc=ServerReflection.desc(),
             interceptors=interceptors,
             read_max_bytes=read_max_bytes,
             compressions=compressions,
             codecs=codecs,
         )
-
-    @property
-    def path(self) -> str:
-        """Returns the URL path to mount the application to when serving multiple applications."""
-        return "/grpc.reflection.v1.ServerReflection"
 
 
 class ServerReflectionClient(ConnectClient):
@@ -119,7 +102,7 @@ class ServerReflectionSync(Protocol):
         """Returns the descriptor for this service."""
         return next(s for s in reflection_pb.desc().services if s.type_name == 'grpc.reflection.v1.ServerReflection')
 
-class ServerReflectionWSGIApplication(ConnectWSGIApplication):
+class ServerReflectionWSGIApplication(ConnectWSGIApplication[ServerReflectionSync]):
     def __init__(
         self,
         service: ServerReflectionSync,
@@ -129,29 +112,13 @@ class ServerReflectionWSGIApplication(ConnectWSGIApplication):
         codecs: Iterable[Codec] | None = None,
     ) -> None:
         super().__init__(
-            endpoints={
-                "/grpc.reflection.v1.ServerReflection/ServerReflectionInfo": EndpointSync.bidi_stream(
-                    method=MethodInfo(
-                        name="ServerReflectionInfo",
-                        service_name="grpc.reflection.v1.ServerReflection",
-                        input=ServerReflectionRequest,
-                        output=ServerReflectionResponse,
-                        idempotency_level=IdempotencyLevel.UNKNOWN,
-                        stream_type=StreamType.BIDI_STREAM,
-                    ),
-                    function=service.server_reflection_info,
-                ),
-            },
+            service=service,
+            desc=ServerReflectionSync.desc(),
             interceptors=interceptors,
             read_max_bytes=read_max_bytes,
             compressions=compressions,
             codecs=codecs,
         )
-
-    @property
-    def path(self) -> str:
-        """Returns the URL path to mount the application to when serving multiple applications."""
-        return "/grpc.reflection.v1.ServerReflection"
 
 
 class ServerReflectionClientSync(ConnectClientSync):
