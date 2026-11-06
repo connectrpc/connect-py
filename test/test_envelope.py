@@ -8,6 +8,7 @@ from connectrpc._envelope import EnvelopeReader
 from connectrpc._protocol_connect import ConnectEnvelopeReader
 from connectrpc._protocol_grpc import GRPCEnvelopeReader, GRPCWebEnvelopeReader
 from connectrpc.code import Code
+from connectrpc.compression.brotli import BrotliCompression
 from connectrpc.errors import ConnectError
 
 from .connectrpc.example.haberdasher_pb import Hat
@@ -60,13 +61,20 @@ def test_reject_invalid_flags_before_waiting_for_payload(
     "reader_type",
     [EnvelopeReader, GRPCEnvelopeReader, ConnectEnvelopeReader, GRPCWebEnvelopeReader],
 )
-@pytest.mark.parametrize("compressed", [False, True])
-def test_read_valid_message_flags(reader_type, compressed) -> None:
-    compression = GzipCompression() if compressed else IdentityCompression()
+@pytest.mark.parametrize(
+    "compression",
+    [IdentityCompression(), GzipCompression(), BrotliCompression()],
+    ids=lambda compression: compression.name(),
+)
+@pytest.mark.parametrize("message", [Hat(size=10), Hat()], ids=["message", "empty"])
+def test_read_valid_message_flags(reader_type, compression, message) -> None:
     reader = reader_type(Hat, ProtoBinaryCodec(), compression, None)
-    payload = compression.compress(Hat(size=10).to_binary())
+    compressed = not isinstance(compression, IdentityCompression)
+    # A sender may skip compressing an empty message but still flag it.
+    data = message.to_binary()
+    payload = compression.compress(data) if data else b""
     envelope = bytes([int(compressed)]) + len(payload).to_bytes(4, "big") + payload
-    assert list(reader.feed(envelope)) == [Hat(size=10)]
+    assert list(reader.feed(envelope)) == [message]
 
 
 @pytest.mark.parametrize(

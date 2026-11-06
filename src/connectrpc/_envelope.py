@@ -71,9 +71,10 @@ class EnvelopeReader(Generic[_RES]):
                             "protocol error: sent compressed message without compression support",
                         )
 
-                    message_data = decompress(
-                        self._compression, message_data, self._read_max_bytes
-                    )
+                    if message_data:  # Don't decompress empty message
+                        message_data = decompress(
+                            self._compression, message_data, self._read_max_bytes
+                        )
 
                 if self.handle_end_message(prefix_byte, message_data):
                     self._ended = True
