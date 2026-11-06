@@ -126,8 +126,7 @@ class WatcherSync(Protocol):
             service: The fully-qualified protobuf service name, or the empty
                 string for the status of the server as a whole.
             timeout: Seconds until the call's deadline, or None if it has none.
-                The iterator ends once they pass, which frees the server
-                thread that runs the call.
+                The iterator should end once they pass.
 
         """
         ...
