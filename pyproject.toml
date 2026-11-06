@@ -46,6 +46,7 @@ dev = [
   { include-group = "test" },
 
   # Install all packages to be available in docs building, etc.
+  "connectrpc-grpchealth",
   "connectrpc-grpcreflect",
   "connectrpc-otel",
   "protoc-gen-connectrpc",
@@ -195,6 +196,7 @@ exclude = [
   # Workaround lack of monorepo support by excluding subproject code from top-level project.
   # https://docs.astral.sh/ty/reference/typing-faq/#does-ty-support-monorepos
   # https://github.com/astral-sh/ty/issues/819
+  "connectrpc-grpchealth",
   "connectrpc-grpcreflect",
   "connectrpc-otel",
   "example",
@@ -211,6 +213,7 @@ module-name = "connectrpc"
 
 [tool.uv.workspace]
 members = [
+  "connectrpc-grpchealth",
   "connectrpc-grpcreflect",
   "connectrpc-otel",
   "example",
@@ -219,6 +222,7 @@ members = [
 
 [tool.uv.sources]
 connectrpc = { workspace = true }
+connectrpc-grpchealth = { workspace = true }
 connectrpc-grpcreflect = { workspace = true }
 connectrpc-otel = { workspace = true }
 protoc-gen-connectrpc = { workspace = true }

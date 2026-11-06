@@ -1,0 +1,10 @@
+version: v2
+inputs:
+  - module: buf.build/grpc/grpc
+    types:
+      - grpc.health.v1.Health
+plugins:
+  - local: protoc-gen-py
+    out: connectrpc_grpchealth/_gen
+  - local: protoc-gen-connectrpc
+    out: connectrpc_grpchealth/_gen

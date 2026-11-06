@@ -5,6 +5,7 @@ requires-python = ">=3.11"
 [manifest]
 members = [
     "connectrpc",
+    "connectrpc-grpchealth",
     "connectrpc-grpcreflect",
     "connectrpc-otel",
     "example",
@@ -222,6 +223,7 @@ dev = [
     { name = "asgiref" },
     { name = "brotli" },
     { name = "buf-bin" },
+    { name = "connectrpc-grpchealth" },
     { name = "connectrpc-grpcreflect" },
     { name = "connectrpc-otel" },
     { name = "example" },
@@ -279,6 +281,7 @@ dev = [
     { name = "asgiref", specifier = "==3.13.0" },
     { name = "brotli", specifier = "==1.2.1" },
     { name = "buf-bin", specifier = "==1.75.0" },
+    { name = "connectrpc-grpchealth", editable = "connectrpc-grpchealth" },
     { name = "connectrpc-grpcreflect", editable = "connectrpc-grpcreflect" },
     { name = "connectrpc-otel", editable = "connectrpc-otel" },
     { name = "example", editable = "example" },
@@ -322,6 +325,53 @@ test = [
     { name = "pytest-timeout", specifier = "==2.5.0" },
     { name = "trio", specifier = "==0.35.0" },
     { name = "zstandard", specifier = "==0.25.0" },
+]
+
+[[package]]
+name = "connectrpc-grpchealth"
+version = "0.1.0"
+source = { editable = "connectrpc-grpchealth" }
+dependencies = [
+    { name = "connectrpc" },
+    { name = "protobuf-py" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "hypercorn" },
+    { name = "pytest" },
+    { name = "pytest-asyncio" },
+    { name = "pytest-timeout" },
+    { name = "trio" },
+]
+test = [
+    { name = "hypercorn" },
+    { name = "pytest" },
+    { name = "pytest-asyncio" },
+    { name = "pytest-timeout" },
+    { name = "trio" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "connectrpc", editable = "." },
+    { name = "protobuf-py", specifier = ">=0.6.0" },
+]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "hypercorn", specifier = "==0.18.0" },
+    { name = "pytest", specifier = "==9.2.0" },
+    { name = "pytest-asyncio", specifier = "==1.4.1.post1" },
+    { name = "pytest-timeout", specifier = "==2.5.0" },
+    { name = "trio", specifier = "==0.35.0" },
+]
+test = [
+    { name = "hypercorn", specifier = "==0.18.0" },
+    { name = "pytest", specifier = "==9.2.0" },
+    { name = "pytest-asyncio", specifier = "==1.4.1.post1" },
+    { name = "pytest-timeout", specifier = "==2.5.0" },
+    { name = "trio", specifier = "==0.35.0" },
 ]
 
 [[package]]

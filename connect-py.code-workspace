@@ -9,6 +9,10 @@
       "path": "./conformance",
     },
     {
+      "name": "connectrpc-grpchealth",
+      "path": "./connectrpc-grpchealth",
+    },
+    {
       "name": "connectrpc-grpcreflect",
       "path": "./connectrpc-grpcreflect",
     },

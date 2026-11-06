@@ -105,6 +105,9 @@ jobs:
       - name: run OTel tests
         run: uv run poe test-otel ${{ matrix.coverage == 'cov' && '--cov=connectrpc_otel --cov-report=xml' || '' }}
 
+      - name: run grpchealth tests
+        run: uv run poe test-grpchealth ${{ matrix.coverage == 'cov' && '--cov=connectrpc_grpchealth --cov-report=xml' || '' }}
+
       - name: run grpcreflect tests
         run: uv run poe test-grpcreflect ${{ matrix.coverage == 'cov' && '--cov=connectrpc_grpcreflect --cov-report=xml' || '' }}
 
@@ -138,6 +141,9 @@ jobs:
 
       - run: uv build
         working-directory: connectrpc-otel
+
+      - run: uv build
+        working-directory: connectrpc-grpchealth
 
       - run: uv build
         working-directory: connectrpc-grpcreflect
