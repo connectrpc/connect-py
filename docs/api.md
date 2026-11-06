@@ -36,5 +36,18 @@
             - ServerReflectionAlphaWSGIApplication
 
 ::: connectrpc_grpchealth
+    options:
+        group_by_category: false
+        members:
+            - HealthService
+            - HealthASGIApplication
+            - HealthServiceSync
+            - HealthWSGIApplication
+            - StaticChecker
+            - ServingStatus
+            - Checker
+            - CheckerSync
+            - Watcher
+            - WatcherSync
 
 ::: connectrpc_otel

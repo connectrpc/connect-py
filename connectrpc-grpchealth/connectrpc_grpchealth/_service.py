@@ -26,7 +26,12 @@ if TYPE_CHECKING:
     from ._trio import TrioWaiter as _TrioWaiter
 
 ServingStatus = HealthCheckResponse.ServingStatus
-"""The serving status of a service, as reported by the health service."""
+"""The serving status of a service, as reported by the health service.
+
+Its values are `UNKNOWN`, `SERVING`, `NOT_SERVING`, and `SERVICE_UNKNOWN`.
+Checkers report an unknown service as `None`; Watch sends `SERVICE_UNKNOWN`
+for it.
+"""
 
 
 class Checker(Protocol):
