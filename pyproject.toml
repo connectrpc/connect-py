@@ -56,10 +56,10 @@ dev = [
   "gunicorn==26.2.0",
   "poethepoet==0.49.0",
   "pytest-cov==7.1.0",
-  "pyvoy==1.3.0",
-  "ruff==0.17.3",
-  "tombi==1.9.8",
-  "ty==0.0.95",
+  "pyvoy==1.4.0",
+  "ruff==0.17.4",
+  "tombi==1.11.1",
+  "ty==0.0.99",
   "types-grpcio==1.85.0.20261028",
   "types-protobuf==7.35.1.20260906",
   "uvicorn==0.54.0",
@@ -95,7 +95,7 @@ test = [
   "zstandard==0.25.0",
 ]
 
-docs = ["mkdocstrings-python==2.0.10", "zensical==0.0.74"]
+docs = ["mkdocstrings-python==2.0.10", "zensical==0.1.0"]
 
 [build-system]
 requires = ["uv_build>=0.13.0,<0.14.0"]
