@@ -28,7 +28,7 @@ def maybe_patch_args_with_debug(args: list[str]) -> list[str]:
     # This invokes internal methods from bundles provided by the IDE
     # and may not always work.
     try:
-        from pydevd import _pydev_bundle  # ty: ignore[unresolved-import] - provided by IDE  # noqa: PLC0415
+        from pydevd import _pydev_bundle  # ty: ignore[import-not-found] - provided by IDE  # noqa: PLC0415
 
         return _pydev_bundle.pydev_monkey.patch_args(args)
     except Exception:
