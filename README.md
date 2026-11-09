@@ -19,17 +19,17 @@ Connect is the **easiest way to build modern APIs**.
 
 ## Why Connect?
 
-Building an API usually means writing the same types at least twice: once on the server, and once in every client. Connect makes this simple - define your API schema using Protobuf, and Connect generates type-safe server stubs and idiomatic client libraries in **every major language**, including for your frontend. All that's left to write is your business logic, in plain Python.
+Building an API usually means writing the same types at least twice: once on the server, and once in every client. Connect makes this simple: define your API schema using Protobuf, and Connect generates type-safe server stubs and idiomatic client libraries in **every major language**, including for your frontend. All that's left to write is your business logic, in plain Python.
 
 Connect already works with your current tech stack:
 
 - Connect is built on top of HTTP and speaks both Protobuf and JSON, so `curl` works out of the box.
 - It interoperates seamlessly with gRPC and gRPC-Web, and supports streaming as a first-class feature.
-- It runs on WSGI/ASGI. Build Connect APIs *alongside* your current API framework - all in the same app.
+- It runs on WSGI/ASGI. Build Connect APIs *alongside* your current API framework—all in the same app.
 
 ## Features
 
-- **Servers:** WSGI and ASGI-ready (including trio), use with any [compatible server](https://connectrpc.com/docs/python/deployment/)
+- **Servers:** WSGI and ASGI-ready (including Trio), use with any [compatible server](https://connectrpc.com/docs/python/deployment/)
 - **Clients:** Lightweight sync and async clients, backed by `pyqwest`
 - **Protocols:** Supports Connect, gRPC, and gRPC-Web (HTTP/1.1 and HTTP/2)
 - **Type safety:** Fully type-annotated generated code
@@ -61,7 +61,7 @@ plugins:
 
 <summary><b>Local plugin setup</b></summary>
 
-The example above uses a Buf-hosted plugin server. To generate code entirely locally, install the relevant plugins:
+The example above uses remote plugins hosted on the Buf Schema Registry. To generate code entirely locally, install the relevant plugins:
 
 ```bash
 uv add --dev protoc-gen-py protoc-gen-connectrpc
@@ -119,7 +119,6 @@ class MyHelloService(HelloService):
         return HelloResponse(message=f"Hello, {request.name}!")
 
 
-# Create ASGI app
 app = HelloServiceASGIApplication(MyHelloService())
 
 # Run with any ASGI server, e.g. uvicorn:
@@ -129,15 +128,20 @@ app = HelloServiceASGIApplication(MyHelloService())
 Client libraries are automatically generated for you. Here's what the async client looks like:
 
 ```python
-from your_service_pb import HelloRequest, HelloResponse
+import asyncio
+
+from your_service_pb import HelloRequest
 from your_service_connect import HelloServiceClient
 
 
 async def main():
-    # Create async client
     async with HelloServiceClient("https://api.example.com") as client:
         response = await client.say_hello(HelloRequest(name="World"))
         print(response.message)  # "Hello, World!"
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
 ```
 
 And the sync client:
@@ -148,7 +152,6 @@ from your_service_connect import HelloServiceClientSync
 
 
 def main():
-    # Create sync client
     with HelloServiceClientSync("https://api.example.com") as client:
         response = client.say_hello(HelloRequest(name="World"))
         print(response.message)  # "Hello, World!"
