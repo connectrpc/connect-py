@@ -1,21 +1,57 @@
+"""Server support for the Connect-over-WebSocket protocol.
+
+The wire format is defined in the "Connect-over-WebSocket Protocol"
+specification:
+
+- The RPC is selected by the handshake URI, and the codec by the WebSocket
+  subprotocol (connectrpc.1+proto or connectrpc.1+json). The deadline is the
+  connect-timeout-ms query parameter.
+- Every message is a one-byte marker followed by the payload: B (body),
+  M (leading metadata), C (client end-of-stream, with an optional final
+  body), and S (server end-of-stream, an EndStreamResponse). M and S are
+  always JSON text messages. A body is a text frame under the JSON codec and
+  a binary frame under Protobuf.
+- Both directions open with exactly one M message. The client's is consumed
+  before dispatch and overlays the upgrade request's headers to form the
+  RPC's effective headers.
+- The server ends with S and a close frame: 1000 normally, 1002 for a
+  protocol error, 1003 for a body in the wrong frame type, and 1009 for an
+  oversized message, each sent after the S message.
+
+The connection is adapted to the HTTP control flow in ConnectASGIApplication.
+B and C payloads are wrapped in an envelope prefix and fed through the
+EnvelopeReader machinery, the response's http.response.start becomes the
+server's M message, and the envelopes produced by the EnvelopeWriter are
+unwrapped into B and S messages.
+
+The ASGI protocol does not expose permessage-deflate negotiation (the
+specification requires no_context_takeover in both directions) or PING
+frames, so both are left to the ASGI server. A WebSocket path prefix and a
+server-imposed default deadline are not implemented.
+"""
+
 from __future__ import annotations
 
 import json
 import struct
+from base64 import b64decode
+from dataclasses import dataclass, field
 from http import HTTPStatus
+from re import compile as re_compile
 from typing import TYPE_CHECKING, cast
+from urllib.parse import parse_qs
 
 from ._codec import CODEC_NAME_JSON
+from ._protocol import ConnectWireError
 from ._protocol_connect import (
-    CONNECT_STREAMING_CONTENT_TYPE_PREFIX,
     CONNECT_STREAMING_HEADER_ACCEPT_COMPRESSION,
     CONNECT_STREAMING_HEADER_COMPRESSION,
-    CONNECT_UNARY_CONTENT_TYPE_PREFIX,
-    codec_name_from_content_type,
 )
+from .code import Code
+from .errors import ConnectError
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable
+    from collections.abc import Container, Iterable
 
     from asgiref.typing import (
         ASGIReceiveCallable,
@@ -26,244 +62,581 @@ if TYPE_CHECKING:
         WebSocketScope,
     )
 
-# Prototype WebSocket transport for the Connect protocol.
-#
-# The wire protocol is provisional:
-#
-# - The client opens a WebSocket and sends a text message containing the
-#   JSON-encoded request head: {"path": "/pkg.Service/Method", "headers":
-#   {name: value}}, with an optional "method" defaulting to POST. Headers
-#   that a browser cannot set on the upgrade request (content-type,
-#   connect-timeout-ms, ...) go here.
-# - Request messages follow, one per WebSocket message. With the JSON codec
-#   (content-type application/json), each message is a text frame containing
-#   the JSON encoding of the message. With other codecs, each message is a
-#   binary frame containing the raw encoded payload. There is no
-#   envelope/length prefix in either case.
-# - The client half-closes the request stream with an empty text message.
-# - The server sends a text message containing the JSON-encoded response
-#   head: {"status": 200, "headers": {name: value}}, then response messages
-#   framed the same way as request messages.
-# - The server signals the end of response messages with an empty text
-#   message followed by a text message containing the Connect end-stream
-#   JSON (metadata / error), and then closes the connection. The empty text
-#   marker disambiguates the end-stream JSON from data messages when the
-#   JSON codec is in use.
-#
-# Message compression is not part of the protocol; permessage-deflate at the
-# WebSocket layer covers it. Compression negotiation headers are stripped
-# from the request head so the rest of the control flow negotiates identity.
-#
-# Rather than a parallel implementation, the connection is adapted to look
-# like a Connect streaming HTTP request to the existing control flow:
-# received messages are wrapped in an envelope prefix and fed through the
-# normal EnvelopeReader machinery, and envelopes produced by the
-# EnvelopeWriter are unwrapped back into individual WebSocket messages.
+_MARKER_BODY = "B"
+_MARKER_METADATA = "M"
+_MARKER_SERVER_END = "S"
+_MARKER_CLIENT_END = "C"
 
+_CLOSE_NORMAL = 1000
+_CLOSE_PROTOCOL_ERROR = 1002
+_CLOSE_UNSUPPORTED_DATA = 1003
+_CLOSE_MESSAGE_TOO_BIG = 1009
+
+_ENVELOPE_PREFIX_LENGTH = 5
 _END_STREAM_FLAG = 0b10
+
+_SUBPROTOCOL_CODECS = {
+    "connectrpc.1+proto": "proto",
+    "connectrpc.1+json": CODEC_NAME_JSON,
+}
+
+# A client must not send these keys in its Leading-Metadata message. They
+# are the Fetch standard's forbidden request headers, the default
+# infrastructure deny list, and the names this protocol controls.
+_RESERVED_METADATA_KEYS = frozenset(
+    {
+        "accept-charset",
+        "accept-encoding",
+        "access-control-request-headers",
+        "access-control-request-method",
+        "connection",
+        "content-length",
+        "cookie",
+        "cookie2",
+        "date",
+        "dnt",
+        "expect",
+        "host",
+        "keep-alive",
+        "origin",
+        "referer",
+        "set-cookie",
+        "te",
+        "trailer",
+        "transfer-encoding",
+        "upgrade",
+        "via",
+        "x-http-method",
+        "x-http-method-override",
+        "x-method-override",
+        "forwarded",
+        "x-real-ip",
+        "connect-protocol-version",
+        "connect-timeout-ms",
+        "content-type",
+        "content-encoding",
+        "connect-content-encoding",
+        "connect-accept-encoding",
+    }
+)
+_RESERVED_METADATA_PREFIXES = ("proxy-", "sec-", "x-forwarded-")
+
+# These names never become effective headers. The deadline arrives as a
+# query parameter, and the protocol has no message-level compression.
+_STRIPPED_REQUEST_HEADERS = (
+    "connect-protocol-version",
+    "connect-timeout-ms",
+    CONNECT_STREAMING_HEADER_COMPRESSION,
+    CONNECT_STREAMING_HEADER_ACCEPT_COMPRESSION,
+)
+
+_FIELD_NAME_RE = re_compile(r"^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$")
+
+
+@dataclass
+class _StreamState:
+    """State the receive and send adapters share for one connection."""
+
+    close_code: int = _CLOSE_NORMAL
+    # The send adapter puts this error in the S message in place of the
+    # end-stream payload. The receive side sets it for a protocol error
+    # that it can only report as a synthetic disconnect.
+    error_override: ConnectError | None = None
+    # The S message carries these headers, taken from an error response's
+    # trailer-prefixed headers, as its metadata.
+    error_trailers: dict[str, list[str]] = field(default_factory=dict)
 
 
 async def upgrade_websocket(
-    scope: WebSocketScope, receive: ASGIReceiveCallable, send: ASGISendCallable
+    scope: WebSocketScope,
+    receive: ASGIReceiveCallable,
+    send: ASGISendCallable,
+    *,
+    endpoints: Container[str],
+    codecs: Iterable[str],
+    read_max_bytes: int | None,
 ) -> tuple[HTTPScope, ASGIReceiveCallable, ASGISendCallable] | None:
-    """Accept a WebSocket connection and adapt it to an HTTP request.
+    """Establish a Connect-over-WebSocket stream and adapt it to HTTP.
 
-    Reads the request head from the first text message and returns an HTTP
-    scope along with receive/send callables that translate between WebSocket
-    messages and enveloped HTTP body chunks. Returns None if the handshake
-    fails, in which case the connection has been closed.
+    Negotiates the subprotocol, validates the handshake, and consumes the
+    client's Leading-Metadata message, then returns an HTTP scope along with
+    receive/send callables that translate between marked WebSocket messages
+    and enveloped HTTP body chunks. Returns None when the RPC must not be
+    dispatched, in which case the connection has been rejected or closed.
     """
     message = await receive()
     if message["type"] != "websocket.connect":
         return None
-    await send({"type": "websocket.accept", "subprotocol": None, "headers": []})
 
+    subprotocol = next(
+        (
+            offered
+            for offered in scope.get("subprotocols", ())
+            if offered in _SUBPROTOCOL_CODECS
+        ),
+        None,
+    )
+    if subprotocol is None:
+        # The client is not speaking Connect-over-WebSocket.
+        await _reject_handshake(scope, send, HTTPStatus.BAD_REQUEST)
+        return None
+
+    headers: dict[str, list[str]] = {}
+    for name_bytes, value_bytes in scope.get("headers", ()):
+        headers.setdefault(name_bytes.decode().lower(), []).append(value_bytes.decode())
+
+    origin = headers.get("origin", (None,))[0]
+    if origin is not None and not _same_origin(origin, headers.get("host", (None,))[0]):
+        # A cross-origin handshake must be rejected before the upgrade so no
+        # page from another origin can read the error.
+        await _reject_handshake(scope, send, HTTPStatus.FORBIDDEN)
+        return None
+
+    path = scope["path"]
+    if path not in endpoints:
+        if scope["root_path"] and path.removeprefix(scope["root_path"]) in endpoints:
+            path = path.removeprefix(scope["root_path"])
+        else:
+            await _reject_handshake(scope, send, HTTPStatus.NOT_FOUND)
+            return None
+
+    await send({"type": "websocket.accept", "subprotocol": subprotocol, "headers": []})
+
+    codec_name = _SUBPROTOCOL_CODECS[subprotocol]
+    if codec_name not in codecs:
+        # The token is recognized but the codec is not served, so the error
+        # is in-band where a browser client can read it.
+        await _fail_rpc(
+            send,
+            ConnectError(
+                Code.UNIMPLEMENTED,
+                f"the '{codec_name}' codec is not supported; supported codecs are {', '.join(codecs)}",
+            ),
+            _CLOSE_NORMAL,
+        )
+        return None
+
+    query_params = parse_qs(
+        scope.get("query_string", b"").decode(), keep_blank_values=True
+    )
+    timeout = query_params.get("connect-timeout-ms", (None,))[0]
+    # The specification allows at most ten digits.
+    if timeout is not None and (not timeout.isdigit() or len(timeout) > 10):
+        await _fail_rpc(
+            send,
+            ConnectError(
+                Code.INVALID_ARGUMENT, f"invalid connect-timeout-ms value '{timeout}'"
+            ),
+            _CLOSE_NORMAL,
+        )
+        return None
+
+    # The first message in each direction is the Leading-Metadata message.
     message = await receive()
-    head = message.get("text") if message["type"] == "websocket.receive" else None
-    if not head:
-        await _close(send, reason="expected request head")
+    if message["type"] != "websocket.receive":
+        return None
+    metadata_text = message.get("text")
+    if metadata_text is None or not metadata_text.startswith(_MARKER_METADATA):
+        await _fail_rpc(
+            send,
+            ConnectError(
+                Code.INVALID_ARGUMENT,
+                "the stream must open with a Leading-Metadata message",
+            ),
+            _CLOSE_PROTOCOL_ERROR,
+        )
+        return None
+    metadata_payload = metadata_text[1:]
+    if read_max_bytes is not None and len(metadata_payload.encode()) > read_max_bytes:
+        await _fail_rpc(
+            send,
+            ConnectError(
+                Code.RESOURCE_EXHAUSTED,
+                f"message exceeds the {read_max_bytes} byte limit",
+            ),
+            _CLOSE_MESSAGE_TOO_BIG,
+        )
         return None
     try:
-        http_method, path, head_headers = _parse_request_head(cast("str", head))
-    except (TypeError, ValueError) as e:
-        await _close(send, reason=str(e))
+        metadata = _parse_leading_metadata(metadata_payload)
+    except ValueError as e:
+        await _fail_rpc(
+            send, ConnectError(Code.INVALID_ARGUMENT, str(e)), _CLOSE_PROTOCOL_ERROR
+        )
         return None
 
-    # Browsers cannot set headers on the upgrade request, so overlay the
-    # headers from the request head on the upgrade request's headers.
-    headers = {
-        name.decode().lower(): value.decode()
-        for name, value in scope.get("headers", ())
-    }
-    headers.update(head_headers)
-    # The protocol does not compress individual messages; strip negotiation
-    # headers so the control flow negotiates identity and envelope payloads
-    # stay raw on the wire.
-    for name in (
-        CONNECT_STREAMING_HEADER_COMPRESSION,
-        CONNECT_STREAMING_HEADER_ACCEPT_COMPRESSION,
-        "content-encoding",
-        "accept-encoding",
-    ):
+    for name in _STRIPPED_REQUEST_HEADERS:
         headers.pop(name, None)
-
-    text_frames = (
-        codec_name_from_content_type(headers.get("content-type", ""), stream=False)
-        == CODEC_NAME_JSON
-    )
+    headers.update(metadata)
+    headers["content-type"] = [f"application/{codec_name}"]
+    if timeout is not None:
+        # The shared control flow reads the deadline from this header. The
+        # header is removed from the effective headers after the request
+        # context is created.
+        headers["connect-timeout-ms"] = [timeout]
 
     http_scope = dict(scope)
     http_scope["type"] = "http"
-    http_scope["method"] = http_method
+    http_scope["method"] = "POST"
     http_scope["path"] = path
     http_scope["scheme"] = "https" if scope.get("scheme") == "wss" else "http"
     http_scope["headers"] = [
-        (name.encode(), value.encode()) for name, value in headers.items()
+        (name.encode(), value.encode())
+        for name, values in headers.items()
+        for value in values
     ]
 
+    state = _StreamState()
+    binary_bodies = codec_name != CODEC_NAME_JSON
     return (
         cast("HTTPScope", http_scope),
-        _wrap_receive(receive),
-        _WebSocketSendAdapter(send, text_frames=text_frames),
+        _wrap_receive(
+            receive,
+            state,
+            codec_name=codec_name,
+            binary_bodies=binary_bodies,
+            read_max_bytes=read_max_bytes,
+        ),
+        _WebSocketSendAdapter(send, state, binary_bodies=binary_bodies),
     )
 
 
-def _parse_request_head(head: str) -> tuple[str, str, list[tuple[str, str]]]:
-    try:
-        parsed = json.loads(head)
-    except ValueError as e:
-        msg = "request head is not valid JSON"
-        raise ValueError(msg) from e
+def _same_origin(origin: str, host: str | None) -> bool:
+    """Compare the Origin's host and port with the Host header.
+
+    The comparison is case-insensitive, ignores the scheme, and does not
+    normalize default ports.
+    """
+    _, sep, origin_host = origin.partition("://")
+    if not sep or host is None:
+        # An opaque origin ("null") or a malformed value never matches.
+        return False
+    return origin_host.lower() == host.lower()
+
+
+async def _reject_handshake(
+    scope: WebSocketScope, send: ASGISendCallable, status: HTTPStatus
+) -> None:
+    """Reject the handshake with an HTTP status, before completing the upgrade."""
+    if "websocket.http.response" in (scope.get("extensions") or {}):
+        await send(
+            cast(
+                "ASGISendEvent",
+                {
+                    "type": "websocket.http.response.start",
+                    "status": status.value,
+                    "headers": [],
+                },
+            )
+        )
+        await send(
+            cast("ASGISendEvent", {"type": "websocket.http.response.body", "body": b""})
+        )
+    else:
+        # Without the extension, a close before accept makes the server
+        # reject the handshake, though with its own status code.
+        await send(
+            {"type": "websocket.close", "code": _CLOSE_PROTOCOL_ERROR, "reason": None}
+        )
+
+
+async def _fail_rpc(
+    send: ASGISendCallable, error: ConnectError, close_code: int
+) -> None:
+    """Report an RPC failure in-band: M, then S with the error, then close."""
+    await _send_text(send, _MARKER_METADATA + "{}")
+    end_stream = {"error": ConnectWireError.from_exception(error).to_dict()}
+    await _send_text(send, _MARKER_SERVER_END + json.dumps(end_stream))
+    await send({"type": "websocket.close", "code": close_code, "reason": None})
+
+
+def _parse_leading_metadata(payload: str) -> dict[str, list[str]]:
+    """Validate and fold a Leading-Metadata payload into effective headers.
+
+    Raises ValueError naming the violated rule.
+    """
+    parsed = json.loads(payload, object_pairs_hook=_reject_duplicate_keys)
     if not isinstance(parsed, dict):
-        msg = "request head is not a JSON object"
+        msg = "Leading-Metadata payload is not a JSON object"
         raise TypeError(msg)
-    path = parsed.get("path")
-    if not isinstance(path, str) or not path:
-        msg = "request head is missing path"
-        raise ValueError(msg)
-    http_method = parsed.get("method", "POST")
-    if not isinstance(http_method, str):
-        msg = "request head method is not a string"
-        raise TypeError(msg)
-    headers_json = parsed.get("headers", {})
-    if not isinstance(headers_json, dict):
-        msg = "request head headers is not a JSON object"
-        raise TypeError(msg)
-    headers: list[tuple[str, str]] = []
-    for name, value in headers_json.items():
-        if not isinstance(value, str):
-            msg = "request head header value is not a string"
-            raise TypeError(msg)
-        headers.append((name.lower(), value))
-    return http_method, path, headers
+    metadata: dict[str, list[str]] = {}
+    for key, values in parsed.items():
+        if not _FIELD_NAME_RE.match(key):
+            msg = f"metadata key '{key}' is not a valid HTTP field name"
+            raise ValueError(msg)
+        folded = key.lower()
+        if folded in metadata:
+            msg = f"metadata key '{key}' appears more than once"
+            raise ValueError(msg)
+        if folded in _RESERVED_METADATA_KEYS or folded.startswith(
+            _RESERVED_METADATA_PREFIXES
+        ):
+            msg = f"metadata key '{key}' is reserved"
+            raise ValueError(msg)
+        if not isinstance(values, list) or not all(
+            isinstance(value, str) for value in values
+        ):
+            msg = f"metadata key '{key}' does not map to an array of strings"
+            raise ValueError(msg)
+        for value in values:
+            if folded.endswith("-bin"):
+                try:
+                    b64decode(value + "=" * (-len(value) % 4), validate=True)
+                except ValueError as e:
+                    msg = f"metadata key '{key}' has a value that is not valid base64"
+                    raise ValueError(msg) from e
+            elif "\r" in value or "\n" in value or "\x00" in value:
+                msg = f"metadata key '{key}' has a value that is not a valid HTTP field value"
+                raise ValueError(msg)
+        metadata[folded] = values
+    return metadata
 
 
-def _wrap_receive(receive: ASGIReceiveCallable) -> ASGIReceiveCallable:
-    """Translate WebSocket messages into enveloped HTTP body chunks."""
+def _reject_duplicate_keys(pairs: list[tuple[str, object]]) -> dict[str, object]:
+    result: dict[str, object] = {}
+    for key, value in pairs:
+        if key in result:
+            msg = f"metadata key '{key}' appears more than once"
+            raise ValueError(msg)
+        result[key] = value
+    return result
+
+
+def _wrap_receive(
+    receive: ASGIReceiveCallable,
+    state: _StreamState,
+    *,
+    codec_name: str,
+    binary_bodies: bool,
+    read_max_bytes: int | None,
+) -> ASGIReceiveCallable:
+    """Translate marked WebSocket messages into enveloped HTTP body chunks."""
+    client_done = False
 
     async def wrapped() -> ASGIReceiveEvent:
+        nonlocal client_done
         while True:
             message = await receive()
             match message["type"]:
-                case "websocket.receive":
-                    text = message.get("text")
-                    if text is not None:
-                        if not text:
-                            # Empty text message is the half-close marker.
-                            return {
-                                "type": "http.request",
-                                "body": b"",
-                                "more_body": False,
-                            }
-                        payload = text.encode()
-                    else:
-                        payload = message.get("bytes") or b""
-                    body = struct.pack(">BI", 0, len(payload)) + payload
-                    return {"type": "http.request", "body": body, "more_body": True}
                 case "websocket.disconnect":
                     return {"type": "http.disconnect"}
+                case "websocket.receive":
+                    pass
                 case _:
                     continue
+
+            text = message.get("text")
+            if text is not None:
+                is_text = True
+                raw = text.encode()
+            else:
+                is_text = False
+                raw = bytes(message.get("bytes") or b"")
+
+            if client_done:
+                # After C the client may send nothing else. This can only be
+                # read by the disconnect watch, which swallows exceptions, so
+                # it surfaces as a synthetic disconnect whose end-stream
+                # payload the send adapter replaces.
+                state.close_code = _CLOSE_PROTOCOL_ERROR
+                state.error_override = ConnectError(
+                    Code.INVALID_ARGUMENT,
+                    "received a message after the end of the client stream",
+                )
+                return {"type": "http.disconnect"}
+
+            if not raw:
+                raise _stream_error(
+                    state,
+                    _CLOSE_PROTOCOL_ERROR,
+                    Code.INVALID_ARGUMENT,
+                    "received an empty message with no marker",
+                )
+            marker = raw[0]
+            if marker >= 0x80:  # the marker high bit is reserved
+                raise _stream_error(
+                    state,
+                    _CLOSE_PROTOCOL_ERROR,
+                    Code.INVALID_ARGUMENT,
+                    "message marker has the reserved high bit set",
+                )
+            payload = raw[1:]
+            if read_max_bytes is not None and len(payload) > read_max_bytes:
+                raise _stream_error(
+                    state,
+                    _CLOSE_MESSAGE_TOO_BIG,
+                    Code.RESOURCE_EXHAUSTED,
+                    f"message exceeds the {read_max_bytes} byte limit",
+                )
+
+            match chr(marker):
+                case "B" | "C" as marker_char:
+                    if payload and is_text == binary_bodies:
+                        raise _stream_error(
+                            state,
+                            _CLOSE_UNSUPPORTED_DATA,
+                            Code.INVALID_ARGUMENT,
+                            f"message body was sent in a {'text' if is_text else 'binary'} frame but the negotiated codec is {codec_name}",
+                        )
+                    if marker_char == _MARKER_CLIENT_END:
+                        client_done = True
+                        return {
+                            "type": "http.request",
+                            "body": _envelope(payload) if payload else b"",
+                            "more_body": False,
+                        }
+                    if not payload and is_text:
+                        raise _stream_error(
+                            state,
+                            _CLOSE_PROTOCOL_ERROR,
+                            Code.INVALID_ARGUMENT,
+                            "an empty JSON message is '{}', never a bare B marker",
+                        )
+                    return {
+                        "type": "http.request",
+                        "body": _envelope(payload),
+                        "more_body": True,
+                    }
+                case "M":
+                    raise _stream_error(
+                        state,
+                        _CLOSE_PROTOCOL_ERROR,
+                        Code.INVALID_ARGUMENT,
+                        "received a second Leading-Metadata message",
+                    )
+                case "S":
+                    raise _stream_error(
+                        state,
+                        _CLOSE_PROTOCOL_ERROR,
+                        Code.INVALID_ARGUMENT,
+                        "received a Server-End-Stream message from the client",
+                    )
+                case _:
+                    raise _stream_error(
+                        state,
+                        _CLOSE_PROTOCOL_ERROR,
+                        Code.INVALID_ARGUMENT,
+                        f"unknown message marker 0x{marker:02x}",
+                    )
 
     return wrapped
 
 
-class _WebSocketSendAdapter:
-    """Translate HTTP response events into WebSocket messages.
+def _stream_error(
+    state: _StreamState, close_code: int, code: Code, message: str
+) -> ConnectError:
+    state.close_code = close_code
+    return ConnectError(code, message)
 
-    The response head is sent as a JSON-encoded text message. Body
-    chunks are parsed as envelopes and each envelope payload is sent as its
-    own WebSocket message, with the end-stream envelope preceded by an empty
-    text marker. A non-200 response (an error before the stream started)
-    instead sends its raw body as a single text message.
+
+def _envelope(payload: bytes) -> bytes:
+    return struct.pack(">BI", 0, len(payload)) + payload
+
+
+class _WebSocketSendAdapter:
+    """Translate HTTP response events into marked WebSocket messages.
+
+    http.response.start becomes the server's Leading-Metadata message. Body
+    chunks are parsed as envelopes: each data envelope is sent as a B
+    message and the end-stream envelope as the S message, followed by the
+    close frame. A non-200 response (an error before the stream started)
+    instead wraps its wire-error body in the S message.
     """
 
-    def __init__(self, send: ASGISendCallable, *, text_frames: bool) -> None:
+    def __init__(
+        self, send: ASGISendCallable, state: _StreamState, *, binary_bodies: bool
+    ) -> None:
         self._send = send
-        self._text_frames = text_frames
+        self._state = state
+        self._binary_bodies = binary_bodies
         self._buffer = bytearray()
-        self._raw_body = False
+        self._error_status: int | None = None
 
     async def __call__(self, message: ASGISendEvent) -> None:
         match message["type"]:
             case "http.response.start":
-                self._raw_body = message["status"] != HTTPStatus.OK
-                head = _encode_response_head(
-                    message["status"], message.get("headers", ())
-                )
-                await _send_message(self._send, text=head)
+                if message["status"] != HTTPStatus.OK:
+                    self._error_status = message["status"]
+                metadata = self._split_headers(message.get("headers", ()))
+                await _send_text(self._send, _MARKER_METADATA + json.dumps(metadata))
             case "http.response.body":
                 self._buffer.extend(message.get("body", b""))
-                if not self._raw_body:
-                    await self._send_envelopes()
+                if self._error_status is None:
+                    await self._send_messages()
                 if not message.get("more_body", False):
-                    if self._raw_body and self._buffer:
-                        await _send_message(self._send, text=self._buffer.decode())
-                    await _close(self._send)
+                    if self._error_status is not None:
+                        await self._send_error_end()
+                    await self._send(
+                        {
+                            "type": "websocket.close",
+                            "code": self._state.close_code,
+                            "reason": None,
+                        }
+                    )
 
-    async def _send_envelopes(self) -> None:
-        while len(self._buffer) >= 5:  # envelope prefix length
-            length = int.from_bytes(self._buffer[1:5], "big")
-            if len(self._buffer) < 5 + length:
+    def _split_headers(
+        self, headers: Iterable[tuple[bytes, bytes]]
+    ) -> dict[str, list[str]]:
+        """Split response headers into M metadata, stashing error trailers.
+
+        The content type and compression are carried by the subprotocol and
+        the WebSocket layer, so their headers never reach the wire.
+        """
+        metadata: dict[str, list[str]] = {}
+        for name_bytes, value_bytes in headers:
+            name = name_bytes.decode().lower()
+            value = value_bytes.decode()
+            if name in ("content-type", CONNECT_STREAMING_HEADER_COMPRESSION):
+                continue
+            if name.startswith("trailer-"):
+                self._state.error_trailers.setdefault(
+                    name.removeprefix("trailer-"), []
+                ).append(value)
+                continue
+            metadata.setdefault(name, []).append(value)
+        return metadata
+
+    async def _send_messages(self) -> None:
+        while len(self._buffer) >= _ENVELOPE_PREFIX_LENGTH:
+            length = int.from_bytes(self._buffer[1:_ENVELOPE_PREFIX_LENGTH], "big")
+            if len(self._buffer) < _ENVELOPE_PREFIX_LENGTH + length:
                 return
             flags = self._buffer[0]
-            payload = bytes(self._buffer[5 : 5 + length])
-            del self._buffer[: 5 + length]
-            if flags & _END_STREAM_FLAG:
-                # End-of-data marker, then the end-stream JSON.
-                await _send_message(self._send, text="")
-                await _send_message(self._send, text=payload.decode())
-            elif self._text_frames:
-                await _send_message(self._send, text=payload.decode())
-            else:
-                await _send_message(self._send, data=payload)
-
-
-def _encode_response_head(status: int, headers: Iterable[tuple[bytes, bytes]]) -> str:
-    head_headers: dict[str, str] = {}
-    for name_bytes, value_bytes in headers:
-        name = name_bytes.decode()
-        value = value_bytes.decode()
-        if name == "content-type" and value.startswith(
-            CONNECT_STREAMING_CONTENT_TYPE_PREFIX
-        ):
-            # The WebSocket protocol mirrors the unary content types.
-            value = (
-                CONNECT_UNARY_CONTENT_TYPE_PREFIX
-                + value[len(CONNECT_STREAMING_CONTENT_TYPE_PREFIX) :]
+            payload = bytes(
+                self._buffer[_ENVELOPE_PREFIX_LENGTH : _ENVELOPE_PREFIX_LENGTH + length]
             )
-        if name in head_headers:
-            head_headers[name] = f"{head_headers[name]}, {value}"
+            del self._buffer[: _ENVELOPE_PREFIX_LENGTH + length]
+            if flags & _END_STREAM_FLAG:
+                if (error := self._state.error_override) is not None:
+                    payload = json.dumps(
+                        {"error": ConnectWireError.from_exception(error).to_dict()}
+                    ).encode()
+                await _send_text(self._send, _MARKER_SERVER_END + payload.decode())
+            elif self._binary_bodies:
+                await self._send(
+                    {
+                        "type": "websocket.send",
+                        "bytes": _MARKER_BODY.encode() + payload,
+                        "text": None,
+                    }
+                )
+            else:
+                await _send_text(self._send, _MARKER_BODY + payload.decode())
+
+    async def _send_error_end(self) -> None:
+        """Wrap a non-200 response's wire-error body in the S message."""
+        end_stream: dict[str, object] = {}
+        if self._buffer:
+            end_stream["error"] = json.loads(bytes(self._buffer))
         else:
-            head_headers[name] = value
-    return json.dumps({"status": status, "headers": head_headers})
+            end_stream["error"] = {
+                "code": "unknown",
+                "message": f"HTTP {self._error_status}",
+            }
+        if self._state.error_trailers:
+            end_stream["metadata"] = self._state.error_trailers
+        await _send_text(self._send, _MARKER_SERVER_END + json.dumps(end_stream))
 
 
-async def _send_message(
-    send: ASGISendCallable, *, text: str | None = None, data: bytes | None = None
-) -> None:
-    await send({"type": "websocket.send", "bytes": data, "text": text})
-
-
-async def _close(send: ASGISendCallable, *, reason: str | None = None) -> None:
-    await send({"type": "websocket.close", "code": 1000, "reason": reason})
+async def _send_text(send: ASGISendCallable, text: str) -> None:
+    await send({"type": "websocket.send", "bytes": None, "text": text})

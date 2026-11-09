@@ -278,6 +278,7 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
         read_max_bytes: int | None = DEFAULT_READ_MAX_BYTES,
         compressions: Iterable[Compression] | None = None,
         codecs: Iterable[Codec] | None = None,
+        websockets_allowed_origins: Iterable[str] = (),
     ) -> None: ...
 
     @overload
@@ -294,6 +295,7 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
         read_max_bytes: int | None = DEFAULT_READ_MAX_BYTES,
         compressions: Iterable[Compression] | None = None,
         codecs: Iterable[Codec] | None = None,
+        websockets_allowed_origins: Iterable[str] = (),
     ) -> None: ...
 
     def __init__(
@@ -306,6 +308,7 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
         read_max_bytes: int | None = DEFAULT_READ_MAX_BYTES,
         compressions: Iterable[Compression] | None = None,
         codecs: Iterable[Codec] | None = None,
+        websockets_allowed_origins: Iterable[str] = (),
     ) -> None:
         """Initialize the ASGI application.
 
@@ -321,6 +324,13 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
                           If set to empty, disables compression.
             codecs: The codecs supported by the server. If unset, defaults to Protocol Buffers
                     binary and JSON codecs.
+            websockets_allowed_origins: Host patterns permitted to open cross-origin
+                Connect-over-WebSocket streams, matched case-insensitively against
+                the host and port of the handshake's Origin header exactly as
+                written, ignoring only the scheme: an exact value such as
+                "app.example.com" or "app.example.com:8443", a "*.example.com"
+                domain wildcard, or "*" to allow any origin. A handshake from the
+                same host as the Host header is always permitted.
 
         """
         super().__init__()
@@ -350,6 +360,20 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
         self._compressions = resolve_compressions(compressions)
         codecs = codecs if codecs is not None else get_default_codecs()
         self._codecs = {codec.name(): codec for codec in codecs}
+        for pattern in websockets_allowed_origins:
+            if "*" in pattern[1:] or (
+                pattern.startswith("*")
+                and pattern != "*"
+                and not pattern.startswith("*.")
+            ):
+                msg = (
+                    f"websockets_allowed_origins pattern '{pattern}' must be a "
+                    "host, a '*.example.com' domain wildcard, or '*'"
+                )
+                raise ValueError(msg)
+        self._websockets_allowed_origins = tuple(
+            pattern.lower() for pattern in websockets_allowed_origins
+        )
 
     @property
     def path(self) -> str:
@@ -377,12 +401,16 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
 
         is_websocket = scope["type"] == "websocket"
         if is_websocket:
-            # Adapt the connection to look like a Connect streaming HTTP
-            # request, with the request head coming from the first message.
-            # The rest of the control flow is unchanged.
-            upgraded = await upgrade_websocket(scope, receive, send)
+            upgraded = await upgrade_websocket(
+                scope,
+                receive,
+                send,
+                endpoints=self._resolved_endpoints,
+                codecs=self._codecs,
+                read_max_bytes=self._read_max_bytes,
+                allowed_origins=self._websockets_allowed_origins,
+            )
             if upgraded is None:
-                # Handshake failed; the connection was closed.
                 return
             scope, receive, send = upgraded
 
@@ -470,7 +498,9 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
                     )
 
                     content_type = headers.get("content-type", "")
-                    protocol = negotiate_server_protocol(content_type)
+                    protocol = negotiate_server_protocol(
+                        content_type, websocket=is_websocket
+                    )
                     if (
                         protocol.uses_trailers()
                         and "http.response.trailers"
@@ -498,6 +528,7 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
                     req_compression: Compression | None = None
                     if codec and not (
                         isinstance(endpoint, EndpointUnary)
+                        and not is_websocket
                         and isinstance(protocol, ConnectServerProtocol)
                     ):
                         req_compression, resp_compression = (
@@ -528,6 +559,11 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
                     if (timeout_ms := ctx.timeout_ms) is not None:
                         deadline = loop.time() + timeout_ms / 1000
                         timeout.reschedule(deadline)
+                    if is_websocket:
+                        # The upgrade injects this header to carry the
+                        # deadline into the request context. The protocol
+                        # keeps it out of the effective headers.
+                        headers.pop("connect-timeout-ms", None)
 
                     if not codec:
                         accept_post = (
