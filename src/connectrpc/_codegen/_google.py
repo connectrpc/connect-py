@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import functools
 from typing import TYPE_CHECKING
 
 from protobuf.wkt import FileDescriptorProto, FileDescriptorSet
@@ -9,6 +10,7 @@ if TYPE_CHECKING:
     from protobuf import DescFile
 
 
+@functools.cache
 def google_file_desc(file: FileDescriptor) -> DescFile:
     """Return the protobuf-py descriptor for a google.protobuf file descriptor.
 
