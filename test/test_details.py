@@ -62,7 +62,7 @@ def test_details_sync() -> None:
     assert s1.fields["color"].kind == Oneof("string_value", "red")
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_details_async() -> None:
     class DetailsHaberdasher(Haberdasher):
         async def make_hat(self, _request, _ctx) -> NoReturn:

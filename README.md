@@ -30,7 +30,7 @@ Connect already works with your current tech stack:
 ## Features
 
 - **Servers:** WSGI and ASGI-ready (including trio), use with any [compatible server](https://connectrpc.com/docs/python/deployment/)
-- **Clients:** Lightweight sync and async clients, backed by `pyqwest`
+- **Clients:** Lightweight sync and async clients (including trio), backed by `pyqwest`
 - **Protocols:** Supports Connect, gRPC, and gRPC-Web (HTTP/1.1 and HTTP/2)
 - **Type safety:** Fully type-annotated generated code
 - **Streaming:** Full support for server, client, and bidirectional streaming

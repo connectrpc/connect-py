@@ -1,7 +1,7 @@
-"""The stream handler's event loop operations under trio.
+"""The event loop operations of requests and clients under trio.
 
-Imported the first time a request runs under trio, so that applications on
-asyncio never import trio.
+Imported the first time a request or client call runs under trio, so that
+applications on asyncio never import trio.
 """
 
 from __future__ import annotations
@@ -144,9 +144,8 @@ class TrioTimeout:
         exc_type: type[BaseException] | None,
         exc_val: BaseException | None,
         exc_tb: TracebackType | None,
-    ) -> bool:
+    ) -> None:
         swallowed = self._scope.__exit__(exc_type, exc_val, exc_tb)
         if exc_type is not None and swallowed:
             # The scope swallowed its own cancellation, so the body is done.
             raise TimeoutError from exc_val
-        return False

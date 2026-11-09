@@ -36,9 +36,17 @@ EXTRA = {
         "sortedcontainers>=2.1",
         "idna>=2",
     ],
+    "connectrpc_grpcreflect": [
+        # trio leaves these floors unbounded, as for connectrpc.
+        "sortedcontainers>=2.1",
+        "idna>=2",
+    ],
     "connectrpc_otel": [
         # The tests need this repository's connectrpc.
         "dist/connectrpc-*.whl",
+        # trio leaves these floors unbounded, as for connectrpc.
+        "sortedcontainers>=2.1",
+        "idna>=2",
         # Two of opentelemetry-instrumentation's transitive floors don't
         # install: packaging 18 needs pyparsing 2.0.2, whose sdist is corrupt,
         # and wrapt 1.0 predates Python 3.

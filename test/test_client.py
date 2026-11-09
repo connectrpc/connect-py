@@ -1,7 +1,10 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+import asyncio
+import contextlib
+from typing import TYPE_CHECKING, cast
 
+import anyio
 import pytest
 from pyqwest import (
     Client,
@@ -16,6 +19,8 @@ from pyqwest import (
 from pyqwest.testing import ASGITransport, WSGITransport
 
 from connectrpc.client import ResponseMetadata
+from connectrpc.code import Code
+from connectrpc.errors import ConnectError
 from connectrpc.protocol import ProtocolType
 
 from ._util import call
@@ -30,7 +35,7 @@ from .connectrpc.example.haberdasher_connect import (
 from .connectrpc.example.haberdasher_pb import Hat, Size
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncIterator, Iterator
+    from collections.abc import AsyncGenerator, AsyncIterator, Iterator
 
 _default_headers = (
     ("content-type", "application/proto"),
@@ -62,8 +67,10 @@ _headers_cases = [
 ]
 
 
-@pytest.mark.asyncio
-@pytest.mark.parametrize("mode", ["async", "sync"])
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    "mode", ["async", pytest.param("sync", marks=pytest.mark.asyncio_only)]
+)
 @pytest.mark.parametrize(
     ("headers", "trailers", "response_headers", "response_trailers"), _headers_cases
 )
@@ -117,7 +124,7 @@ async def test_headers(
 _protocols = [ProtocolType.CONNECT, ProtocolType.GRPC, ProtocolType.GRPC_WEB]
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 @pytest.mark.parametrize("protocol", _protocols)
 async def test_request_content_async(protocol: ProtocolType) -> None:
     """A request with one message reaches the transport as sized bytes; a stream stays a stream."""
@@ -209,3 +216,51 @@ def test_request_content_sync(protocol: ProtocolType) -> None:
     assert isinstance(contents["MakeSimilarHats"], bytes)
     assert not isinstance(contents["MakeFlexibleHat"], bytes)
     assert not isinstance(contents["MakeVariousHats"], bytes)
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("method", ["unary", "server_stream"])
+async def test_cancelled_by_scope(anyio_backend: str, method: str) -> None:
+    """A trio cancellation reaches its scope; asyncio's is reported as CANCELED."""
+
+    class BlockingHaberdasher(Haberdasher):
+        async def make_hat(self, _request, _ctx):
+            await anyio.Event().wait()
+            return Hat()
+
+        async def make_similar_hats(self, _request, _ctx):
+            yield Hat()
+            await anyio.Event().wait()
+
+    async def call() -> None:
+        async with HaberdasherClient(
+            "http://localhost",
+            http_client=Client(
+                ASGITransport(HaberdasherASGIApplication(BlockingHaberdasher()))
+            ),
+        ) as client:
+            match method:
+                case "unary":
+                    await client.make_hat(Size(inches=10))
+                case "server_stream":
+                    # The generated client types streams as AsyncIterator, but
+                    # they are async generators.
+                    hats = cast(
+                        "AsyncGenerator[Hat]", client.make_similar_hats(Size(inches=10))
+                    )
+                    async with contextlib.aclosing(hats):
+                        async for _ in hats:
+                            pass
+
+    if anyio_backend == "trio":
+        with anyio.move_on_after(0.1) as scope:
+            await call()
+        assert scope.cancelled_caught
+        return
+
+    task = asyncio.ensure_future(call())
+    await anyio.sleep(0.1)
+    task.cancel()
+    with pytest.raises(ConnectError) as exc_info:
+        await task
+    assert exc_info.value.code == Code.CANCELED

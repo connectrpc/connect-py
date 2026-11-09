@@ -63,7 +63,7 @@ def test_json_charset_content_type(header: str) -> None:
     assert res.json() == {"size": 2}
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 @pytest.mark.parametrize("header", _charset_content_type_cases)
 async def test_json_charset_content_type_async(header: str) -> None:
     class HeadersHaberdasher(Haberdasher):
@@ -119,7 +119,7 @@ def test_json_charset_content_type_stream(header: str) -> None:
     assert hats == [Hat(size=2), Hat(size=3)]
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 @pytest.mark.parametrize("header", _streaming_charset_content_type_cases)
 async def test_json_charset_content_type_stream_async(header: str) -> None:
     class HeadersHaberdasher(Haberdasher):

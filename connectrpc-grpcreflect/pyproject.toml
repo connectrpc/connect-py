@@ -49,9 +49,12 @@ dev = [{ include-group = "test" }]
 test = [
   "example",
 
+  "anyio==4.16.0",
+  # ASGITransport runs the application under trio since 0.14.0.
+  "pyqwest>=0.14.0",
   "pytest==9.2.0",
-  "pytest-asyncio==1.4.1.post1",
   "pytest-timeout==2.5.0",
+  "trio==0.35.0",
 ]
 
 [build-system]

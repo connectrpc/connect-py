@@ -681,14 +681,20 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
         # Get request body
         chunks: list[bytes] = []
         read_bytes = 0
-        async for chunk in _read_body(receive):
-            read_bytes += len(chunk)
-            if self._read_max_bytes is not None and read_bytes > self._read_max_bytes:
-                raise ConnectError(
-                    Code.RESOURCE_EXHAUSTED,
-                    f"message is larger than configured max {self._read_max_bytes}",
-                )
-            chunks.append(chunk)
+        # The body generator is unfinished when the limit is exceeded, and trio
+        # warns when an unfinished generator is garbage collected.
+        async with contextlib.aclosing(_read_body(receive)) as body:
+            async for chunk in body:
+                read_bytes += len(chunk)
+                if (
+                    self._read_max_bytes is not None
+                    and read_bytes > self._read_max_bytes
+                ):
+                    raise ConnectError(
+                        Code.RESOURCE_EXHAUSTED,
+                        f"message is larger than configured max {self._read_max_bytes}",
+                    )
+                chunks.append(chunk)
         req_body = b"".join(chunks)
 
         # Handle compression if specified
@@ -955,7 +961,7 @@ async def _request_stream(
         await _aclose(body)
 
 
-async def _read_body(receive: _RequestReceiver) -> AsyncIterator[bytes]:
+async def _read_body(receive: _RequestReceiver) -> AsyncGenerator[bytes]:
     """Read the body of the request."""
     while True:
         message = await receive()

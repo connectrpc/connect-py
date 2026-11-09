@@ -66,9 +66,10 @@ def test_client_sync(cov: Coverage | None) -> None:
         pytest.fail(f"\n{result.stdout}\n{result.stderr}")
 
 
-def test_client_async(cov: Coverage | None) -> None:
+@pytest.mark.parametrize("mode", ["async", "trio"])
+def test_client_async(cov: Coverage | None, mode: str) -> None:
     args = maybe_patch_args_with_debug(
-        [sys.executable, _client_py_path, "--mode", "async"]
+        [sys.executable, _client_py_path, "--mode", mode]
     )
 
     result = subprocess.run(

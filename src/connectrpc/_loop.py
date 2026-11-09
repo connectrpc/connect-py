@@ -25,7 +25,7 @@ if TYPE_CHECKING:
 
 
 class AsyncioLoop:
-    """The request handler's event loop operations under asyncio."""
+    """The event loop operations of requests and clients under asyncio."""
 
     async def checkpoint(self) -> None:
         """Give the loop a chance to deliver a cancellation."""

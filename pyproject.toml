@@ -84,12 +84,14 @@ dev = [
 test = [
   "example",
 
+  "anyio==4.16.0",
   "asgiref==3.13.0",
   "brotli==1.2.1",
   "hypercorn==0.18.0",
   "protobuf>=5.28",
+  # ASGITransport runs the application under trio since 0.14.0.
+  "pyqwest>=0.14.0",
   "pytest==9.2.0",
-  "pytest-asyncio==1.4.1.post1",
   "pytest-timeout==2.5.0",
   "trio==0.35.0",
   "zstandard==0.25.0",
@@ -108,10 +110,12 @@ filterwarnings = [
   # Workaround https://github.com/open-telemetry/opentelemetry-python/issues/5231
   "ignore:SelectableGroups dict interface is deprecated. Use select.",
 ]
+markers = [
+  "asyncio_only: runs only on the asyncio backend, for code that calls asyncio directly or runs off the event loop, like the sync client",
+]
 strict = true
 testpaths = ["test"]
 timeout = 1800  # 30 min
-asyncio_default_fixture_loop_scope = "function"
 
 [tool.ruff]
 # Don't run ruff on generated code from external plugins.

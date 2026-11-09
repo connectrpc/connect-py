@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-import asyncio
 import subprocess
 import sys
 import textwrap
 from typing import TYPE_CHECKING, Literal
 
+import anyio
 import pytest
 from connectrpc.code import Code
 from connectrpc.errors import ConnectError
@@ -49,12 +49,12 @@ class ElizaServiceTestSync(ElizaServiceSync):
         return SayResponse(sentence="Hello")
 
 
-@pytest.fixture(params=["async", "sync"])
+@pytest.fixture(params=["async", pytest.param("sync", marks=pytest.mark.asyncio_only)])
 def client_type(request: pytest.FixtureRequest) -> Literal["async", "sync"]:
     return request.param
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_instruments(
     client_type: Literal["async", "sync"],
     tracer_provider: TracerProvider,
@@ -85,7 +85,7 @@ async def test_instruments(
         case "async":
             await send_request()
         case "sync":
-            await asyncio.to_thread(send_request_sync)
+            await anyio.to_thread.run_sync(send_request_sync)
 
     spans = span_exporter.get_finished_spans()
     assert len(spans) == 2
@@ -102,7 +102,7 @@ async def test_instruments(
         case "async":
             await send_request()
         case "sync":
-            await asyncio.to_thread(send_request_sync)
+            await anyio.to_thread.run_sync(send_request_sync)
 
     # Harder to clear metrics, but it should be enough to confirm there weren't
     # traces after uninstrumenting.
@@ -110,7 +110,7 @@ async def test_instruments(
     assert len(spans) == 0
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_noop_if_manually_instrumented(
     client_type: Literal["async", "sync"],
     tracer_provider: TracerProvider,
@@ -155,7 +155,7 @@ async def test_noop_if_manually_instrumented(
         case "async":
             await send_request()
         case "sync":
-            await asyncio.to_thread(send_request_sync)
+            await anyio.to_thread.run_sync(send_request_sync)
 
     spans = span_exporter.get_finished_spans()
     # Not 4

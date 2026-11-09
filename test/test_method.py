@@ -125,7 +125,7 @@ _CASES = [
 ]
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 @pytest.mark.parametrize(("method_name", "request_", "expected"), _CASES)
 async def test_metadata_interceptor_sees_stream_type(
     method_name: str, request_: Size | list[Size], expected: StreamType
@@ -145,7 +145,7 @@ async def test_metadata_interceptor_sees_stream_type(
     assert server_interceptor.stream_types == [expected]
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 @pytest.mark.parametrize(("method_name", "request_", "expected"), _CASES)
 async def test_metadata_interceptor_sees_stream_type_sync(
     method_name: str, request_: Size | list[Size], expected: StreamType

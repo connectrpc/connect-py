@@ -1,15 +1,14 @@
 from __future__ import annotations
 
-import asyncio
 import threading
 from concurrent.futures import Future
-from contextlib import contextmanager
+from contextlib import aclosing, contextmanager
 from functools import partial
 from types import SimpleNamespace
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
+import anyio
 import pytest
-import pytest_asyncio
 import trio
 from connectrpc.code import Code
 from connectrpc.errors import ConnectError
@@ -40,7 +39,7 @@ from connectrpc_grpchealth._gen.grpc.health.v1.health_pb import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncIterator, Iterator, Mapping
+    from collections.abc import AsyncGenerator, AsyncIterator, Iterator, Mapping
 
     from hypercorn.typing import ASGIFramework
 
@@ -91,7 +90,14 @@ def _serve_trio(app: ASGIFramework) -> Iterator[str]:
     assert not thread.is_alive(), "server did not stop"
 
 
-@pytest_asyncio.fixture(params=["sync", "async", "trio"])
+@pytest.fixture(
+    params=[
+        pytest.param("sync", marks=pytest.mark.asyncio_only),
+        "async",
+        # This client's server runs on its own trio thread, apart from the backend.
+        pytest.param("trio", marks=pytest.mark.asyncio_only),
+    ]
+)
 async def client(
     request: pytest.FixtureRequest, checker: StaticChecker
 ) -> AsyncIterator[AnyHealthClient]:
@@ -135,17 +141,24 @@ async def _watch(
         for response in client.watch(request, timeout_ms=timeout_ms):
             yield response.status
         return
-    async for response in client.watch(request, timeout_ms=timeout_ms):
-        yield response.status
+    # The generated client types streams as AsyncIterator, but they are async
+    # generators.
+    responses = cast(
+        "AsyncGenerator[HealthCheckResponse]",
+        client.watch(request, timeout_ms=timeout_ms),
+    )
+    async with aclosing(responses):
+        async for response in responses:
+            yield response.status
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_check_serving(client: AnyHealthClient) -> None:
     assert await _check(client, ELIZA) == ServingStatus.SERVING
     assert await _check(client, "") == ServingStatus.SERVING
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_check_not_serving(
     client: AnyHealthClient, checker: StaticChecker
 ) -> None:
@@ -157,14 +170,14 @@ async def test_check_not_serving(
     assert await _check(client, HABERDASHER) == ServingStatus.SERVING
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_check_unknown_service(client: AnyHealthClient) -> None:
     with pytest.raises(ConnectError, match=r"unknown service missing\.Service") as e:
         await _check(client, "missing.Service")
     assert e.value.code == Code.NOT_FOUND
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_list(client: AnyHealthClient, checker: StaticChecker) -> None:
     checker.set_status(HABERDASHER, ServingStatus.NOT_SERVING)
 
@@ -198,7 +211,7 @@ class _OnDemandChecker(Checker, CheckerSync):
         return {ELIZA: ServingStatus.NOT_SERVING}
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 @pytest.mark.parametrize("checker", [_OnDemandChecker()])
 async def test_custom_checker(client: AnyHealthClient) -> None:
     assert await _check(client, ELIZA) == ServingStatus.NOT_SERVING
@@ -219,7 +232,7 @@ async def test_custom_checker(client: AnyHealthClient) -> None:
     assert e.value.code == Code.UNIMPLEMENTED
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_watch_update(client: AnyHealthClient, checker: StaticChecker) -> None:
     statuses = _watch(client, ELIZA)
 
@@ -233,7 +246,7 @@ async def test_watch_update(client: AnyHealthClient, checker: StaticChecker) -> 
     await statuses.aclose()
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_watch_unknown_service(
     client: AnyHealthClient, checker: StaticChecker
 ) -> None:
@@ -254,7 +267,7 @@ class _EarlyEvent(threading.Event):
         return super().wait(max(timeout - 0.05, 0))
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 @pytest.mark.parametrize("early_wait", [False, True])
 async def test_watch_deadline(
     monkeypatch: pytest.MonkeyPatch, client: AnyHealthClient, early_wait: bool
@@ -269,7 +282,7 @@ async def test_watch_deadline(
     assert e.value.code == Code.DEADLINE_EXCEEDED
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_watch_stops_on_close(
     request: pytest.FixtureRequest, client: AnyHealthClient, checker: StaticChecker
 ) -> None:
@@ -289,5 +302,5 @@ async def test_watch_stops_on_close(
             checker.set_status(
                 ELIZA, (ServingStatus.NOT_SERVING, ServingStatus.SERVING)[i % 2]
             )
-        await asyncio.sleep(0.01)
+        await anyio.sleep(0.01)
     assert not checker._watchers

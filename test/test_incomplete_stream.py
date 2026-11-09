@@ -63,7 +63,7 @@ def test_sync_server_truncated_request(body: bytes) -> None:
     assert error["message"].startswith("protocol error: ")
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 @pytest.mark.parametrize("body", _truncated_requests)
 async def test_async_server_truncated_request(body: bytes) -> None:
     class FlexibleHaberdasher(Haberdasher):
@@ -124,7 +124,7 @@ def test_sync_client_bad_stream_response(body: bytes, code: Code) -> None:
     assert excinfo.value.code == code
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 @pytest.mark.parametrize(("body", "code"), _bad_responses)
 async def test_async_client_bad_stream_response(body: bytes, code: Code) -> None:
     async def app(_scope, receive, send) -> None:

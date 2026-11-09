@@ -27,7 +27,7 @@ class CountingHaberdasher(Haberdasher):
         return Hat(size=request.inches, color="blue")
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_lifespan() -> None:
     final_count = None
 
@@ -53,7 +53,7 @@ async def test_lifespan() -> None:
     assert final_count == 5
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_lifespan_empty_services() -> None:
     class NoMethodsService(NoMethods):
         pass
@@ -73,7 +73,7 @@ async def test_lifespan_empty_services() -> None:
     assert exc_info.value.code == Code.UNIMPLEMENTED
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_lifespan_startup_error() -> None:
     final_count = None
 
@@ -100,7 +100,7 @@ async def test_lifespan_startup_error() -> None:
     assert "Haberdasher failed to start" in str(exc_info.value)
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_lifespan_shutdown_error() -> None:
     async def counting_haberdasher():
         counter = Counter()
@@ -120,7 +120,7 @@ async def test_lifespan_shutdown_error() -> None:
     assert "Haberdasher failed to shut down" in str(exc_info.value)
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_lifespan_not_supported() -> None:
     final_count = None
 

@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import asyncio
+import functools
 import json
 import threading
 import time
 from http import HTTPStatus
 from typing import TYPE_CHECKING, NoReturn
 
+import anyio
+import anyio.lowlevel
 import pytest
 from pyqwest import (
     Client,
@@ -108,7 +111,7 @@ def test_sync_errors(code: Code, message: str, http_status: int) -> None:
     assert resp.http_status == http_status
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 @pytest.mark.parametrize(("code", "message", "http_status"), _errors)
 async def test_async_errors(code: Code, message: str, http_status: int) -> None:
     class ErrorHaberdasher(Haberdasher):
@@ -222,7 +225,7 @@ def test_sync_http_errors(
     assert resp.headers == response_headers
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 @pytest.mark.parametrize(
     ("response_status", "content", "response_headers", "code", "message"), _http_errors
 )
@@ -473,19 +476,21 @@ async def _execute(
 ) -> FullResponse:
     url = f"http://localhost{path}"
     if isinstance(transport, WSGITransport):
-        return await asyncio.to_thread(
-            SyncClient(transport).execute,
-            method=method,
-            url=url,
-            content=body,
-            headers=headers,
+        return await anyio.to_thread.run_sync(
+            functools.partial(
+                SyncClient(transport).execute,
+                method=method,
+                url=url,
+                content=body,
+                headers=headers,
+            )
         )
     return await Client(transport).execute(
         method=method, url=url, content=body, headers=headers
     )
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 @pytest.mark.parametrize(
     (
         "method",
@@ -557,7 +562,7 @@ def test_sync_client_timeout(client_timeout_ms, call_timeout_ms) -> None:
     timed_out.set()
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 @pytest.mark.parametrize(
     ("client_timeout_ms", "call_timeout_ms"), [(200, None), (None, 200)]
 )
@@ -577,7 +582,7 @@ async def test_async_client_timeout(client_timeout_ms, call_timeout_ms) -> None:
 
     class SleepingHaberdasher(Haberdasher):
         async def make_hat(self, _request, _ctx) -> NoReturn:
-            await asyncio.sleep(10)
+            await anyio.sleep(10)
             msg = "Should be timedout already"
             raise AssertionError(msg)
 
@@ -637,7 +642,7 @@ def test_sync_client_expired_timeout(
     assert not called
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 @pytest.mark.parametrize("client_timeout_ms", [None, 5000])
 @pytest.mark.parametrize("call_timeout_ms", [0, -1])
 @pytest.mark.parametrize("stream", [False, True])
@@ -684,7 +689,7 @@ class _BlockingHaberdasher(Haberdasher):
     client streams."""
 
     async def make_hat(self, _request, _ctx) -> NoReturn:
-        await asyncio.Event().wait()
+        await anyio.Event().wait()
         msg = "Should be cancelled already"
         raise AssertionError(msg)
 
@@ -695,7 +700,7 @@ class _BlockingHaberdasher(Haberdasher):
         raise AssertionError(msg)
 
     async def make_similar_hats(self, _request, _ctx) -> AsyncIterator[Hat]:
-        await asyncio.Event().wait()
+        await anyio.Event().wait()
         yield Hat()
 
 
@@ -708,7 +713,7 @@ class _ErrorRecordingInterceptor:
 
     async def on_end(self, _token, _ctx, error: Exception | None) -> None:
         # An on_end still gets to await after the deadline has passed.
-        await asyncio.sleep(0)
+        await anyio.lowlevel.checkpoint()
         self.errors.append(error)
 
     def on_start_sync(self, ctx) -> None:  # noqa: ARG002
@@ -720,7 +725,7 @@ class _ErrorRecordingInterceptor:
 
 async def _blocking_sizes() -> AsyncIterator[Size]:
     yield Size(inches=10)
-    await asyncio.Event().wait()
+    await anyio.Event().wait()
 
 
 async def _call_blocking(client: HaberdasherClient, method: str) -> None:
@@ -735,7 +740,8 @@ async def _call_blocking(client: HaberdasherClient, method: str) -> None:
                     pass
 
     # Fail instead of hanging if the server never responds.
-    await asyncio.wait_for(call(), 5)
+    with anyio.fail_after(5):
+        await call()
 
 
 _protocols = [ProtocolType.CONNECT, ProtocolType.GRPC, ProtocolType.GRPC_WEB]
@@ -801,13 +807,13 @@ class _SlowOnEnd:
         self.events.append(f"on_end {code}")
         late = ctx.timeout_ms is not None and ctx.timeout_ms <= 0
         try:
-            await (asyncio.sleep(0.1) if late else asyncio.Event().wait())
-        except asyncio.CancelledError:
+            await (anyio.sleep(0.1) if late else anyio.Event().wait())
+        except anyio.get_cancelled_exc_class():
             self.events.append("on_end cancelled")
             raise
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 @pytest.mark.parametrize("protocol", _protocols)
 @pytest.mark.parametrize("method", _blocking_methods)
 async def test_async_server_timeout(protocol: ProtocolType, method: str) -> None:
@@ -833,7 +839,7 @@ async def test_async_server_timeout(protocol: ProtocolType, method: str) -> None
     assert transport.app_exception is None
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 @pytest.mark.parametrize("protocol", _protocols)
 @pytest.mark.parametrize("method", _blocking_methods)
 # A slow handler, as on a loaded machine, lets the deadline pass before on_end.
@@ -861,8 +867,8 @@ async def test_async_server_timeout_in_on_end(
         protocol=protocol,
         http_client=Client(_ServerTimeoutTransport(transport, protocol)),
     ) as client:
-        with pytest.raises(ConnectError) as exc_info:
-            await asyncio.wait_for(call(), 5)
+        with pytest.raises(ConnectError) as exc_info, anyio.fail_after(5):
+            await call()
 
     assert exc_info.value.code == Code.DEADLINE_EXCEEDED
     assert exc_info.value.message == "Request timed out"
@@ -873,7 +879,7 @@ async def test_async_server_timeout_in_on_end(
     assert transport.app_exception is None
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 @pytest.mark.parametrize("protocol", _protocols)
 async def test_async_server_timeout_in_on_end_keeps_handler_error(
     protocol: ProtocolType,
@@ -893,8 +899,8 @@ async def test_async_server_timeout_in_on_end_keeps_handler_error(
         protocol=protocol,
         http_client=Client(_ServerTimeoutTransport(transport, protocol)),
     ) as client:
-        with pytest.raises(ConnectError) as exc_info:
-            await asyncio.wait_for(client.make_hat(request=Size(inches=10)), 5)
+        with pytest.raises(ConnectError) as exc_info, anyio.fail_after(5):
+            await client.make_hat(request=Size(inches=10))
 
     assert exc_info.value.code == Code.NOT_FOUND
     assert exc_info.value.message == "no such hat"
@@ -905,7 +911,7 @@ async def test_async_server_timeout_in_on_end_keeps_handler_error(
     assert transport.app_exception is None
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_async_server_timeout_writing_unary_response() -> None:
     """A unary response the client doesn't read is abandoned at the deadline.
 
@@ -935,7 +941,7 @@ async def test_async_server_timeout_writing_unary_response() -> None:
         sent.append(message["type"])
         if message["type"] == "http.response.body":
             # The client isn't reading, so the server never drains the body.
-            await asyncio.Event().wait()
+            await anyio.Event().wait()
 
     scope: HTTPScope = {
         "type": "http",
@@ -956,20 +962,19 @@ async def test_async_server_timeout_writing_unary_response() -> None:
         "extensions": None,
     }
 
-    task = asyncio.create_task(app(scope, receive, send))
-    done, _ = await asyncio.wait({task}, timeout=2)
-    if not done:
-        task.cancel()
+    with anyio.move_on_after(2) as deadline, pytest.raises(ConnectError) as exc_info:
+        await app(scope, receive, send)
+    if deadline.cancelled_caught:
         pytest.fail("the response write was not abandoned at the deadline")
-    with pytest.raises(ConnectError) as exc_info:
-        task.result()
     assert exc_info.value.code == Code.DEADLINE_EXCEEDED
 
     assert sent == ["http.response.start", "http.response.body"]
     assert errors == [None]
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
+# On trio, a write after the deadline is cancelled even when it would not wait.
+@pytest.mark.asyncio_only
 async def test_async_unary_response_written_after_deadline() -> None:
     """A handler that finishes late without suspending still gets its reply out.
 
@@ -995,7 +1000,10 @@ async def _sizes() -> AsyncIterator[Size]:
     yield Size(inches=10)
 
 
-@pytest.mark.asyncio
+# The client reports an asyncio cancellation as CANCELED, while a trio
+# cancellation propagates to its scope.
+@pytest.mark.anyio
+@pytest.mark.asyncio_only
 @pytest.mark.parametrize("protocol", _protocols)
 @pytest.mark.parametrize("method", _blocking_methods)
 async def test_async_server_cancelled(protocol: ProtocolType, method: str) -> None:
@@ -1050,7 +1058,7 @@ def _assert_on_end_error(error: Exception | None, app_exception: BaseException) 
         assert error.__cause__ is app_exception
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 @pytest.mark.parametrize(
     ("exception", "message"),
     [
@@ -1107,7 +1115,7 @@ async def test_async_unhandled_exception_reraised(
         _assert_on_end_error(interceptor.errors[0], app_exceptions[0])
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 @pytest.mark.parametrize("protocol", _protocols)
 @pytest.mark.parametrize("method", ["unary", "server_stream"])
 async def test_async_handler_timeout_error_reraised(
@@ -1151,7 +1159,7 @@ async def test_async_handler_timeout_error_reraised(
     assert isinstance(app_exceptions[0], TimeoutError)
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 @pytest.mark.parametrize("protocol", _protocols)
 @pytest.mark.parametrize(
     ("exception", "message"),
@@ -1195,7 +1203,7 @@ async def test_async_unhandled_exception_reraised_stream(
     _assert_on_end_error(interceptor.errors[0], app_exceptions[0])
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_async_connect_exception_not_reraised() -> None:
     class RaisingHaberdasher(Haberdasher):
         async def make_hat(self, _request, _ctx) -> NoReturn:
@@ -1214,7 +1222,7 @@ async def test_async_connect_exception_not_reraised() -> None:
     assert transport.app_exception is None
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_async_connect_exception_not_reraised_stream() -> None:
     class RaisingHaberdasher(Haberdasher):
         def make_similar_hats(self, _request: Size, _ctx: RequestContext) -> NoReturn:
@@ -1234,7 +1242,7 @@ async def test_async_connect_exception_not_reraised_stream() -> None:
     assert transport.app_exception is None
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_async_http_exception_not_reraised() -> None:
     class RaisingHaberdasher(Haberdasher):
         async def make_hat(self, _request, _ctx) -> NoReturn:
@@ -1446,7 +1454,7 @@ _malformed_requests = [
 ]
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 @pytest.mark.parametrize(
     ("http_method", "method", "headers", "body"), _malformed_requests
 )

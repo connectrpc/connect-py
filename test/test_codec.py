@@ -64,7 +64,7 @@ class SimpleHaberdasherSync(HaberdasherSync):
         return Hat(size=request.inches, color="blue")
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_custom_codec() -> None:
     logged_content: bytes = b""
 
