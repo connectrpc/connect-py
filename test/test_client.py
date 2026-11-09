@@ -214,6 +214,7 @@ def test_request_content_sync(protocol: ProtocolType) -> None:
 
 
 # Workaround pyqwest testing transports raising the response error instead of request.
+# TODO: Cleanup after https://github.com/curioswitch/pyqwest/pull/290
 
 
 class _FailingTransport(Transport):
