@@ -353,7 +353,7 @@ class ConnectClient:
             # cancel scope unchanged.
             raise ConnectError(Code.CANCELED, "Request was cancelled") from e
         except Exception as e:
-            raise ConnectError(Code.UNAVAILABLE, str(e)) from e
+            raise _client_shared.map_error(e) from e
 
     async def _send_request_client_stream(
         self, request: AsyncIterator[REQ], ctx: RequestContext[REQ, RES], /
@@ -453,7 +453,7 @@ class ConnectClient:
                 if reader and resp:
                     reader.handle_response_complete(resp, rst_err)
                 raise rst_err from e
-            raise ConnectError(Code.UNAVAILABLE, str(e)) from e
+            raise _client_shared.map_error(e) from e
 
 
 def _request_content(

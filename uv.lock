@@ -243,7 +243,6 @@ dev = [
     { name = "protoc-gen-connectrpc" },
     { name = "protoc-gen-grpc-py" },
     { name = "protoc-gen-py" },
-    { name = "pyqwest" },
     { name = "pytest" },
     { name = "pytest-cov" },
     { name = "pytest-timeout" },
@@ -268,7 +267,6 @@ test = [
     { name = "example" },
     { name = "hypercorn" },
     { name = "protobuf" },
-    { name = "pyqwest" },
     { name = "pytest" },
     { name = "pytest-timeout" },
     { name = "trio" },
@@ -278,7 +276,7 @@ test = [
 [package.metadata]
 requires-dist = [
     { name = "protobuf-py", specifier = ">=0.7.0" },
-    { name = "pyqwest", specifier = ">=0.12.0" },
+    { name = "pyqwest", specifier = ">=0.14.0" },
     { name = "typing-extensions", specifier = ">=4.16.0" },
 ]
 
@@ -303,7 +301,6 @@ dev = [
     { name = "protoc-gen-connectrpc", editable = "protoc-gen-connectrpc" },
     { name = "protoc-gen-grpc-py", specifier = "==0.5.0" },
     { name = "protoc-gen-py", specifier = "==0.7.0" },
-    { name = "pyqwest", specifier = ">=0.14.0" },
     { name = "pytest", specifier = "==9.2.0" },
     { name = "pytest-cov", specifier = "==7.1.0" },
     { name = "pytest-timeout", specifier = "==2.5.0" },
@@ -328,7 +325,6 @@ test = [
     { name = "example", editable = "example" },
     { name = "hypercorn", specifier = "==0.18.0" },
     { name = "protobuf", specifier = ">=5.28" },
-    { name = "pyqwest", specifier = ">=0.14.0" },
     { name = "pytest", specifier = "==9.2.0" },
     { name = "pytest-timeout", specifier = "==2.5.0" },
     { name = "trio", specifier = "==0.35.0" },

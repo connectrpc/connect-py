@@ -31,7 +31,7 @@ classifiers = [
 ]
 dependencies = [
   "protobuf-py>=0.7.0",
-  "pyqwest>=0.12.0",
+  "pyqwest>=0.14.0",
   "typing_extensions>=4.16.0",
 ]
 
@@ -89,8 +89,6 @@ test = [
   "brotli==1.2.1",
   "hypercorn==0.18.0",
   "protobuf>=5.28",
-  # ASGITransport runs the application under trio since 0.14.0.
-  "pyqwest>=0.14.0",
   "pytest==9.2.0",
   "pytest-timeout==2.5.0",
   "trio==0.35.0",
