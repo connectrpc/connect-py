@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, TypeVar
 from pyqwest import (
     Headers as HTTPHeaders,
     ReadError,
+    RemoteProtocolError,
     StreamError,
     StreamErrorCode,
     WriteError,
@@ -38,7 +39,7 @@ def prepare_get_params(
 
 def map_error(e: Exception) -> ConnectError:
     """Map an exception raised while sending a request to a ConnectError."""
-    if isinstance(e, (ConnectionError, ReadError, WriteError)):
+    if isinstance(e, (ConnectionError, ReadError, RemoteProtocolError, WriteError)):
         return ConnectError(Code.UNAVAILABLE, str(e))
     return ConnectError(Code.INTERNAL, str(e))
 
