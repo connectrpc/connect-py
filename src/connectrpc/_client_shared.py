@@ -3,7 +3,13 @@ from __future__ import annotations
 import base64
 from typing import TYPE_CHECKING, TypeVar
 
-from pyqwest import Headers as HTTPHeaders, StreamError, StreamErrorCode
+from pyqwest import (
+    Headers as HTTPHeaders,
+    ReadError,
+    StreamError,
+    StreamErrorCode,
+    WriteError,
+)
 
 from ._protocol_connect import CONNECT_PROTOCOL_VERSION
 from .code import Code
@@ -28,6 +34,13 @@ def prepare_get_params(
     params["encoding"] = codec.name()
     params["message"] = base64.urlsafe_b64encode(request_data).decode("ascii")
     return params
+
+
+def map_error(e: Exception) -> ConnectError:
+    """Map an exception raised while sending a request to a ConnectError."""
+    if isinstance(e, (ConnectionError, ReadError, WriteError)):
+        return ConnectError(Code.UNAVAILABLE, str(e))
+    return ConnectError(Code.INTERNAL, str(e))
 
 
 # https://github.com/connectrpc/connect-go/blob/59cc6973156cd9164d6bea493b1d106ed894f2df/error.go#L393

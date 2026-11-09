@@ -353,7 +353,7 @@ class ConnectClientSync:
         except ConnectError:
             raise
         except Exception as e:
-            raise ConnectError(Code.UNAVAILABLE, str(e)) from e
+            raise _client_shared.map_error(e) from e
 
     def _send_request_client_stream(
         self, request: Iterator[REQ], ctx: RequestContext[REQ, RES], /
@@ -450,7 +450,7 @@ class ConnectClientSync:
                 if reader and resp:
                     reader.handle_response_complete(resp, rst_err)
                 raise rst_err from e
-            raise ConnectError(Code.UNAVAILABLE, str(e)) from e
+            raise _client_shared.map_error(e) from e
 
 
 def _request_content(

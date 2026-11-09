@@ -16,6 +16,8 @@ from pyqwest import (
 from pyqwest.testing import ASGITransport, WSGITransport
 
 from connectrpc.client import ResponseMetadata
+from connectrpc.code import Code
+from connectrpc.errors import ConnectError
 from connectrpc.protocol import ProtocolType
 
 from ._util import call
@@ -209,3 +211,73 @@ def test_request_content_sync(protocol: ProtocolType) -> None:
     assert isinstance(contents["MakeSimilarHats"], bytes)
     assert not isinstance(contents["MakeFlexibleHat"], bytes)
     assert not isinstance(contents["MakeVariousHats"], bytes)
+
+
+# Workaround pyqwest testing transports raising the response error instead of request.
+
+
+class _FailingTransport(Transport):
+    async def execute(self, request: Request) -> Response:
+        assert not isinstance(request.content, bytes)
+        async for _ in request.content:
+            pass
+        pytest.fail("request content did not raise")
+
+
+class _FailingSyncTransport(SyncTransport):
+    def execute_sync(self, request: SyncRequest) -> SyncResponse:
+        assert not isinstance(request.content, bytes)
+        for _ in request.content:
+            pass
+        pytest.fail("request content did not raise")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("protocol", _protocols)
+async def test_request_iterator_error_async(protocol: ProtocolType) -> None:
+    """A request iterator that raises fails the call with INTERNAL, chained from it."""
+    error = RuntimeError("Test error")
+
+    async def sizes() -> AsyncIterator[Size]:
+        yield Size(inches=10)
+        raise error
+
+    async with HaberdasherClient(
+        "http://localhost",
+        protocol=protocol,
+        http_client=Client(transport=_FailingTransport()),
+    ) as client:
+        with pytest.raises(ConnectError) as exc_info:
+            await client.make_flexible_hat(sizes())
+        assert exc_info.value.code == Code.INTERNAL
+        assert exc_info.value.__cause__ is error
+        with pytest.raises(ConnectError) as exc_info:
+            async for _ in client.make_various_hats(sizes()):
+                pass
+        assert exc_info.value.code == Code.INTERNAL
+        assert exc_info.value.__cause__ is error
+
+
+@pytest.mark.parametrize("protocol", _protocols)
+def test_request_iterator_error_sync(protocol: ProtocolType) -> None:
+    """A request iterator that raises fails the call with INTERNAL, chained from it."""
+    error = RuntimeError("Test error")
+
+    def sizes() -> Iterator[Size]:
+        yield Size(inches=10)
+        raise error
+
+    with HaberdasherClientSync(
+        "http://localhost",
+        protocol=protocol,
+        http_client=SyncClient(_FailingSyncTransport()),
+    ) as client:
+        with pytest.raises(ConnectError) as exc_info:
+            client.make_flexible_hat(sizes())
+        assert exc_info.value.code == Code.INTERNAL
+        assert exc_info.value.__cause__ is error
+        with pytest.raises(ConnectError) as exc_info:
+            for _ in client.make_various_hats(sizes()):
+                pass
+        assert exc_info.value.code == Code.INTERNAL
+        assert exc_info.value.__cause__ is error
