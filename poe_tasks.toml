@@ -16,7 +16,7 @@ args = [{ name = "_version", required = true, help = "The type of version bump t
 
 [tasks.check]
 help = "Run smoke checks"
-sequence = ["lint", "test", "test-otel"]
+sequence = ["lint", "test", "test-fastapi", "test-otel"]
 
 [tasks.checkgenerate]
 help = "Used in CI to verify that generate doesn't produce a diff"
