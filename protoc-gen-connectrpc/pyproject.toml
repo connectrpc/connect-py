@@ -44,7 +44,10 @@ classifiers = [
   "Topic :: Software Development :: Compilers",
   "Topic :: System :: Networking",
 ]
-dependencies = ["protobuf-py>=0.7.0"]
+dependencies = [
+  "connectrpc==0.13.0",
+  "protobuf-py>=0.7.0",
+]
 
 [project.urls]
 Homepage = "https://github.com/connectrpc/connect-py"
@@ -61,3 +64,6 @@ build-backend = "uv_build"
 [tool.uv.build-backend]
 module-name = "protoc_gen_connectrpc"
 module-root = ""
+
+[tool.uv.sources]
+connectrpc = { workspace = true }

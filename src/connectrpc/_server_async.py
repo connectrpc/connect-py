@@ -4,13 +4,16 @@ import base64
 import contextlib
 import functools
 import inspect
-from abc import ABC, abstractmethod
+from abc import ABC
 from dataclasses import dataclass, replace
 from http import HTTPStatus
-from typing import TYPE_CHECKING, Any, Generic, Protocol, TypeVar, cast
+from typing import TYPE_CHECKING, Any, Generic, Protocol, TypeVar, cast, overload
 from urllib.parse import parse_qs
 
+from typing_extensions import deprecated
+
 from ._codec import Codec, get_default_codecs
+from ._codegen import method_local_name
 from ._compression import (
     negotiate_compression,
     resolve_compressions,
@@ -40,6 +43,8 @@ from ._server_shared import (
     EndpointClientStream,
     EndpointServerStream,
     EndpointUnary,
+    method_info,
+    method_url,
 )
 from ._shared import decode_message, decompress
 from .code import Code
@@ -67,7 +72,9 @@ if TYPE_CHECKING:
         HTTPScope,
         Scope,
     )
+    from protobuf import DescService
 
+    from . import _server_shared
     from ._server_trio import TrioLoop, TrioTimeout
     from .compression import Compression
 else:
@@ -253,10 +260,23 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
 
     _resolved_endpoints: Mapping[str, Endpoint] | None
 
-    @property
-    @abstractmethod
-    def path(self) -> str: ...
+    @overload
+    def __init__(
+        self,
+        *,
+        service: _SVC | AsyncGenerator[_SVC],
+        desc: DescService,
+        interceptors: Iterable[Interceptor] = (),
+        read_max_bytes: int | None = DEFAULT_READ_MAX_BYTES,
+        compressions: Iterable[Compression] | None = None,
+        codecs: Iterable[Codec] | None = None,
+    ) -> None: ...
 
+    @overload
+    @deprecated(
+        "Pass desc instead of endpoints. Regenerate code with the current version of "
+        "protoc-gen-connectrpc."
+    )
     def __init__(
         self,
         *,
@@ -266,14 +286,27 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
         read_max_bytes: int | None = DEFAULT_READ_MAX_BYTES,
         compressions: Iterable[Compression] | None = None,
         codecs: Iterable[Codec] | None = None,
+    ) -> None: ...
+
+    def __init__(
+        self,
+        *,
+        service: _SVC | AsyncGenerator[_SVC],
+        desc: DescService | None = None,
+        endpoints: Callable[[_SVC], Mapping[str, Endpoint]] | None = None,
+        interceptors: Iterable[Interceptor] = (),
+        read_max_bytes: int | None = DEFAULT_READ_MAX_BYTES,
+        compressions: Iterable[Compression] | None = None,
+        codecs: Iterable[Codec] | None = None,
     ) -> None:
         """Initialize the ASGI application.
 
         Args:
             service: The service instance or async generator that yields the service during lifespan.
-            endpoints: A callable that takes the service instance and returns a mapping of URL
-                paths to endpoints. Typically provided directly by generated code from the
-                Connect Python plugin.
+            desc: The descriptor of the service. Method implementations are looked up on the
+                service instance by name using the same conventions as generated code.
+            endpoints: Deprecated, pass desc instead. A callable that takes the service instance
+                and returns a mapping of URL paths to endpoints.
             interceptors: A sequence of interceptors to apply to the endpoints.
             read_max_bytes: Maximum size of request messages.
             compressions: Supported compression algorithms. If unset, defaults to gzip.
@@ -284,7 +317,23 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
         """
         super().__init__()
         self._service = service
-        self._endpoints = endpoints
+        self._desc: DescService | None
+        self._endpoints: Callable[[_SVC], Mapping[str, Endpoint]] | None
+        self._path: str | None
+        if desc is not None:
+            if endpoints is not None:
+                msg = "only one of desc or endpoints may be provided"
+                raise ValueError(msg)
+            self._desc = desc
+            self._endpoints = None
+            self._path = f"/{desc.type_name}"
+        elif endpoints is not None:
+            self._desc = None
+            self._endpoints = endpoints
+            self._path = None
+        else:
+            msg = "one of desc or endpoints must be provided"
+            raise ValueError(msg)
         self._metadata_interceptors, self._interceptors = (
             split_leading_metadata_interceptors(interceptors)
         )
@@ -293,6 +342,14 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
         self._compressions = resolve_compressions(compressions)
         codecs = codecs if codecs is not None else get_default_codecs()
         self._codecs = {codec.name(): codec for codec in codecs}
+
+    @property
+    def path(self) -> str:
+        """Returns the URL path to mount the application to when serving multiple applications."""
+        if self._path is None:
+            msg = "path must be overridden when constructed with endpoints"
+            raise NotImplementedError(msg)
+        return self._path
 
     async def __call__(
         self, scope: Scope, receive: ASGIReceiveCallable, send: ASGISendCallable
@@ -788,8 +845,38 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
         await send({"type": "http.response.body", "body": body, "more_body": False})
         return True
 
+    def _build_endpoints(self, service: _SVC) -> Mapping[str, _server_shared.Endpoint]:
+        """Build the endpoints for the service.
+
+        This method is overridden by generated code in protobuf=google mode so must have
+        a stable API.
+        """
+        if self._desc is None:
+            msg = "endpoints cannot be built without desc"
+            raise RuntimeError(msg)
+        endpoints: dict[str, _server_shared.Endpoint] = {}
+        for method in self._desc.methods:
+            info = method_info(method)
+            function = getattr(service, method_local_name(method))
+            endpoint: Endpoint
+            match method.method_kind:
+                case "unary":
+                    endpoint = EndpointUnary(method=info, function=function)
+                case "client_streaming":
+                    endpoint = EndpointClientStream(method=info, function=function)
+                case "server_streaming":
+                    endpoint = EndpointServerStream(method=info, function=function)
+                case "bidi_streaming":
+                    endpoint = EndpointBidiStream(method=info, function=function)
+            endpoints[method_url(method)] = endpoint
+        return endpoints
+
     def _resolve_endpoints(self, service: _SVC) -> Mapping[str, Endpoint]:
-        resolved_endpoints = self._endpoints(service)
+        resolved_endpoints = (
+            self._endpoints(service)
+            if self._endpoints is not None
+            else cast("Mapping[str, Endpoint]", self._build_endpoints(service))
+        )
         if self._interceptors:
             resolved_endpoints = {
                 path: _apply_interceptors(

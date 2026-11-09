@@ -15,7 +15,7 @@ from connectrpc.client import ConnectClient, ConnectClientSync
 from connectrpc.code import Code
 from connectrpc.errors import ConnectError
 from connectrpc.method import IdempotencyLevel, MethodInfo, StreamType
-from connectrpc.server import ConnectASGIApplication, ConnectWSGIApplication, DEFAULT_READ_MAX_BYTES, Endpoint, EndpointSync
+from connectrpc.server import ConnectASGIApplication, ConnectWSGIApplication, DEFAULT_READ_MAX_BYTES
 from protobuf import DescService
 from typing_extensions import deprecated
 
@@ -59,29 +59,12 @@ class DeprecatedServiceASGIApplication(ConnectASGIApplication[DeprecatedService]
     ) -> None:
         super().__init__(
             service=service,
-            endpoints=lambda svc: {
-                "/connectrpc.example.DeprecatedService/Unary": Endpoint.unary(
-                    method=MethodInfo(
-                        name="Unary",
-                        service_name="connectrpc.example.DeprecatedService",
-                        input=DeprecatedRequest,
-                        output=DeprecatedResponse,
-                        idempotency_level=IdempotencyLevel.UNKNOWN,
-                        stream_type=StreamType.UNARY,
-                    ),
-                    function=svc.unary,
-                ),
-            },
+            desc=DeprecatedService.desc(),
             interceptors=interceptors,
             read_max_bytes=read_max_bytes,
             compressions=compressions,
             codecs=codecs,
         )
-
-    @property
-    def path(self) -> str:
-        """Returns the URL path to mount the application to when serving multiple applications."""
-        return "/connectrpc.example.DeprecatedService"
 
 
 @_deprecated("connectrpc.example.DeprecatedService is deprecated.", category=None)
@@ -124,7 +107,7 @@ class DeprecatedServiceSync(Protocol):
         return next(s for s in deprecated_pb.desc().services if s.type_name == 'connectrpc.example.DeprecatedService')
 
 @_deprecated("connectrpc.example.DeprecatedService is deprecated.", category=None)
-class DeprecatedServiceWSGIApplication(ConnectWSGIApplication):
+class DeprecatedServiceWSGIApplication(ConnectWSGIApplication[DeprecatedServiceSync]):
     def __init__(
         self,
         service: DeprecatedServiceSync,
@@ -134,29 +117,13 @@ class DeprecatedServiceWSGIApplication(ConnectWSGIApplication):
         codecs: Iterable[Codec] | None = None,
     ) -> None:
         super().__init__(
-            endpoints={
-                "/connectrpc.example.DeprecatedService/Unary": EndpointSync.unary(
-                    method=MethodInfo(
-                        name="Unary",
-                        service_name="connectrpc.example.DeprecatedService",
-                        input=DeprecatedRequest,
-                        output=DeprecatedResponse,
-                        idempotency_level=IdempotencyLevel.UNKNOWN,
-                        stream_type=StreamType.UNARY,
-                    ),
-                    function=service.unary,
-                ),
-            },
+            service=service,
+            desc=DeprecatedServiceSync.desc(),
             interceptors=interceptors,
             read_max_bytes=read_max_bytes,
             compressions=compressions,
             codecs=codecs,
         )
-
-    @property
-    def path(self) -> str:
-        """Returns the URL path to mount the application to when serving multiple applications."""
-        return "/connectrpc.example.DeprecatedService"
 
 
 @_deprecated("connectrpc.example.DeprecatedService is deprecated.", category=None)
@@ -226,62 +193,12 @@ class ServiceWithDeprecatedMethodsASGIApplication(ConnectASGIApplication[Service
     ) -> None:
         super().__init__(
             service=service,
-            endpoints=lambda svc: {
-                "/connectrpc.example.ServiceWithDeprecatedMethods/Deprecated": Endpoint.unary(
-                    method=MethodInfo(
-                        name="Deprecated",
-                        service_name="connectrpc.example.ServiceWithDeprecatedMethods",
-                        input=DeprecatedRequest,
-                        output=DeprecatedResponse,
-                        idempotency_level=IdempotencyLevel.UNKNOWN,
-                        stream_type=StreamType.UNARY,
-                    ),
-                    function=svc.deprecated,
-                ),
-                "/connectrpc.example.ServiceWithDeprecatedMethods/Unary": Endpoint.unary(
-                    method=MethodInfo(
-                        name="Unary",
-                        service_name="connectrpc.example.ServiceWithDeprecatedMethods",
-                        input=DeprecatedRequest,
-                        output=DeprecatedResponse,
-                        idempotency_level=IdempotencyLevel.UNKNOWN,
-                        stream_type=StreamType.UNARY,
-                    ),
-                    function=svc.unary,
-                ),
-                "/connectrpc.example.ServiceWithDeprecatedMethods/ServerStream": Endpoint.server_stream(
-                    method=MethodInfo(
-                        name="ServerStream",
-                        service_name="connectrpc.example.ServiceWithDeprecatedMethods",
-                        input=DeprecatedRequest,
-                        output=DeprecatedResponse,
-                        idempotency_level=IdempotencyLevel.UNKNOWN,
-                        stream_type=StreamType.SERVER_STREAM,
-                    ),
-                    function=svc.server_stream,
-                ),
-                "/connectrpc.example.ServiceWithDeprecatedMethods/NotDeprecated": Endpoint.unary(
-                    method=MethodInfo(
-                        name="NotDeprecated",
-                        service_name="connectrpc.example.ServiceWithDeprecatedMethods",
-                        input=DeprecatedRequest,
-                        output=DeprecatedResponse,
-                        idempotency_level=IdempotencyLevel.UNKNOWN,
-                        stream_type=StreamType.UNARY,
-                    ),
-                    function=svc.not_deprecated,
-                ),
-            },
+            desc=ServiceWithDeprecatedMethods.desc(),
             interceptors=interceptors,
             read_max_bytes=read_max_bytes,
             compressions=compressions,
             codecs=codecs,
         )
-
-    @property
-    def path(self) -> str:
-        """Returns the URL path to mount the application to when serving multiple applications."""
-        return "/connectrpc.example.ServiceWithDeprecatedMethods"
 
 
 class ServiceWithDeprecatedMethodsClient(ConnectClient):
@@ -408,7 +325,7 @@ class ServiceWithDeprecatedMethodsSync(Protocol):
         """Returns the descriptor for this service."""
         return next(s for s in deprecated_pb.desc().services if s.type_name == 'connectrpc.example.ServiceWithDeprecatedMethods')
 
-class ServiceWithDeprecatedMethodsWSGIApplication(ConnectWSGIApplication):
+class ServiceWithDeprecatedMethodsWSGIApplication(ConnectWSGIApplication[ServiceWithDeprecatedMethodsSync]):
     def __init__(
         self,
         service: ServiceWithDeprecatedMethodsSync,
@@ -418,62 +335,13 @@ class ServiceWithDeprecatedMethodsWSGIApplication(ConnectWSGIApplication):
         codecs: Iterable[Codec] | None = None,
     ) -> None:
         super().__init__(
-            endpoints={
-                "/connectrpc.example.ServiceWithDeprecatedMethods/Deprecated": EndpointSync.unary(
-                    method=MethodInfo(
-                        name="Deprecated",
-                        service_name="connectrpc.example.ServiceWithDeprecatedMethods",
-                        input=DeprecatedRequest,
-                        output=DeprecatedResponse,
-                        idempotency_level=IdempotencyLevel.UNKNOWN,
-                        stream_type=StreamType.UNARY,
-                    ),
-                    function=service.deprecated,
-                ),
-                "/connectrpc.example.ServiceWithDeprecatedMethods/Unary": EndpointSync.unary(
-                    method=MethodInfo(
-                        name="Unary",
-                        service_name="connectrpc.example.ServiceWithDeprecatedMethods",
-                        input=DeprecatedRequest,
-                        output=DeprecatedResponse,
-                        idempotency_level=IdempotencyLevel.UNKNOWN,
-                        stream_type=StreamType.UNARY,
-                    ),
-                    function=service.unary,
-                ),
-                "/connectrpc.example.ServiceWithDeprecatedMethods/ServerStream": EndpointSync.server_stream(
-                    method=MethodInfo(
-                        name="ServerStream",
-                        service_name="connectrpc.example.ServiceWithDeprecatedMethods",
-                        input=DeprecatedRequest,
-                        output=DeprecatedResponse,
-                        idempotency_level=IdempotencyLevel.UNKNOWN,
-                        stream_type=StreamType.SERVER_STREAM,
-                    ),
-                    function=service.server_stream,
-                ),
-                "/connectrpc.example.ServiceWithDeprecatedMethods/NotDeprecated": EndpointSync.unary(
-                    method=MethodInfo(
-                        name="NotDeprecated",
-                        service_name="connectrpc.example.ServiceWithDeprecatedMethods",
-                        input=DeprecatedRequest,
-                        output=DeprecatedResponse,
-                        idempotency_level=IdempotencyLevel.UNKNOWN,
-                        stream_type=StreamType.UNARY,
-                    ),
-                    function=service.not_deprecated,
-                ),
-            },
+            service=service,
+            desc=ServiceWithDeprecatedMethodsSync.desc(),
             interceptors=interceptors,
             read_max_bytes=read_max_bytes,
             compressions=compressions,
             codecs=codecs,
         )
-
-    @property
-    def path(self) -> str:
-        """Returns the URL path to mount the application to when serving multiple applications."""
-        return "/connectrpc.example.ServiceWithDeprecatedMethods"
 
 
 class ServiceWithDeprecatedMethodsClientSync(ConnectClientSync):
