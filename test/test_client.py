@@ -5,6 +5,8 @@ from typing import TYPE_CHECKING
 import pytest
 from pyqwest import (
     Client,
+    ReadError,
+    RemoteProtocolError,
     Request,
     Response,
     SyncClient,
@@ -12,10 +14,13 @@ from pyqwest import (
     SyncResponse,
     SyncTransport,
     Transport,
+    WriteError,
 )
 from pyqwest.testing import ASGITransport, WSGITransport
 
 from connectrpc.client import ResponseMetadata
+from connectrpc.code import Code
+from connectrpc.errors import ConnectError
 from connectrpc.protocol import ProtocolType
 
 from ._util import call
@@ -209,3 +214,136 @@ def test_request_content_sync(protocol: ProtocolType) -> None:
     assert isinstance(contents["MakeSimilarHats"], bytes)
     assert not isinstance(contents["MakeFlexibleHat"], bytes)
     assert not isinstance(contents["MakeVariousHats"], bytes)
+
+
+# Workaround pyqwest testing transports raising the response error instead of request.
+# TODO: Cleanup after https://github.com/curioswitch/pyqwest/pull/290
+
+
+class _FailingTransport(Transport):
+    async def execute(self, request: Request) -> Response:
+        assert not isinstance(request.content, bytes)
+        async for _ in request.content:
+            pass
+        pytest.fail("request content did not raise")
+
+
+class _FailingSyncTransport(SyncTransport):
+    def execute_sync(self, request: SyncRequest) -> SyncResponse:
+        assert not isinstance(request.content, bytes)
+        for _ in request.content:
+            pass
+        pytest.fail("request content did not raise")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("protocol", _protocols)
+async def test_request_iterator_error_async(protocol: ProtocolType) -> None:
+    """A request iterator that raises fails the call with INTERNAL, chained from it."""
+    error = RuntimeError("Test error")
+
+    async def sizes() -> AsyncIterator[Size]:
+        yield Size(inches=10)
+        raise error
+
+    async with HaberdasherClient(
+        "http://localhost",
+        protocol=protocol,
+        http_client=Client(transport=_FailingTransport()),
+    ) as client:
+        with pytest.raises(ConnectError) as exc_info:
+            await client.make_flexible_hat(sizes())
+        assert exc_info.value.code == Code.INTERNAL
+        assert exc_info.value.__cause__ is error
+        with pytest.raises(ConnectError) as exc_info:
+            async for _ in client.make_various_hats(sizes()):
+                pass
+        assert exc_info.value.code == Code.INTERNAL
+        assert exc_info.value.__cause__ is error
+
+
+@pytest.mark.parametrize("protocol", _protocols)
+def test_request_iterator_error_sync(protocol: ProtocolType) -> None:
+    """A request iterator that raises fails the call with INTERNAL, chained from it."""
+    error = RuntimeError("Test error")
+
+    def sizes() -> Iterator[Size]:
+        yield Size(inches=10)
+        raise error
+
+    with HaberdasherClientSync(
+        "http://localhost",
+        protocol=protocol,
+        http_client=SyncClient(_FailingSyncTransport()),
+    ) as client:
+        with pytest.raises(ConnectError) as exc_info:
+            client.make_flexible_hat(sizes())
+        assert exc_info.value.code == Code.INTERNAL
+        assert exc_info.value.__cause__ is error
+        with pytest.raises(ConnectError) as exc_info:
+            for _ in client.make_various_hats(sizes()):
+                pass
+        assert exc_info.value.code == Code.INTERNAL
+        assert exc_info.value.__cause__ is error
+
+
+_transport_errors = [
+    (ConnectionError("Test error"), Code.UNAVAILABLE),
+    (ReadError("Test error"), Code.UNAVAILABLE),
+    (RemoteProtocolError("Test error"), Code.UNAVAILABLE),
+    (WriteError("Test error"), Code.UNAVAILABLE),
+    (RuntimeError("Test error"), Code.INTERNAL),
+]
+
+
+class _RaisingTransport(Transport):
+    def __init__(self, error: Exception) -> None:
+        self._error = error
+
+    async def execute(self, request: Request) -> Response:
+        del request
+        raise self._error
+
+
+class _RaisingSyncTransport(SyncTransport):
+    def __init__(self, error: Exception) -> None:
+        self._error = error
+
+    def execute_sync(self, request: SyncRequest) -> SyncResponse:
+        del request
+        raise self._error
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("error", "code"), _transport_errors)
+async def test_transport_error_async(error: Exception, code: Code) -> None:
+    """An I/O failure is UNAVAILABLE and any other transport failure is INTERNAL."""
+    async with HaberdasherClient(
+        "http://localhost", http_client=Client(transport=_RaisingTransport(error))
+    ) as client:
+        with pytest.raises(ConnectError) as exc_info:
+            await client.make_hat(Size(inches=10))
+        assert exc_info.value.code == code
+        assert exc_info.value.__cause__ is error
+        with pytest.raises(ConnectError) as exc_info:
+            async for _ in client.make_similar_hats(Size(inches=10)):
+                pass
+        assert exc_info.value.code == code
+        assert exc_info.value.__cause__ is error
+
+
+@pytest.mark.parametrize(("error", "code"), _transport_errors)
+def test_transport_error_sync(error: Exception, code: Code) -> None:
+    """An I/O failure is UNAVAILABLE and any other transport failure is INTERNAL."""
+    with HaberdasherClientSync(
+        "http://localhost", http_client=SyncClient(_RaisingSyncTransport(error))
+    ) as client:
+        with pytest.raises(ConnectError) as exc_info:
+            client.make_hat(Size(inches=10))
+        assert exc_info.value.code == code
+        assert exc_info.value.__cause__ is error
+        with pytest.raises(ConnectError) as exc_info:
+            for _ in client.make_similar_hats(Size(inches=10)):
+                pass
+        assert exc_info.value.code == code
+        assert exc_info.value.__cause__ is error
