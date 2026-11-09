@@ -384,7 +384,7 @@ requires-dist = [
     { name = "connectrpc", editable = "." },
     { name = "fastapi", specifier = ">=0.118.0" },
     { name = "protobuf-py", specifier = ">=0.7.0" },
-    { name = "pydantic", specifier = ">=2.10.0" },
+    { name = "pydantic", specifier = ">=2.14.0" },
 ]
 
 [package.metadata.requires-dev]
