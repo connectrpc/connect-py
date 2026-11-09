@@ -6,6 +6,7 @@ on:
     paths:
       - "docs/**"
       - "src/**"
+      - "connectrpc-fastapi/**"
       - "connectrpc-grpchealth/**"
       - "connectrpc-grpcreflect/**"
       - "connectrpc-otel/**"
@@ -15,6 +16,7 @@ on:
     paths:
       - "docs/**"
       - "src/**"
+      - "connectrpc-fastapi/**"
       - "connectrpc-grpchealth/**"
       - "connectrpc-grpcreflect/**"
       - "connectrpc-otel/**"

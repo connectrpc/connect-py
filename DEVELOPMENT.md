@@ -35,6 +35,9 @@ uv run poe format
 # Run unit tests
 uv run poe test
 
+# Run connectrpc-fastapi tests (not part of `check`)
+uv run poe test-fastapi
+
 # Run connectrpc-grpcreflect tests (not part of `check`)
 uv run poe test-grpcreflect
 

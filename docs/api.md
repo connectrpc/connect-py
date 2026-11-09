@@ -51,3 +51,5 @@
             - WatcherSync
 
 ::: connectrpc_otel
+
+::: connectrpc_fastapi

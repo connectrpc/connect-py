@@ -107,6 +107,7 @@ help = "Apply type checking to Python files"
 # https://docs.astral.sh/ty/reference/typing-faq/#does-ty-support-monorepos
 # https://github.com/astral-sh/ty/issues/819
 sequence = [
+  { cmd = "ty check --project connectrpc-fastapi" },
   { cmd = "ty check --project connectrpc-grpchealth" },
   { cmd = "ty check --project connectrpc-grpcreflect" },
   { cmd = "ty check --project connectrpc-otel" },
@@ -122,6 +123,11 @@ cmd = "pytest"
 help = "Run conformance tests. These are very slow"
 cmd = "pytest"
 cwd = "conformance"
+
+[tasks.test-fastapi]
+help = "Run connectrpc-fastapi tests"
+cmd = "pytest"
+cwd = "connectrpc-fastapi"
 
 [tasks.test-grpchealth]
 help = "Run connectrpc-grpchealth tests"

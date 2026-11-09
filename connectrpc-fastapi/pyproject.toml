@@ -1,0 +1,67 @@
+[project]
+name = "connectrpc-fastapi"
+version = "0.1.0"
+description = "FastAPI integration for Connect RPC"
+readme = "README.md"
+requires-python = ">= 3.11"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+maintainers = [
+  { name = "Anuraag Agrawal", email = "anuraaga@gmail.com" },
+  { name = "Spencer Nelson", email = "spencer@firetiger.com" },
+  { name = "Stefan VanBuren", email = "stefan@vanburen.xyz" },
+  { name = "Yasushi Itoh", email = "i2y.may.roku@gmail.com" },
+]
+keywords = [
+  "connect-py",
+  "connectrpc",
+  "fastapi",
+]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Framework :: FastAPI",
+  "Intended Audience :: Developers",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
+  "Programming Language :: Python :: 3.15",
+  "Programming Language :: Python :: Free Threading",
+  "Topic :: System :: Networking",
+]
+dependencies = [
+  "connectrpc>=0.13.0",
+  "fastapi>=0.118.0",
+  "protobuf-py>=0.7.0",
+  "pydantic>=2.10.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/connectrpc/connect-py"
+Issues = "https://github.com/connectrpc/connect-py/issues"
+Repository = "https://github.com/connectrpc/connect-py"
+
+[dependency-groups]
+dev = [{ include-group = "test" }]
+
+test = [
+  "example",
+
+  "pytest==9.2.0",
+  "pytest-asyncio==1.4.1.post1",
+  "pytest-timeout==2.5.0",
+]
+
+[build-system]
+requires = ["uv_build>=0.13.0,<0.14.0"]
+build-backend = "uv_build"
+
+[tool.ruff]
+extend = "../pyproject.toml"
+
+[tool.uv.build-backend]
+module-name = "connectrpc_fastapi"
+module-root = ""
