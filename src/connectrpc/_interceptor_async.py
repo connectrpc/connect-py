@@ -172,7 +172,7 @@ Interceptor = (
     | ClientStreamInterceptor
     | ServerStreamInterceptor
     | BidiStreamInterceptor
-    | MetadataInterceptor
+    | MetadataInterceptor[Any]
 )
 """An interceptor to apply to an asynchronous RPC server or client."""
 
