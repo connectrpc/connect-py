@@ -505,6 +505,8 @@ def test_trio_guest_on_asyncio() -> None:
             done_callback=lambda outcome: loop.call_soon_threadsafe(
                 done.set_result, outcome
             ),
+            # asyncio sets signal.set_wakeup_fd on Windows.
+            host_uses_signal_set_wakeup_fd=True,
         )
         return (await done).unwrap()
 
