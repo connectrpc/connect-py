@@ -45,8 +45,4 @@ Mount both `grpc.reflection.v1` and `grpc.reflection.v1alpha`. Both are
 listed by `list_services`, and a client that calls v1alpha gets a 404 if it
 isn't mounted.
 
-Reflection is a bidirectional streaming RPC, so the server needs HTTP/2,
-and `grpcurl` speaks only the gRPC protocol, which needs the ASGI trailers
-extension. Serve the app with [pyvoy](https://github.com/curioswitch/pyvoy),
-which supports both; Uvicorn (HTTP/1.1 only) and Granian (no trailers)
-don't.
+Reflection uses the gRPC protocol which requires a server that supports HTTP/2 trailers such as [pyvoy](https://pyvoy.dev).
