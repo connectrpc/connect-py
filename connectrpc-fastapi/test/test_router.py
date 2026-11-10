@@ -14,7 +14,6 @@ from example.gen.connectrpc.eliza.v1.eliza_connect import (
     ElizaService,
     ElizaServiceASGIApplication,
     ElizaServiceClient,
-    ElizaServiceSync,
 )
 from example.gen.connectrpc.eliza.v1.eliza_pb import (
     ConverseRequest,
@@ -51,6 +50,7 @@ from pyqwest import Client
 from pyqwest.testing import ASGITransport
 
 from connectrpc_fastapi import add_connect_schemas, connect_router
+from connectrpc_fastapi._router import _default_application
 from connectrpc_fastapi._schema import message_schemas
 
 if TYPE_CHECKING:
@@ -275,6 +275,7 @@ async def test_background_tasks_and_headers() -> None:
     ) -> AsyncIterator[DemoElizaService]:
         background_tasks.add_task(ran.append, "task")
         response.headers["x-from-dependency"] = "yes"
+        response.headers["content-type"] = "text/plain"
         response.set_cookie("session", "abc")
         ran.append("open")
         try:
@@ -577,13 +578,6 @@ async def test_dependency_reads_body() -> None:
     assert all(bodies)
 
 
-def test_sync_service_rejected() -> None:
-    with pytest.raises(
-        TypeError, match=re.escape("ElizaServiceSync.say is not an async method")
-    ):
-        connect_router(ElizaServiceSync, get_eliza)  # type: ignore[invalid-argument-type]
-
-
 def test_tags() -> None:
     app = FastAPI()
     app.include_router(connect_router(ElizaService, get_eliza, tags=()))
@@ -878,45 +872,6 @@ def test_other_definition_of_message_does_not_leak() -> None:
     assert set(other_properties) == {"sentence", "extra"}
 
 
-def test_async_detection_accepts_async_forms() -> None:
-    """Streaming methods are rejected only when they are known to be sync."""
-    desc = ElizaService.desc()
-
-    class Unannotated:
-        @classmethod
-        def desc(cls) -> DescService:
-            return desc
-
-        async def say(self, _request: Any, _ctx: Any, /) -> Any:
-            raise NotImplementedError
-
-        async def converse(self, _request, _ctx, /):
-            raise NotImplementedError
-            yield
-
-        def introduce(self, _request: Any, _ctx: Any, /) -> AsyncIterator[Any]:
-            raise NotImplementedError
-
-    class Generator:
-        @classmethod
-        def desc(cls) -> DescService:
-            return desc
-
-        async def say(self, _request: Any, _ctx: Any, /) -> Any:
-            raise NotImplementedError
-
-        async def converse(self, _request: Any, _ctx: Any, /) -> AsyncIterator[Any]:
-            raise NotImplementedError
-            yield
-
-        def introduce(self, _request: Any, _ctx: Any, /) -> Any:
-            yield
-
-    connect_router(Unannotated, get_eliza)  # type: ignore[invalid-argument-type]
-    with pytest.raises(TypeError, match=re.escape("Generator.introduce")):
-        connect_router(Generator, get_eliza)  # type: ignore[invalid-argument-type]
-
-
 @pytest.mark.asyncio
 async def test_connect_error_does_not_reach_dependency() -> None:
     """A Connect error is a response, so a yield dependency sees no exception."""
@@ -1029,8 +984,7 @@ def _importing_service_class(desc: DescService) -> type[Any]:
 def test_changed_imported_file_is_another_definition() -> None:
     """A different imported file is a different definition, with the same own file.
 
-    Applications document their own definition, and one application with both
-    definitions is an error.
+    Applications document their own definition.
     """
     first = _importing_service(extra_field=False)
     second = _importing_service(extra_field=True)
@@ -1052,59 +1006,6 @@ def test_changed_imported_file_is_another_definition() -> None:
     add_connect_schemas(other_app)
     other_inner = other_app.openapi()["components"]["schemas"]["test.imported.Inner"]
     assert set(other_inner["properties"]) == {"a", "b"}
-
-    both = FastAPI()
-    both.include_router(connect_router(first_class, first_class), prefix="/v1")
-    both.include_router(connect_router(second_class, second_class), prefix="/v2")
-    add_connect_schemas(both)
-    with pytest.raises(ValueError, match="two different definitions"):
-        both.openapi()
-
-
-def test_two_definitions_in_one_app_raise() -> None:
-    proto = FileDescriptorProto.from_binary(eliza_pb.desc().proto.to_binary())
-    say_request = next(m for m in proto.message_type if m.name == "SayRequest")
-    say_request.field.append(
-        FieldDescriptorProto(
-            name="extra",
-            number=99,
-            label=FieldDescriptorProto.Label.OPTIONAL,
-            type=FieldDescriptorProto.Type.STRING,
-            json_name="extra",
-        )
-    )
-    registry = FileDescriptorSet(
-        file=[d.proto for d in eliza_pb.desc().dependencies] + [proto]
-    ).to_registry()
-    other = registry.service(_SERVICE)
-    assert other is not None
-
-    class OtherElizaService:
-        @classmethod
-        def desc(cls) -> DescService:
-            return other
-
-        async def say(self, _request: Any, _ctx: Any, /) -> Any:
-            raise NotImplementedError
-
-        async def converse(self, _request: Any, _ctx: Any, /) -> AsyncIterator[Any]:
-            raise NotImplementedError
-            yield
-
-        async def introduce(self, _request: Any, _ctx: Any, /) -> AsyncIterator[Any]:
-            raise NotImplementedError
-            yield
-
-    def get_other() -> OtherElizaService:
-        return OtherElizaService()
-
-    app = FastAPI()
-    app.state.events = []
-    app.include_router(connect_router(ElizaService, get_eliza), prefix="/v1")
-    app.include_router(connect_router(OtherElizaService, get_other), prefix="/v2")
-    add_connect_schemas(app)
-    with pytest.raises(ValueError, match="two different definitions"):
-        app.openapi()
 
 
 def test_openapi_regenerated() -> None:
@@ -1150,11 +1051,6 @@ async def test_grpc_protocols() -> None:
             assert exc_info.value.code == Code.INVALID_ARGUMENT
 
 
-def test_tags_must_be_a_sequence() -> None:
-    with pytest.raises(TypeError, match="sequence of strings"):
-        connect_router(ElizaService, get_eliza, tags="eliza")  # type: ignore[invalid-argument-type]
-
-
 def test_unknown_placeholder_stays() -> None:
     """A placeholder for a message no route of the application serves is kept."""
     app = FastAPI()
@@ -1194,3 +1090,43 @@ def test_add_connect_schemas_before_include() -> None:
     schema = app.openapi()
     assert_refs_resolve(schema)
     assert "connectrpc.eliza.v1.SayRequest" in schema["components"]["schemas"]
+
+
+@pytest.mark.asyncio
+async def test_dependency_streams_body() -> None:
+    """A dependency that consumes the body stream fails the RPC with a clear error."""
+
+    async def get_eliza_streaming_body(request: Request) -> DemoElizaService:
+        async for _ in request.stream():
+            pass
+        return DemoElizaService()
+
+    app = FastAPI()
+    app.include_router(connect_router(ElizaService, get_eliza_streaming_body))
+    async with create_client(app) as client:
+        with pytest.raises(
+            ConnectError, match=re.escape("request.stream()")
+        ) as exc_info:
+            await client.say(SayRequest(sentence="Hello"))
+    assert exc_info.value.code == Code.INTERNAL
+
+
+def test_default_application_is_generated_class() -> None:
+    """The application class generated next to the service is the default.
+
+    Services generated for google.protobuf need it for their message classes.
+    """
+    desc = ElizaService.desc()
+    assert _default_application(ElizaService, desc) is ElizaServiceASGIApplication
+    assert _default_application(RecordingElizaService, desc) is (
+        ElizaServiceASGIApplication
+    )
+
+    class Handwritten:
+        @classmethod
+        def desc(cls) -> DescService:
+            return desc
+
+    create = _default_application(Handwritten, desc)
+    assert create is not ElizaServiceASGIApplication
+    assert create(Handwritten()).path == f"/{_SERVICE}"

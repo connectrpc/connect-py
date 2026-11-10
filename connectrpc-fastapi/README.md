@@ -38,8 +38,7 @@ gRPC-Web protocols all work.
 document. Without it, the RPCs are still listed, but their messages show as objects
 without fields.
 
-Only async services are supported. `connect_router` raises `TypeError` for a sync
-service class, but it cannot check the instances your dependency returns.
+Only async services are supported.
 
 ## Dependencies
 
@@ -50,7 +49,8 @@ dependencies are resolved, and before `yield` dependencies clean up.
 - Dependencies with `scope="function"` clean up before the response is sent, so they
   cannot provide the service.
 - Headers and cookies set on FastAPI's `Response` parameter are sent with the RPC's
-  response. A status code set there is ignored.
+  response, except headers the RPC's response also sets, such as `content-type`. A
+  status code set there is ignored.
 - `HTTPException`, `ConnectError`, and validation errors raised while resolving
   dependencies produce FastAPI's usual responses, not Connect errors.
 
@@ -65,7 +65,8 @@ interceptor.
 ## Interceptors and other options
 
 `application` controls how the Connect application is created for a service instance.
-Use it to pass interceptors or other options of the generated application class:
+It defaults to the application class generated next to the service. Use it to pass
+interceptors or other options of that class:
 
 ```python
 import functools
@@ -84,9 +85,6 @@ app.include_router(
 The application is created for every request, so everything passed to `partial` is
 shared by all requests. Create stateful interceptors, such as `OpenTelemetryInterceptor`,
 once.
-
-Services generated with `protobuf=google` must pass their generated application class as
-`application`.
 
 ## OpenAPI
 
@@ -118,4 +116,5 @@ Most middleware works, including `GZipMiddleware`, `CORSMiddleware`,
 ## Limitations
 
 - A dependency that reads the request body with `request.stream()` consumes the body
-  the RPC needs, and the RPC fails. `request.body()` and `request.json()` keep it.
+  the RPC needs, and the RPC fails with an `internal` error. `request.body()` and
+  `request.json()` keep it.

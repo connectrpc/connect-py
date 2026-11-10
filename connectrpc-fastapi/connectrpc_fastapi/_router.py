@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import inspect
 import re
-import typing
+import sys
 from typing import TYPE_CHECKING, Any, Protocol, TypeVar
 
 from connectrpc._codegen import method_local_name
 from connectrpc.code import Code
+from connectrpc.errors import ConnectError
 from connectrpc.server import ConnectASGIApplication
 from fastapi import APIRouter, Depends, Request, Response
 from protobuf.wkt.google.protobuf.descriptor_pb import MethodOptions
@@ -141,17 +142,21 @@ class _ConnectResponse(Response):
         self._request = request
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
-        headers = [
-            (name, value)
-            for name, value in self.raw_headers
-            if name != b"content-length"
-        ]
-
         async def send_with_headers(message: Message) -> None:
-            if message["type"] == "http.response.start" and headers:
+            if message["type"] == "http.response.start":
+                connect_headers = list(message.get("headers", []))
+                connect_names = {name.lower() for name, _ in connect_headers}
+                connect_names.add(b"content-length")
                 message = {
                     **message,
-                    "headers": [*message.get("headers", []), *headers],
+                    "headers": [
+                        *connect_headers,
+                        *(
+                            (name, value)
+                            for name, value in self.raw_headers
+                            if name == b"set-cookie" or name not in connect_names
+                        ),
+                    ],
                 }
             await send(message)
 
@@ -181,6 +186,14 @@ def _receive_body(request: Request, receive: Receive) -> Receive:
         except ClientDisconnect:
             streaming = False
             return {"type": "http.disconnect"}
+        except RuntimeError as e:
+            if str(e) != "Stream consumed":
+                raise
+            msg = (
+                "the request body was consumed by request.stream() before the RPC, "
+                "read it with request.body() instead"
+            )
+            raise ConnectError(Code.INTERNAL, msg) from e
         return {"type": "http.request", "body": chunk, "more_body": True}
 
     return receive_body
@@ -209,56 +222,36 @@ def connect_router(
         service: The generated service protocol class.
         get_service: A FastAPI dependency providing the service instance.
         application: Creates the Connect application for a service instance. Defaults
-            to a ConnectASGIApplication for the service. Use this to pass options such
-            as interceptors. Services generated for google.protobuf must pass their
-            generated application class.
+            to the application class generated next to the service, or a
+            ConnectASGIApplication for the service if there is none. Use this to pass
+            options such as interceptors.
         tags: OpenAPI tags for the routes. Defaults to the service's type name.
 
-    Raises:
-        TypeError: If the service is not an async service protocol.
-
     """
-    if isinstance(tags, str):
-        msg = "tags must be a sequence of strings"
-        raise TypeError(msg)
     desc = service.desc()
-    for method in desc.methods:
-        local_name = method_local_name(method)
-        if not _is_async(getattr(service, local_name, None), method):
-            msg = f"{service.__name__}.{local_name} is not an async method"
-            raise TypeError(msg)
     router = APIRouter(
         tags=list(tags) if tags is not None else [desc.type_name],
         generate_unique_id_function=_operation_id,
     )
-    create_application = application or _default_application(desc)
+    create_application = application or _default_application(service, desc)
     for method in desc.methods:
         _add_method(router, service, method, get_service, create_application)
     return router
 
 
-def _is_async(function: Any, method: DescMethod) -> bool:
-    """Return whether a service protocol method is the async form."""
-    if function is None:
-        return False
-    if inspect.iscoroutinefunction(function) or inspect.isasyncgenfunction(function):
-        return True
-    if method.method_kind in ("unary", "client_streaming"):
-        return False
-    if inspect.isgeneratorfunction(function):
-        return False
-    annotation = inspect.signature(function).return_annotation
-    if isinstance(annotation, str):
-        name = annotation
-    else:
-        name = getattr(typing.get_origin(annotation) or annotation, "__name__", "")
-    name = name.split("[", 1)[0].rsplit(".", 1)[-1]
-    return name not in {"Iterator", "Iterable", "Generator"}
-
-
 def _default_application(
-    desc: DescService,
+    service: type[_SVC], desc: DescService
 ) -> Callable[[_SVC], ConnectASGIApplication[_SVC]]:
+    """Return the default factory of the Connect application for a service."""
+    for cls in service.__mro__:
+        generated = getattr(
+            sys.modules.get(cls.__module__), f"{cls.__name__}ASGIApplication", None
+        )
+        if isinstance(generated, type) and issubclass(
+            generated, ConnectASGIApplication
+        ):
+            return generated
+
     def create(service: _SVC) -> ConnectASGIApplication[_SVC]:
         return ConnectASGIApplication(service=service, desc=desc)
 
@@ -333,11 +326,7 @@ def _add_method(
             responses={"default": _error_response(streaming=False)},
             openapi_extra={
                 "parameters": _get_parameters(),
-                "responses": {
-                    "200": {
-                        "content": _content(method.output, streaming=streaming_response)
-                    }
-                },
+                "responses": {"200": response},
             },
         )
 

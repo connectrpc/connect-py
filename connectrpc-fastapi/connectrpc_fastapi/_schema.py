@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import copy
-import hashlib
 from typing import TYPE_CHECKING, Any
 
 from protobuf import (
@@ -20,7 +19,7 @@ if TYPE_CHECKING:
     from collections.abc import Iterable
 
     from fastapi import FastAPI
-    from protobuf import DescFile, DescMethod
+    from protobuf import DescMethod
 
 _REF_PREFIX = "#/components/schemas/"
 
@@ -43,8 +42,7 @@ def add_connect_schemas(app: FastAPI) -> None:
         app: The FastAPI application serving Connect routes.
 
     Raises:
-        ValueError: If the application documents two different definitions of a
-            message type name, or a schema of another name is already present with
+        ValueError: If a schema of a message's type name is already present with
             different content. Raised by the application's `openapi` method.
 
     """
@@ -143,10 +141,7 @@ def _find_placeholders(
 def message_schemas(messages: Iterable[DescMessage]) -> dict[str, Any]:
     """Return the JSON schemas of the messages, keyed by type name.
 
-    Raises:
-        ValueError: If two of the messages, or messages they contain, define the
-            same type name differently.
-
+    The first of several messages with the same type name is used.
     """
     all_messages: dict[str, DescMessage] = {}
     for message in messages:
@@ -166,8 +161,9 @@ def message_schemas(messages: Iterable[DescMessage]) -> dict[str, Any]:
             msg = f"pydantic returned no reference for the schema of {type_name}"
             raise ValueError(msg)
         names[str(ref).removeprefix(_REF_PREFIX)] = type_name
+    pydantic_names = {type_name: name for name, type_name in names.items()}
     for type_name, message in all_messages.items():
-        names.update(_enum_names(message, defs[_pydantic_name(names, type_name)]))
+        names.update(_enum_names(message, defs[pydantic_names[type_name]]))
     unnamed = set(defs) - set(names)
     if unnamed:
         msg = f"type names of schemas are unknown: {', '.join(sorted(unnamed))}"
@@ -176,14 +172,6 @@ def message_schemas(messages: Iterable[DescMessage]) -> dict[str, Any]:
         names[name]: _rename_refs(definition, names)
         for name, definition in defs.items()
     }
-
-
-def _pydantic_name(names: dict[str, str], type_name: str) -> str:
-    for name, renamed in names.items():
-        if renamed == type_name:
-            return name
-    msg = f"pydantic returned no schema for {type_name}"
-    raise ValueError(msg)
 
 
 def _enum_names(message: DescMessage, definition: dict[str, Any]) -> dict[str, str]:
@@ -206,13 +194,7 @@ def _enum_names(message: DescMessage, definition: dict[str, Any]) -> dict[str, s
 
 
 def _collect_messages(message: DescMessage, into: dict[str, DescMessage]) -> None:
-    known = into.get(message.type_name)
-    if known is not None:
-        if known is not message and _descriptor_digest(
-            known.file
-        ) != _descriptor_digest(message.file):
-            msg = f"{message.type_name} has two different definitions"
-            raise ValueError(msg)
+    if message.type_name in into:
         return
     into[message.type_name] = message
     for field in message.fields:
@@ -224,24 +206,6 @@ def _collect_messages(message: DescMessage, into: dict[str, DescMessage]) -> Non
                     _collect_messages(element, into)
             case _:
                 pass
-
-
-def _descriptor_digest(file: DescFile) -> str:
-    """Return a digest of a file descriptor and the files it imports."""
-    files: dict[str, DescFile] = {}
-
-    def collect(file: DescFile) -> None:
-        if file.name in files:
-            return
-        files[file.name] = file
-        for dependency in file.dependencies:
-            collect(dependency)
-
-    collect(file)
-    digest = hashlib.sha256()
-    for name in sorted(files):
-        digest.update(files[name].proto.to_binary())
-    return digest.hexdigest()
 
 
 def _rename_refs(schema: Any, names: dict[str, str]) -> Any:
