@@ -42,4 +42,6 @@ checker.set_status("connectrpc.eliza.v1.ElizaService", ServingStatus.NOT_SERVING
 
 To compute statuses some other way, pass the service any implementation of `Checker`.
 
-`grpc-health-probe` and Kubernetes gRPC probes use the gRPC protocol, which requires a server that supports HTTP/2 trailers such as [pyvoy](https://pyvoy.dev).
+`grpc-health-probe` and Kubernetes gRPC probes use the gRPC protocol, which
+requires a server that supports HTTP/2 trailers such as
+[pyvoy](https://pyvoy.dev).
