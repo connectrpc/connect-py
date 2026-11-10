@@ -11,8 +11,11 @@ __all__ = [
     "ServerReflectionService",
     "ServerReflectionServiceSync",
     "ServerReflectionWSGIApplication",
+    "reflection_apps",
+    "reflection_apps_sync",
 ]
 
+from ._apps import reflection_apps, reflection_apps_sync
 from ._gen.grpc.reflection.v1.reflection_connect import (
     ServerReflectionASGIApplication,
     ServerReflectionWSGIApplication,
