@@ -263,7 +263,11 @@ class _Call(typing.Protocol):
 
 
 class _AsyncioCall:
-    """Runs a request in an asyncio task."""
+    """Runs a request in an asyncio task.
+
+    The client lets the task's cancellation propagate, so this reports a
+    cancelled request as CANCELED itself.
+    """
 
     def __init__(self, coro: Coroutine[object, object, object]) -> None:
         self._task = asyncio.create_task(coro)
@@ -272,13 +276,18 @@ class _AsyncioCall:
         self._task.cancel()
 
     async def wait(self) -> None:
-        await self._task
+        # Unlike awaiting the task, this doesn't mistake the task's
+        # cancellation for a cancellation of the caller.
+        await asyncio.wait((self._task,))
+        if self._task.cancelled():
+            raise ConnectError(Code.CANCELED, "Request was cancelled")
+        self._task.result()
 
 
 class _TrioCall:
     """Runs a request in a trio cancel scope.
 
-    The client doesn't turn trio cancellation into an error, so this reports a
+    The client lets the scope's cancellation propagate, so this reports a
     cancelled request as CANCELED itself.
     """
 
