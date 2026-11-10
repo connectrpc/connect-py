@@ -17,6 +17,7 @@ from ._interceptor_async import (
     Interceptor,
     ServerStreamInterceptor,
     UnaryInterceptor,
+    _aclose,
     resolve_interceptors,
 )
 from ._loop import current_loop
@@ -468,8 +469,13 @@ async def _streaming_request_content(
     msgs: AsyncIterator[Any], codec: Codec, compression: Compression | None
 ) -> AsyncIterator[bytes]:
     writer = ConnectEnvelopeWriter(codec, compression)
-    async for msg in msgs:
-        yield writer.write(msg)
+    try:
+        async for msg in msgs:
+            yield writer.write(msg)
+    finally:
+        # A call can end before the request stream does, for example when the
+        # server responds early.
+        await _aclose(msgs)
 
 
 async def _consume_single_response(stream: AsyncIterator[RES]) -> RES:

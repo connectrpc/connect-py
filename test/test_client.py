@@ -5,6 +5,7 @@ import contextlib
 from typing import TYPE_CHECKING, cast
 
 import anyio
+import anyio.lowlevel
 import pytest
 from pyqwest import (
     Client,
@@ -400,3 +401,43 @@ def test_transport_error_sync(error: Exception, code: Code) -> None:
                 pass
         assert exc_info.value.code == code
         assert exc_info.value.__cause__ is error
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("method", ["client_stream", "bidi_stream"])
+async def test_request_stream_closed_when_call_ends(method: str) -> None:
+    """The client closes a request stream that the server stops reading."""
+
+    class FirstSizeOnly(Haberdasher):
+        async def make_flexible_hat(self, request, _ctx):
+            async for size in request:
+                return Hat(size=size.inches)
+            return Hat()
+
+        async def make_various_hats(self, request, _ctx):
+            async for size in request:
+                yield Hat(size=size.inches)
+                return
+
+    closed = False
+
+    async def endless_sizes() -> AsyncIterator[Size]:
+        nonlocal closed
+        try:
+            while True:
+                yield Size(inches=10)
+                await anyio.lowlevel.checkpoint()
+        finally:
+            closed = True
+
+    async with HaberdasherClient(
+        "http://localhost",
+        http_client=Client(ASGITransport(HaberdasherASGIApplication(FirstSizeOnly()))),
+    ) as client:
+        match method:
+            case "client_stream":
+                await client.make_flexible_hat(endless_sizes())
+            case "bidi_stream":
+                [hat async for hat in client.make_various_hats(endless_sizes())]
+
+    assert closed

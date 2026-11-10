@@ -206,7 +206,7 @@ def cleanup_timeout(monkeypatch: pytest.MonkeyPatch) -> float:
     return CLEANUP_TIMEOUT
 
 
-async def sizes(*inches: int) -> AsyncGenerator[Size]:
+async def sizes(*inches: int) -> AsyncIterator[Size]:
     for i in inches:
         yield Size(inches=i)
 
@@ -219,8 +219,7 @@ async def call(
         case "MakeHat":
             return await client.make_hat(Size(inches=10), headers=headers)
         case "MakeFlexibleHat":
-            async with contextlib.aclosing(sizes(10)) as request:
-                return await client.make_flexible_hat(request, headers=headers)
+            return await client.make_flexible_hat(sizes(10), headers=headers)
         case "MakeSimilarHats":
             return [
                 hat
@@ -229,11 +228,10 @@ async def call(
                 )
             ]
         case "MakeVariousHats":
-            async with contextlib.aclosing(sizes(10)) as request:
-                return [
-                    hat
-                    async for hat in client.make_various_hats(request, headers=headers)
-                ]
+            return [
+                hat
+                async for hat in client.make_various_hats(sizes(10), headers=headers)
+            ]
         case _:
             raise ValueError(method)
 
@@ -870,14 +868,13 @@ async def test_handler_timeout_on_request_stream(
 
     wrapper.app = HaberdasherASGIApplication(Service())
 
-    async def stalling_sizes() -> AsyncGenerator[Size]:
+    async def stalling_sizes() -> AsyncIterator[Size]:
         # One message, then the client stalls without ending the body.
         yield Size(inches=7)
         await trio.sleep_forever()
 
     with trio.fail_after(10):
-        async with contextlib.aclosing(stalling_sizes()) as request:
-            hat = await client.make_flexible_hat(request)
+        hat = await client.make_flexible_hat(stalling_sizes())
 
     assert timed_out == [True]
     assert hat == Hat(size=7)
@@ -898,8 +895,7 @@ async def test_bidi_handler_returns_early(
 
     wrapper.app = HaberdasherASGIApplication(FirstSizeOnly())
 
-    async with contextlib.aclosing(sizes(1, 2, 3)) as request:
-        hats = [hat async for hat in client.make_various_hats(request)]
+    hats = [hat async for hat in client.make_various_hats(sizes(1, 2, 3))]
 
     assert [hat.size for hat in hats] == [1]
 
