@@ -9,6 +9,10 @@
       "path": "./conformance",
     },
     {
+      "name": "connectrpc-fastapi",
+      "path": "./connectrpc-fastapi",
+    },
+    {
       "name": "connectrpc-grpchealth",
       "path": "./connectrpc-grpchealth",
     },

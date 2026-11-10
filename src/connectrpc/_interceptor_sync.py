@@ -169,7 +169,7 @@ InterceptorSync = (
     | ClientStreamInterceptorSync
     | ServerStreamInterceptorSync
     | BidiStreamInterceptorSync
-    | MetadataInterceptorSync
+    | MetadataInterceptorSync[Any]
 )
 """An interceptor to apply to a synchronous RPC server or client."""
 

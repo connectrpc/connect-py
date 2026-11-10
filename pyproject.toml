@@ -46,6 +46,7 @@ dev = [
   { include-group = "test" },
 
   # Install all packages to be available in docs building, etc.
+  "connectrpc-fastapi",
   "connectrpc-grpchealth",
   "connectrpc-grpcreflect",
   "connectrpc-otel",
@@ -72,6 +73,7 @@ dev = [
   # If the below issue is resolved, we can move them back to subprojects and configure
   # our default sync setting as --all-packages.
   # https://github.com/astral-sh/uv/issues/5737
+  "fastapi==0.162.0",
   "opentelemetry-instrumentation-asgi==0.66b2",
   "opentelemetry-instrumentation-wsgi==0.66b2",
   "opentelemetry-sdk==1.45.2",
@@ -198,6 +200,7 @@ exclude = [
   # Workaround lack of monorepo support by excluding subproject code from top-level project.
   # https://docs.astral.sh/ty/reference/typing-faq/#does-ty-support-monorepos
   # https://github.com/astral-sh/ty/issues/819
+  "connectrpc-fastapi",
   "connectrpc-grpchealth",
   "connectrpc-grpcreflect",
   "connectrpc-otel",
@@ -215,6 +218,7 @@ module-name = "connectrpc"
 
 [tool.uv.workspace]
 members = [
+  "connectrpc-fastapi",
   "connectrpc-grpchealth",
   "connectrpc-grpcreflect",
   "connectrpc-otel",
@@ -224,6 +228,7 @@ members = [
 
 [tool.uv.sources]
 connectrpc = { workspace = true }
+connectrpc-fastapi = { workspace = true }
 connectrpc-grpchealth = { workspace = true }
 connectrpc-grpcreflect = { workspace = true }
 connectrpc-otel = { workspace = true }

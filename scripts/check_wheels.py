@@ -33,6 +33,11 @@ _trio_floors = [
 # Requirements each package's tests need beyond its test group.
 EXTRA = {
     "connectrpc": [*_trio_floors],
+    "connectrpc_fastapi": [
+        *_trio_floors,
+        # The package needs changes to connectrpc that are not released yet.
+        "dist/connectrpc-*.whl",
+    ],
     "connectrpc_grpchealth": [*_trio_floors],
     "connectrpc_grpcreflect": [*_trio_floors],
     "connectrpc_otel": [
