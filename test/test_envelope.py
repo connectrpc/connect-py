@@ -58,6 +58,28 @@ def test_reject_invalid_flags_before_waiting_for_payload(
 
 
 @pytest.mark.parametrize(
+    ("reader_type", "code"),
+    [
+        (EnvelopeReader, Code.INVALID_ARGUMENT),
+        (GRPCEnvelopeReader, Code.INTERNAL),
+        (ConnectEnvelopeReader, Code.INTERNAL),
+        (GRPCWebEnvelopeReader, Code.INTERNAL),
+    ],
+)
+@pytest.mark.parametrize(
+    ("flags", "payload", "match"),
+    [(0b00, b"\xff\xff\xff", "unmarshal message"), (0b01, b"not gzip", "decompress")],
+    ids=["malformed", "malformed-compressed"],
+)
+def test_reject_malformed_message(reader_type, code, flags, payload, match) -> None:
+    reader = reader_type(Hat, ProtoBinaryCodec(), GzipCompression(), None)
+    envelope = bytes([flags]) + len(payload).to_bytes(4, "big") + payload
+    with pytest.raises(ConnectError, match=match) as excinfo:
+        list(reader.feed(envelope))
+    assert excinfo.value.code == code
+
+
+@pytest.mark.parametrize(
     "reader_type",
     [EnvelopeReader, GRPCEnvelopeReader, ConnectEnvelopeReader, GRPCWebEnvelopeReader],
 )
