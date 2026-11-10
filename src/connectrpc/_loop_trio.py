@@ -1,4 +1,4 @@
-"""Event loop operations under trio, for the server and client.
+"""Event loop operations under trio.
 
 This module is only imported once code runs under trio, so asyncio
 applications never import trio.

@@ -20,12 +20,12 @@ if TYPE_CHECKING:
     from collections.abc import AsyncGenerator
     from contextlib import AbstractContextManager
 
+    from ._loop_trio import TrioLoop, TrioTimeout
     from ._server_async import _Event, _RequestReceiver
-    from ._server_trio import TrioLoop, TrioTimeout
 
 
 class AsyncioLoop:
-    """Event loop operations under asyncio, for the server and client."""
+    """Event loop operations under asyncio."""
 
     async def checkpoint(self) -> None:
         """Give the loop a chance to deliver a cancellation."""
@@ -113,7 +113,7 @@ def current_loop() -> AsyncioLoop | TrioLoop:
         get_running_loop()
     except RuntimeError:
         # Not asyncio, so trio: the only other event loop supported.
-        from ._server_trio import TrioLoop  # noqa: PLC0415
+        from ._loop_trio import TrioLoop  # noqa: PLC0415
 
         return TrioLoop()
     return _ASYNCIO_LOOP

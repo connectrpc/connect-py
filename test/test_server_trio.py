@@ -31,7 +31,7 @@ from hypercorn.config import Config
 from hypercorn.trio import serve
 from pyqwest import HTTPVersion, SyncClient, SyncHTTPTransport
 
-from connectrpc import _server_trio
+from connectrpc import _loop_trio
 from connectrpc.code import Code
 from connectrpc.errors import ConnectError
 
@@ -256,7 +256,7 @@ def executor() -> Iterator[ThreadPoolExecutor]:
 
 @pytest.fixture
 def cleanup_timeout(monkeypatch: pytest.MonkeyPatch) -> float:
-    monkeypatch.setattr(_server_trio, "_CLEANUP_TIMEOUT", CLEANUP_TIMEOUT)
+    monkeypatch.setattr(_loop_trio, "_CLEANUP_TIMEOUT", CLEANUP_TIMEOUT)
     return CLEANUP_TIMEOUT
 
 

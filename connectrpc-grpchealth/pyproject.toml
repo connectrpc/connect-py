@@ -49,7 +49,6 @@ dev = [{ include-group = "test" }]
 test = [
   "anyio==4.16.0",
   "hypercorn==0.18.0",
-  # ASGITransport supports trio from 0.14.0.
   "pyqwest>=0.14.0",
   "pytest==9.2.0",
   "pytest-timeout==2.5.0",

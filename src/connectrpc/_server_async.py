@@ -75,7 +75,7 @@ if TYPE_CHECKING:
     from protobuf import DescService
 
     from . import _server_shared
-    from ._server_trio import TrioLoop, TrioTimeout
+    from ._loop_trio import TrioLoop, TrioTimeout
     from .compression import Compression
 else:
     ASGIReceiveCallable = "asgiref.typing.ASGIReceiveCallable"
