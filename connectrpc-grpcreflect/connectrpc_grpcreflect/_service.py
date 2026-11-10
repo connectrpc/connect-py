@@ -5,7 +5,15 @@ from typing import TYPE_CHECKING, Literal
 
 from connectrpc.code import Code
 from connectrpc.errors import ConnectError
-from protobuf import DescEnum, DescExtension, DescFile, DescService, Oneof, Registry
+from protobuf import (
+    DescEnum,
+    DescExtension,
+    DescFile,
+    DescMessage,
+    DescService,
+    Oneof,
+    Registry,
+)
 
 from ._gen.grpc.reflection.v1.reflection_connect import (
     ServerReflection,
@@ -57,9 +65,7 @@ class ServerReflectionService(ServerReflection):
             *descs: The descriptors to make available for reflection.
 
         """
-        registry, service_names = _resolve_registry(descs)
-        self._registry = registry
-        self._service_names = service_names
+        self._index = _Index(descs)
 
     async def server_reflection_info(
         self,
@@ -68,7 +74,7 @@ class ServerReflectionService(ServerReflection):
     ) -> AsyncIterator[ServerReflectionResponse]:
         seen: set[str] = set()
         async for req in request:
-            yield _handle_request(req, seen, self._registry, self._service_names)
+            yield _handle_request(req, seen, self._index)
 
 
 class ServerReflectionServiceSync(ServerReflectionSync):
@@ -90,9 +96,7 @@ class ServerReflectionServiceSync(ServerReflectionSync):
             *descs: The descriptors to make available for reflection.
 
         """
-        registry, service_names = _resolve_registry(descs)
-        self._registry = registry
-        self._service_names = service_names
+        self._index = _Index(descs)
 
     def server_reflection_info(
         self,
@@ -101,7 +105,7 @@ class ServerReflectionServiceSync(ServerReflectionSync):
     ) -> Iterator[ServerReflectionResponse]:
         seen: set[str] = set()
         for req in request:
-            yield _handle_request(req, seen, self._registry, self._service_names)
+            yield _handle_request(req, seen, self._index)
 
 
 # v1 and v1alpha are binary compatible, to keep the implementation simple but still
@@ -127,9 +131,7 @@ class ServerReflectionAlphaService(ServerReflectionAlpha):
             *descs: The descriptors to make available for reflection.
 
         """
-        registry, service_names = _resolve_registry(descs)
-        self._registry = registry
-        self._service_names = service_names
+        self._index = _Index(descs)
 
     async def server_reflection_info(
         self,
@@ -144,8 +146,7 @@ class ServerReflectionAlphaService(ServerReflectionAlpha):
                 _handle_request(
                     ServerReflectionRequest.from_binary(req.to_binary()),
                     seen,
-                    self._registry,
-                    self._service_names,
+                    self._index,
                 ).to_binary()
             )
 
@@ -169,9 +170,7 @@ class ServerReflectionAlphaServiceSync(ServerReflectionAlphaSync):
             *descs: The descriptors to make available for reflection.
 
         """
-        registry, service_names = _resolve_registry(descs)
-        self._registry = registry
-        self._service_names = service_names
+        self._index = _Index(descs)
 
     def server_reflection_info(
         self,
@@ -186,69 +185,95 @@ class ServerReflectionAlphaServiceSync(ServerReflectionAlphaSync):
                 _handle_request(
                     ServerReflectionRequest.from_binary(req.to_binary()),
                     seen,
-                    self._registry,
-                    self._service_names,
+                    self._index,
                 ).to_binary()
             )
 
 
-def _resolve_registry(
-    descs: tuple[DescFile | DescService, ...],
-) -> tuple[Registry, list[str]]:
-    fds: list[DescFile] = []
-    seen: set[str] = set()
-    service_names: set[str] = set()
-    for desc in (*descs, ServerReflection.desc(), ServerReflectionAlpha.desc()):
-        if isinstance(desc, DescFile):
-            fds.extend(_file_descriptor_with_dependencies(desc, seen))
-            service_names.update(d.type_name for d in desc.services)
-        else:
-            fds.extend(_file_descriptor_with_dependencies(desc.file, seen))
-            service_names.add(desc.type_name)
-    return Registry(*fds), sorted(service_names)
+class _Index:
+    """The files available for reflection, and lookups into them."""
+
+    def __init__(self, descs: tuple[DescFile | DescService, ...]) -> None:
+        files: list[DescFile] = []
+        seen: set[str] = set()
+        service_names: set[str] = set()
+        for desc in (*descs, ServerReflection.desc(), ServerReflectionAlpha.desc()):
+            if isinstance(desc, DescFile):
+                files.extend(_file_descriptor_with_dependencies(desc, seen))
+                service_names.update(d.type_name for d in desc.services)
+            else:
+                files.extend(_file_descriptor_with_dependencies(desc.file, seen))
+                service_names.add(desc.type_name)
+        self.registry = Registry(*files)
+        self.service_names = sorted(service_names)
+        # Every symbol that C++ protobuf's
+        # DescriptorPool::FindFileContainingSymbol resolves, mapped to the file
+        # declaring it.
+        self.symbols: dict[str, DescFile] = {}
+        # Fully qualified names of messages, mapped to their extension numbers.
+        self.extension_numbers: dict[str, list[int]] = {}
+        for desc in self.registry:
+            if isinstance(desc, DescFile):
+                continue
+            self.symbols[desc.type_name] = desc.file
+            match desc:
+                case DescMessage():
+                    # The descriptor's oneof_decl includes synthetic oneofs for
+                    # proto3 optional fields, which desc.oneofs omits.
+                    for name in (
+                        *(f.name for f in desc.fields),
+                        *(o.name for o in desc.proto.oneof_decl),
+                    ):
+                        self.symbols[f"{desc.type_name}.{name}"] = desc.file
+                case DescEnum():
+                    # Enum values are siblings of their enum, not children.
+                    scope = desc.type_name.removesuffix(desc.name)
+                    for value in desc.values:
+                        self.symbols[scope + value.name] = desc.file
+                case DescService():
+                    for method in desc.methods:
+                        self.symbols[f"{desc.type_name}.{method.name}"] = desc.file
+                case DescExtension():
+                    self.extension_numbers.setdefault(
+                        desc.extendee.type_name, []
+                    ).append(desc.number)
 
 
 def _handle_request(
-    req: ServerReflectionRequest,
-    seen: set[str],
-    registry: Registry,
-    service_names: list[str],
+    req: ServerReflectionRequest, seen: set[str], index: _Index
 ) -> ServerReflectionResponse:
     res = ServerReflectionResponse(valid_host=req.host, original_request=req)
     match req.message_request:
         case Oneof("file_by_filename", filename):
-            desc = registry.file(filename)
-            res.message_response = _create_file_response(desc, seen)
+            res.message_response = _create_file_response(
+                index.registry.file(filename), seen, "file not found"
+            )
         case Oneof("file_containing_symbol", symbol):
-            desc = _find_file_for_symbol(registry, symbol)
-            res.message_response = _create_file_response(desc, seen)
+            res.message_response = _create_file_response(
+                index.symbols.get(symbol), seen, "symbol not found"
+            )
         case Oneof("file_containing_extension", extension_request):
-            desc: DescFile | None = None
-            ext = registry.extension_for(
+            ext = index.registry.extension_for(
                 extension_request.containing_type, extension_request.extension_number
             )
-            if ext:
-                desc = ext.file
-            res.message_response = _create_file_response(desc, seen)
+            res.message_response = _create_file_response(
+                ext.file if ext else None, seen, "extension not found"
+            )
         case Oneof("all_extension_numbers_of_type", containing_type):
-            # We should return not found if the message itself isn't registered
-            if not registry.message(containing_type):
-                res.message_response = _create_file_response(None, seen)
+            if not index.registry.message(containing_type):
+                res.message_response = _not_found("type not found")
             else:
-                nums: list[int] = [
-                    d.number
-                    for d in registry
-                    if isinstance(d, DescExtension)
-                    and d.extendee.type_name == containing_type
-                ]
                 res.message_response = Oneof(
                     "all_extension_numbers_response",
                     ExtensionNumberResponse(
-                        base_type_name=containing_type, extension_number=nums
+                        base_type_name=containing_type,
+                        extension_number=index.extension_numbers.get(
+                            containing_type, []
+                        ),
                     ),
                 )
         case Oneof("list_services", _):
-            services = [ServiceResponse(name=name) for name in service_names]
+            services = [ServiceResponse(name=name) for name in index.service_names]
             res.message_response = Oneof(
                 "list_services_response", ListServiceResponse(service=services)
             )
@@ -257,17 +282,21 @@ def _handle_request(
     return res
 
 
+def _not_found(message: str) -> Oneof[Literal["error_response"], ErrorResponse]:
+    return Oneof(
+        "error_response",
+        ErrorResponse(error_code=_CODE_NOT_FOUND, error_message=message),
+    )
+
+
 def _create_file_response(
-    desc: DescFile | None, seen: set[str]
+    desc: DescFile | None, seen: set[str], not_found_message: str
 ) -> (
     Oneof[Literal["file_descriptor_response"], FileDescriptorResponse]
     | Oneof[Literal["error_response"], ErrorResponse]
 ):
     if not desc:
-        return Oneof(
-            "error_response",
-            ErrorResponse(error_code=_CODE_NOT_FOUND, error_message="symbol not found"),
-        )
+        return _not_found(not_found_message)
     fds = [
         fd.proto.to_binary() for fd in _file_descriptor_with_dependencies(desc, seen)
     ]
@@ -291,43 +320,3 @@ def _file_descriptor_with_dependencies(
         seen.add(file.name)
         yield file
         queue.extend(file.dependencies)
-
-
-# Finds the file declaring a fully-qualified symbol name: any message, enum,
-# service, extension, method, field, oneof, or enum value, matching
-# DescriptorPool::FindFileContainingSymbol in C++ protobuf.
-def _find_file_for_symbol(registry: Registry, symbol: str) -> DescFile | None:
-    desc = (
-        registry.message(symbol)
-        or registry.enum(symbol)
-        or registry.service(symbol)
-        or registry.extension(symbol)
-    )
-    if desc:
-        return desc.file
-    # May be a fully qualified method, field, oneof, or enum value, split off the
-    # parent and find it.
-    parent, _, member = symbol.rpartition(".")
-    if not member:
-        return None
-    if svc := registry.service(parent):
-        if any(m.name == member for m in svc.methods):
-            return svc.file
-        return None
-    if (msg := registry.message(parent)) and (
-        any(f.name == member for f in msg.fields)
-        # The descriptor's oneof_decl includes synthetic oneofs for proto3
-        # optional fields, which msg.oneofs omits.
-        or any(o.name == member for o in msg.proto.oneof_decl)
-    ):
-        return msg.file
-    # An enum value of a message-nested enum also has a message as its parent
-    # scope, so always finish with the enum value scan.
-    for d in registry:
-        if (
-            isinstance(d, DescEnum)
-            and d.type_name.rpartition(".")[0] == parent
-            and any(v.name == member for v in d.values)
-        ):
-            return d.file
-    return None

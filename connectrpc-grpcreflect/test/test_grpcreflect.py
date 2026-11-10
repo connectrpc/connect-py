@@ -293,15 +293,30 @@ async def test_not_found(reflection_client: ReflectionClient) -> None:
                     "file_containing_symbol", "connectrpc.example.Hat.missing"
                 )
             ),
+            ServerReflectionRequest(
+                message_request=Oneof(
+                    "file_containing_extension",
+                    ExtensionRequest(
+                        containing_type="connectrpc.example.Hat", extension_number=1
+                    ),
+                )
+            ),
         ],
     )
 
-    assert len(responses) == 4
+    errors = []
     for res in responses:
         assert res.message_response is not None
         assert res.message_response.field == "error_response"
         assert res.message_response.value.error_code == 5
-        assert res.message_response.value.error_message
+        errors.append(res.message_response.value.error_message)
+    assert errors == [
+        "file not found",
+        "symbol not found",
+        "type not found",
+        "symbol not found",
+        "extension not found",
+    ]
 
 
 @pytest.mark.asyncio
