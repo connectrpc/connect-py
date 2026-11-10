@@ -17,7 +17,7 @@ from typing import TYPE_CHECKING, Literal, TypeVar, get_args
 
 # Needs to run before importing from connectrpc
 import _cov_embed  # noqa: F401
-from _util import create_standard_streams
+from _util import create_standard_streams, dump_tracebacks_on_sigusr1
 from gen.connectrpc.conformance.v1 import service_pb
 from gen.connectrpc.conformance.v1.config_pb import Code as ConformanceCode, HTTPVersion
 from gen.connectrpc.conformance.v1.server_compat_pb import (
@@ -64,6 +64,10 @@ if TYPE_CHECKING:
 
     from connectrpc.request import RequestContext
 
+
+# Runs in this process and, for pyvoy, in Envoy's embedded interpreter, which
+# imports this module to load the app.
+dump_tracebacks_on_sigusr1()
 
 _REGISTRY = Registry(service_pb.desc())
 
