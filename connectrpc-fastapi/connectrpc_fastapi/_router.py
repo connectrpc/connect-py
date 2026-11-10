@@ -227,6 +227,10 @@ def connect_router(
             options such as interceptors.
         tags: OpenAPI tags for the routes. Defaults to the service's type name.
 
+    Raises:
+        TypeError: If the service is a generated sync service protocol and
+            application is not passed.
+
     """
     desc = service.desc()
     router = APIRouter(
@@ -242,15 +246,21 @@ def connect_router(
 def _default_application(
     service: type[_SVC], desc: DescService
 ) -> Callable[[_SVC], ConnectASGIApplication[_SVC]]:
-    """Return the default factory of the Connect application for a service."""
+    """Return the default factory of the Connect application for a service.
+
+    A sync service protocol has no ASGI application generated next to it. It has
+    a WSGI application named after the service, without the Sync suffix.
+    """
     for cls in service.__mro__:
-        generated = getattr(
-            sys.modules.get(cls.__module__), f"{cls.__name__}ASGIApplication", None
-        )
+        module = sys.modules.get(cls.__module__)
+        generated = getattr(module, f"{cls.__name__}ASGIApplication", None)
         if isinstance(generated, type) and issubclass(
             generated, ConnectASGIApplication
         ):
             return generated
+        if hasattr(module, f"{cls.__name__.removesuffix('Sync')}WSGIApplication"):
+            msg = f"{cls.__name__} is a sync service, use the async service"
+            raise TypeError(msg)
 
     def create(service: _SVC) -> ConnectASGIApplication[_SVC]:
         return ConnectASGIApplication(service=service, desc=desc)

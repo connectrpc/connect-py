@@ -14,6 +14,7 @@ from example.gen.connectrpc.eliza.v1.eliza_connect import (
     ElizaService,
     ElizaServiceASGIApplication,
     ElizaServiceClient,
+    ElizaServiceSync,
 )
 from example.gen.connectrpc.eliza.v1.eliza_pb import (
     ConverseRequest,
@@ -1130,3 +1131,8 @@ def test_default_application_is_generated_class() -> None:
     create = _default_application(Handwritten, desc)
     assert create is not ElizaServiceASGIApplication
     assert create(Handwritten()).path == f"/{_SERVICE}"
+
+
+def test_sync_service_rejected() -> None:
+    with pytest.raises(TypeError, match="ElizaServiceSync is a sync service"):
+        connect_router(ElizaServiceSync, get_eliza)  # ty: ignore[invalid-argument-type]
