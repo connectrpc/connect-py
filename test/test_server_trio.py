@@ -138,8 +138,13 @@ class Wrapper:
         try:
             # ASGITransport cancels the application once the client has the
             # whole response. A server lets it finish, so the shield blocks
-            # that cancellation.
-            with trio.CancelScope(shield=True), trio.CancelScope() as self._scope:
+            # that cancellation. The shield also blocks the test's own
+            # timeouts, so this timeout ends a hung application.
+            with (
+                trio.CancelScope(shield=True),
+                trio.fail_after(10),
+                trio.CancelScope() as self._scope,
+            ):
                 await self.app(scope, disconnecting_receive, recording_send)
         except BaseException as e:
             self.raised = e

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import contextlib
+import functools
 from asyncio import (
     CancelledError,
     Event,
@@ -14,6 +15,12 @@ from asyncio import (
     wait,
 )
 from typing import TYPE_CHECKING
+
+try:
+    import sniffio
+except ModuleNotFoundError:
+    # trio depends on sniffio, so without it only asyncio can be running.
+    sniffio = None
 
 if TYPE_CHECKING:
     from asyncio import Timeout
@@ -109,11 +116,23 @@ _ASYNCIO_LOOP = AsyncioLoop()
 
 
 def current_loop() -> AsyncioLoop | TrioLoop:
-    try:
-        get_running_loop()
-    except RuntimeError:
-        # Not asyncio, so trio: the only other event loop supported.
-        from ._loop_trio import TrioLoop  # noqa: PLC0415
+    """Return the operations of the running event loop.
 
-        return TrioLoop()
+    The loop is picked with sniffio, as pyqwest picks it, so the two agree. This
+    matters when trio runs as a guest on an asyncio host, where asyncio's running
+    loop is also set.
+    """
+    if sniffio is not None:
+        with contextlib.suppress(sniffio.AsyncLibraryNotFoundError):
+            if sniffio.current_async_library() == "trio":
+                return _trio_loop()
     return _ASYNCIO_LOOP
+
+
+@functools.cache
+def _trio_loop() -> TrioLoop:
+    # The import runs only under trio, so asyncio applications never import
+    # trio.
+    from ._loop_trio import TrioLoop  # noqa: PLC0415
+
+    return TrioLoop()

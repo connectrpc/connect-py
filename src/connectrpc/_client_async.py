@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import contextlib
 import functools
+import inspect
 from asyncio import CancelledError
 from typing import TYPE_CHECKING, Any, Protocol, TypeVar
 from urllib.parse import urlencode
@@ -17,7 +18,6 @@ from ._interceptor_async import (
     Interceptor,
     ServerStreamInterceptor,
     UnaryInterceptor,
-    _aclose,
     resolve_interceptors,
 )
 from ._loop import current_loop
@@ -474,8 +474,10 @@ async def _streaming_request_content(
             yield writer.write(msg)
     finally:
         # A call can end before the request stream does, for example when the
-        # server responds early.
-        await _aclose(msgs)
+        # server responds early. Other iterators, such as the receive side of a
+        # channel, belong to the caller.
+        if inspect.isasyncgen(msgs):
+            await msgs.aclose()
 
 
 async def _consume_single_response(stream: AsyncIterator[RES]) -> RES:
