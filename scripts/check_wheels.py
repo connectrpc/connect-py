@@ -31,6 +31,10 @@ EXTRA = {
         "sortedcontainers>=2.1",
         "idna>=2",
     ],
+    "connectrpc_fastapi": [
+        # The package needs changes to connectrpc that are not released yet.
+        "dist/connectrpc-*.whl"
+    ],
     "connectrpc_grpchealth": [
         # trio's unbounded floors, as for connectrpc.
         "sortedcontainers>=2.1",

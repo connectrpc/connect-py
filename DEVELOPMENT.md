@@ -26,7 +26,7 @@
 We use `poe` as a task runner. Run `uv run poe` to list every task. Common ones:
 
 ```bash
-# Run smoke checks: lint, unit tests, and connectrpc-otel tests
+# Run smoke checks: lint, unit tests, and connectrpc-fastapi and connectrpc-otel tests
 uv run poe check
 
 # Format code
@@ -34,6 +34,9 @@ uv run poe format
 
 # Run unit tests
 uv run poe test
+
+# Run connectrpc-fastapi tests
+uv run poe test-fastapi
 
 # Run connectrpc-grpcreflect tests (not part of `check`)
 uv run poe test-grpcreflect

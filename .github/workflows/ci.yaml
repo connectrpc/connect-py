@@ -105,6 +105,9 @@ jobs:
       - name: run OTel tests
         run: uv run poe test-otel ${{ matrix.coverage == 'cov' && '--cov=connectrpc_otel --cov-report=xml' || '' }}
 
+      - name: run fastapi tests
+        run: uv run poe test-fastapi ${{ matrix.coverage == 'cov' && '--cov=connectrpc_fastapi --cov-report=xml' || '' }}
+
       - name: run grpchealth tests
         run: uv run poe test-grpchealth ${{ matrix.coverage == 'cov' && '--cov=connectrpc_grpchealth --cov-report=xml' || '' }}
 
@@ -141,6 +144,9 @@ jobs:
 
       - run: uv build
         working-directory: connectrpc-otel
+
+      - run: uv build
+        working-directory: connectrpc-fastapi
 
       - run: uv build
         working-directory: connectrpc-grpchealth
