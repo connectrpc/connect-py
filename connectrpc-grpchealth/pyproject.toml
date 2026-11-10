@@ -48,7 +48,6 @@ dev = [{ include-group = "test" }]
 # What the tests need, which scripts/check_wheels.py installs with the wheel.
 test = [
   "anyio==4.16.0",
-  "hypercorn==0.18.0",
   "pyqwest>=0.14.0",
   "pytest==9.2.0",
   "pytest-timeout==2.5.0",

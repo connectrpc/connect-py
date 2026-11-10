@@ -265,7 +265,6 @@ test = [
     { name = "asgiref" },
     { name = "brotli" },
     { name = "example" },
-    { name = "hypercorn" },
     { name = "protobuf" },
     { name = "pytest" },
     { name = "pytest-timeout" },
@@ -323,7 +322,6 @@ test = [
     { name = "asgiref", specifier = "==3.13.0" },
     { name = "brotli", specifier = "==1.2.1" },
     { name = "example", editable = "example" },
-    { name = "hypercorn", specifier = "==0.18.0" },
     { name = "protobuf", specifier = ">=5.28" },
     { name = "pytest", specifier = "==9.2.0" },
     { name = "pytest-timeout", specifier = "==2.5.0" },
@@ -343,7 +341,6 @@ dependencies = [
 [package.dev-dependencies]
 dev = [
     { name = "anyio" },
-    { name = "hypercorn" },
     { name = "pyqwest" },
     { name = "pytest" },
     { name = "pytest-timeout" },
@@ -351,7 +348,6 @@ dev = [
 ]
 test = [
     { name = "anyio" },
-    { name = "hypercorn" },
     { name = "pyqwest" },
     { name = "pytest" },
     { name = "pytest-timeout" },
@@ -367,7 +363,6 @@ requires-dist = [
 [package.metadata.requires-dev]
 dev = [
     { name = "anyio", specifier = "==4.16.0" },
-    { name = "hypercorn", specifier = "==0.18.0" },
     { name = "pyqwest", specifier = ">=0.14.0" },
     { name = "pytest", specifier = "==9.2.0" },
     { name = "pytest-timeout", specifier = "==2.5.0" },
@@ -375,7 +370,6 @@ dev = [
 ]
 test = [
     { name = "anyio", specifier = "==4.16.0" },
-    { name = "hypercorn", specifier = "==0.18.0" },
     { name = "pyqwest", specifier = ">=0.14.0" },
     { name = "pytest", specifier = "==9.2.0" },
     { name = "pytest-timeout", specifier = "==2.5.0" },

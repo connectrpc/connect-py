@@ -1,25 +1,20 @@
 """The ASGI application served under trio.
 
-Hypercorn's trio worker serves the application on a background thread, and the
-sync client calls it over pyqwest's SyncHTTPTransport. An ASGI wrapper around
-the application records what it sends and can cancel it, as the server does
-when it shuts down with the request in flight.
+The async client calls the application through pyqwest's ASGITransport. An
+ASGI wrapper around the application records what it sends, can block a send,
+can report a client disconnect, and can cancel the application as a server
+does when it shuts down with the request in flight.
 """
 
 from __future__ import annotations
 
-import gc
+import contextlib
 import gzip
 import json
-import socket
 import subprocess
 import sys
-import threading
-from concurrent.futures import Future, ThreadPoolExecutor
-from functools import partial
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
-from urllib.parse import urlparse
+from typing import TYPE_CHECKING, Any, cast
 
 import pytest
 
@@ -27,9 +22,8 @@ pytest.importorskip("trio")
 
 import trio
 import trio.lowlevel
-from hypercorn.config import Config
-from hypercorn.trio import serve
-from pyqwest import HTTPVersion, SyncClient, SyncHTTPTransport
+from pyqwest import Client
+from pyqwest.testing import ASGITransport
 
 from connectrpc import _loop_trio
 from connectrpc.code import Code
@@ -38,14 +32,16 @@ from connectrpc.errors import ConnectError
 from .connectrpc.example.haberdasher_connect import (
     Haberdasher,
     HaberdasherASGIApplication,
-    HaberdasherClientSync,
+    HaberdasherClient,
 )
 from .connectrpc.example.haberdasher_pb import Hat, Size
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
+    from collections.abc import AsyncGenerator, AsyncIterator, Awaitable, Callable
 
     from connectrpc.request import RequestContext
+
+pytestmark = pytest.mark.anyio
 
 # An envelope is a byte of flags and four bytes of length, then the message.
 ENVELOPE_HEADER_LEN = 5
@@ -56,6 +52,12 @@ CLEANUP_TIMEOUT = 0.2
 
 CANCELLED = {"code": "canceled", "message": "Request was cancelled"}
 TIMED_OUT = {"code": "deadline_exceeded", "message": "Request timed out"}
+
+
+@pytest.fixture
+def anyio_backend() -> str:
+    """Run these tests on trio only, since they use trio directly."""
+    return "trio"
 
 
 class TrioHaberdasher(Haberdasher):
@@ -91,41 +93,41 @@ class TrioHaberdasher(Haberdasher):
 
 
 class Wrapper:
-    """Wraps the application served by hypercorn.
+    """Wraps the application under test.
 
-    Records what the application sends, can block a send, and can cancel the
-    application from the test's thread.
+    Records what the application sends, can block a send, can report a client
+    disconnect once the request has been read, and can cancel the application.
     """
 
     def __init__(self) -> None:
         self.app: Callable[[Any, Any, Any], Awaitable[None]] = (
             HaberdasherASGIApplication(TrioHaberdasher())
         )
-        self.token: trio.lowlevel.TrioToken | None = None
-        self._in_flight = 0
-        self.idle = threading.Event()
-        self.idle.set()
-        self.reset()
-
-    def reset(self) -> None:
-        # A request finishes after the client has its response, so one from the
-        # previous test may still be running.
-        assert self.idle.wait(10)
         self.sent: list[dict[str, Any]] = []
         self.on_send: Callable[[dict[str, Any]], Any] | None = None
         self.raised: BaseException | None = None
         self.cancelled_at = 0.0
         self.finished_at = 0.0
-        self.done = threading.Event()
-        self.blocked = threading.Event()
+        self.done = trio.Event()
+        self.blocked = trio.Event()
+        self._disconnected = trio.Event()
         self._scope: trio.CancelScope | None = None
 
     async def __call__(self, scope: Any, receive: Any, send: Any) -> None:
         if scope["type"] != "http":
             await self.app(scope, receive, send)
             return
-        self._in_flight += 1
-        self.idle.clear()
+
+        body_read = False
+
+        async def disconnecting_receive() -> Any:
+            nonlocal body_read
+            if body_read:
+                await self._disconnected.wait()
+                return {"type": "http.disconnect"}
+            message = await receive()
+            body_read = not message.get("more_body", False)
+            return message
 
         async def recording_send(message: Any) -> None:
             self.sent.append(message)
@@ -134,26 +136,25 @@ class Wrapper:
             await send(message)
 
         try:
-            with trio.CancelScope() as self._scope:
-                await self.app(scope, receive, recording_send)
+            # ASGITransport cancels the application once the client has the
+            # whole response. A server lets it finish, so the shield blocks
+            # that cancellation.
+            with trio.CancelScope(shield=True), trio.CancelScope() as self._scope:
+                await self.app(scope, disconnecting_receive, recording_send)
         except BaseException as e:
             self.raised = e
             raise
         finally:
             self.finished_at = trio.current_time()
             self.done.set()
-            self._in_flight -= 1
-            if self._in_flight == 0:
-                self.idle.set()
 
     def cancel(self) -> None:
-        def cancel_on_loop() -> None:
-            assert self._scope is not None
-            self.cancelled_at = trio.current_time()
-            self._scope.cancel()
+        assert self._scope is not None
+        self.cancelled_at = trio.current_time()
+        self._scope.cancel()
 
-        assert self.token is not None
-        trio.from_thread.run_sync(cancel_on_loop, trio_token=self.token)
+    def disconnect(self) -> None:
+        self._disconnected.set()
 
     def types(self) -> list[str]:
         return [m["type"].removeprefix("http.response.") for m in self.sent]
@@ -186,72 +187,17 @@ class Wrapper:
             nursery.start_soon(self.block_on_first_message, message)
 
 
-@pytest.fixture(scope="module")
-def transport() -> Iterator[SyncHTTPTransport]:
-    with SyncHTTPTransport(http_version=HTTPVersion.HTTP1) as transport:
-        yield transport
-
-
-@pytest.fixture(scope="module")
-def server() -> Iterator[tuple[str, Wrapper]]:
-    wrapper = Wrapper()
-    stop = threading.Event()
-    started: Future[str] = Future()
-
-    async def stopped() -> None:
-        await trio.to_thread.run_sync(stop.wait, abandon_on_cancel=True)
-
-    async def main() -> None:
-        wrapper.token = trio.lowlevel.current_trio_token()
-        config = Config()
-        config.bind = ["127.0.0.1:0"]
-        async with trio.open_nursery() as nursery:
-            binds = await nursery.start(
-                partial(serve, wrapper, config, shutdown_trigger=stopped)
-            )
-            started.set_result(binds[0])
-
-    def run() -> None:
-        try:
-            trio.run(main)
-        except BaseException as e:
-            if not started.done():
-                started.set_exception(e)
-            raise
-
-    thread = threading.Thread(target=run, daemon=True)
-    thread.start()
-    try:
-        yield started.result(timeout=10), wrapper
-    finally:
-        stop.set()
-        thread.join(10)
-    assert not thread.is_alive(), "server did not stop"
+@pytest.fixture
+def wrapper() -> Wrapper:
+    return Wrapper()
 
 
 @pytest.fixture
-def url(server: tuple[str, Wrapper]) -> str:
-    return server[0]
-
-
-@pytest.fixture
-def wrapper(server: tuple[str, Wrapper]) -> Iterator[Wrapper]:
-    wrapper = server[1]
-    wrapper.reset()
-    yield wrapper
-    wrapper.app = HaberdasherASGIApplication(TrioHaberdasher())
-
-
-@pytest.fixture
-def client(url: str, transport: SyncHTTPTransport) -> Iterator[HaberdasherClientSync]:
-    with HaberdasherClientSync(url, http_client=SyncClient(transport)) as client:
+async def client(wrapper: Wrapper) -> AsyncIterator[HaberdasherClient]:
+    async with HaberdasherClient(
+        "http://localhost", http_client=Client(ASGITransport(wrapper))
+    ) as client:
         yield client
-
-
-@pytest.fixture
-def executor() -> Iterator[ThreadPoolExecutor]:
-    with ThreadPoolExecutor() as executor:
-        yield executor
 
 
 @pytest.fixture
@@ -260,59 +206,90 @@ def cleanup_timeout(monkeypatch: pytest.MonkeyPatch) -> float:
     return CLEANUP_TIMEOUT
 
 
-def sizes() -> Iterator[Size]:
-    for inches in (1, 2, 3):
-        yield Size(inches=inches)
+async def sizes(*inches: int) -> AsyncGenerator[Size]:
+    for i in inches:
+        yield Size(inches=i)
 
 
-def call(
-    client: HaberdasherClientSync, method: str, headers: dict[str, str] | None = None
+async def call(
+    client: HaberdasherClient, method: str, headers: dict[str, str] | None = None
 ) -> Any:
     """Call the method with one request message, consuming any response stream."""
     match method:
         case "MakeHat":
-            return client.make_hat(Size(inches=10), headers=headers)
+            return await client.make_hat(Size(inches=10), headers=headers)
         case "MakeFlexibleHat":
-            return client.make_flexible_hat(iter([Size(inches=10)]), headers=headers)
+            async with contextlib.aclosing(sizes(10)) as request:
+                return await client.make_flexible_hat(request, headers=headers)
         case "MakeSimilarHats":
-            return list(client.make_similar_hats(Size(inches=10), headers=headers))
+            return [
+                hat
+                async for hat in client.make_similar_hats(
+                    Size(inches=10), headers=headers
+                )
+            ]
         case "MakeVariousHats":
-            return list(
-                client.make_various_hats(iter([Size(inches=10)]), headers=headers)
-            )
+            async with contextlib.aclosing(sizes(10)) as request:
+                return [
+                    hat
+                    async for hat in client.make_various_hats(request, headers=headers)
+                ]
         case _:
             raise ValueError(method)
 
 
-def test_unary(client: HaberdasherClientSync) -> None:
-    assert client.make_hat(Size(inches=10)) == Hat(size=10, color="blue", name="bowler")
+async def call_ignoring_error(client: HaberdasherClient, method: str) -> None:
+    with contextlib.suppress(ConnectError):
+        await call(client, method)
 
 
-def test_unary_error(client: HaberdasherClientSync) -> None:
+async def cancel_when_blocked(
+    client: HaberdasherClient, wrapper: Wrapper, method: str, blocked: trio.Event
+) -> None:
+    """Call the method, cancel the application once blocked is set, and wait for
+    the application to finish."""
+    with trio.fail_after(10):
+        async with trio.open_nursery() as nursery:
+            nursery.start_soon(call_ignoring_error, client, method)
+            await blocked.wait()
+            wrapper.cancel()
+            await wrapper.done.wait()
+            # A cleanup timeout can end the application before it finishes the
+            # response, which leaves the client waiting.
+            nursery.cancel_scope.cancel()
+
+
+async def test_unary(client: HaberdasherClient) -> None:
+    hat = await client.make_hat(Size(inches=10))
+    assert hat == Hat(size=10, color="blue", name="bowler")
+
+
+async def test_unary_error(client: HaberdasherClient) -> None:
     with pytest.raises(ConnectError) as exc_info:
-        client.make_hat(Size(inches=-1))
+        await client.make_hat(Size(inches=-1))
     assert exc_info.value.code == Code.INVALID_ARGUMENT
 
 
-def test_client_stream(client: HaberdasherClientSync) -> None:
-    assert client.make_flexible_hat(sizes()).size == 6
+async def test_client_stream(client: HaberdasherClient) -> None:
+    assert (await client.make_flexible_hat(sizes(1, 2, 3))).size == 6
 
 
-def test_server_stream(client: HaberdasherClientSync) -> None:
-    hats = list(client.make_similar_hats(Size(inches=10)))
+async def test_server_stream(client: HaberdasherClient) -> None:
+    hats = [hat async for hat in client.make_similar_hats(Size(inches=10))]
     assert [hat.size for hat in hats] == [10, 11, 12]
 
 
-def test_server_stream_error(client: HaberdasherClientSync) -> None:
+async def test_server_stream_error(client: HaberdasherClient) -> None:
     hats = []
     with pytest.raises(ConnectError) as exc_info:
-        hats.extend(client.make_similar_hats(Size(inches=-5)))
+        async for hat in client.make_similar_hats(Size(inches=-5)):
+            hats.append(hat)
     assert exc_info.value.code == Code.RESOURCE_EXHAUSTED
     assert [hat.size for hat in hats] == [-5]
 
 
-def test_bidi_stream(client: HaberdasherClientSync) -> None:
-    hats = list(client.make_various_hats(sizes()))
+async def test_bidi_stream(client: HaberdasherClient) -> None:
+    hats = [hat async for hat in client.make_various_hats(sizes(1, 2, 3))]
     assert [hat.size for hat in hats] == [1, 2, 3]
 
 
@@ -397,19 +374,21 @@ class EndlessHats(Haberdasher):
             raise self._cleanup_error
 
 
-def read_hats_then_disconnect(url: str, method: str = "MakeSimilarHats") -> None:
-    # The client's own connection, so that closing it disconnects the request.
-    with (
-        SyncHTTPTransport(http_version=HTTPVersion.HTTP1) as transport,
-        HaberdasherClientSync(url, http_client=SyncClient(transport)) as client,
-    ):
-        if method == "MakeSimilarHats":
-            hats = client.make_similar_hats(Size(inches=10))
-        else:
-            hats = client.make_various_hats(iter([Size(inches=10)]))
-        assert [next(hats).size for _ in range(3)] == [10, 10, 10]
-        del hats
-    gc.collect()
+async def read_hats_then_disconnect(
+    client: HaberdasherClient, wrapper: Wrapper, method: str = "MakeSimilarHats"
+) -> None:
+    if method == "MakeSimilarHats":
+        stream = client.make_similar_hats(Size(inches=10))
+    else:
+        stream = client.make_various_hats(sizes(10))
+    # Generated stream methods are typed as AsyncIterator but return async
+    # generators.
+    hats = cast("AsyncGenerator[Hat]", stream)
+    async with contextlib.aclosing(hats):
+        assert [(await anext(hats)).size for _ in range(3)] == [10, 10, 10]
+        wrapper.disconnect()
+        with trio.fail_after(10):
+            await wrapper.done.wait()
 
 
 @pytest.mark.parametrize("method", ["MakeSimilarHats", "MakeVariousHats"])
@@ -424,8 +403,8 @@ def read_hats_then_disconnect(url: str, method: str = "MakeSimilarHats") -> None
     ],
     ids=["clean", "cleanup-error"],
 )
-def test_disconnect_ends_stream(
-    url: str,
+async def test_disconnect_ends_stream(
+    client: HaberdasherClient,
     wrapper: Wrapper,
     method: str,
     cleanup_error: Exception | None,
@@ -436,9 +415,8 @@ def test_disconnect_ends_stream(
     wrapper.app = HaberdasherASGIApplication(
         EndlessHats(events, cleanup_error), interceptors=[Recorder(events)]
     )
-    read_hats_then_disconnect(url, method)
+    await read_hats_then_disconnect(client, wrapper, method)
 
-    assert wrapper.done.wait(10)
     assert wrapper.end_error() == end_error
     assert events == [
         "handler cleaned up",
@@ -447,28 +425,23 @@ def test_disconnect_ends_stream(
     ]
 
 
-def test_disconnect_cancels_blocked_unary(url: str, wrapper: Wrapper) -> None:
+async def test_disconnect_cancels_blocked_unary(
+    client: HaberdasherClient, wrapper: Wrapper
+) -> None:
     """A unary handler has nothing to poll, so a disconnect cancels it like a deadline."""
     events: list[str] = []
-    blocked = threading.Event()
+    blocked = trio.Event()
     wrapper.app = HaberdasherASGIApplication(
         BlockedHats(blocked, events, in_nursery=False), interceptors=[Recorder(events)]
     )
 
-    # A raw connection, so that closing it disconnects the request mid-call.
-    parsed = urlparse(url)
-    body = Size(inches=10).to_binary()
-    request = (
-        f"POST /connectrpc.example.Haberdasher/MakeHat HTTP/1.1\r\n"
-        f"Host: {parsed.netloc}\r\n"
-        "Content-Type: application/proto\r\n"
-        f"Content-Length: {len(body)}\r\n\r\n"
-    ).encode() + body
-    with socket.create_connection((parsed.hostname, parsed.port)) as connection:
-        connection.sendall(request)
-        assert blocked.wait(10)
+    with trio.fail_after(10):
+        async with trio.open_nursery() as nursery:
+            nursery.start_soon(call_ignoring_error, client, "MakeHat")
+            await blocked.wait()
+            wrapper.disconnect()
+            await wrapper.done.wait()
 
-    assert wrapper.done.wait(10)
     assert wrapper.raised is None
     assert events == [
         "handler cleaned up",
@@ -490,14 +463,13 @@ class ScopedHats(Haberdasher):
                 await trio.sleep(0.01)
 
 
-def test_disconnect_ends_server_stream_in_cancel_scope(
-    url: str, wrapper: Wrapper
+async def test_disconnect_ends_server_stream_in_cancel_scope(
+    client: HaberdasherClient, wrapper: Wrapper
 ) -> None:
     """A disconnect cleanly closes a handler suspended inside its own cancel scope."""
     wrapper.app = HaberdasherASGIApplication(ScopedHats())
-    read_hats_then_disconnect(url)
+    await read_hats_then_disconnect(client, wrapper)
 
-    assert wrapper.done.wait(10)
     assert wrapper.raised is None
     assert wrapper.end_error() == {"code": "canceled", "message": "Client disconnected"}
 
@@ -511,10 +483,9 @@ def test_disconnect_ends_server_stream_in_cancel_scope(
         ("MakeVariousHats", None, True),
     ],
 )
-def test_cancelled_while_sending(
-    client: HaberdasherClientSync,
+async def test_cancelled_while_sending(
+    client: HaberdasherClient,
     wrapper: Wrapper,
-    executor: ThreadPoolExecutor,
     method: str,
     cleanup_error: Exception | None,
     send_in_nursery: bool,
@@ -529,11 +500,7 @@ def test_cancelled_while_sending(
         else wrapper.block_on_first_message
     )
 
-    response = executor.submit(call, client, method)
-    assert wrapper.blocked.wait(10)
-    wrapper.cancel()
-    assert wrapper.done.wait(10)
-    response.exception(10)
+    await cancel_when_blocked(client, wrapper, method, wrapper.blocked)
 
     assert wrapper.raised is None
     assert events == [
@@ -551,7 +518,7 @@ class BlockedHats(Haberdasher):
 
     def __init__(
         self,
-        blocked: threading.Event,
+        blocked: trio.Event,
         events: list[str],
         *,
         in_nursery: bool,
@@ -615,25 +582,17 @@ class BlockedHats(Haberdasher):
         ("MakeVariousHats", True),
     ],
 )
-def test_cancelled_in_handler(
-    client: HaberdasherClientSync,
-    wrapper: Wrapper,
-    executor: ThreadPoolExecutor,
-    method: str,
-    in_nursery: bool,
+async def test_cancelled_in_handler(
+    client: HaberdasherClient, wrapper: Wrapper, method: str, in_nursery: bool
 ) -> None:
     events: list[str] = []
-    blocked = threading.Event()
+    blocked = trio.Event()
     wrapper.app = HaberdasherASGIApplication(
         BlockedHats(blocked, events, in_nursery=in_nursery),
         interceptors=[Recorder(events)],
     )
 
-    response = executor.submit(call, client, method)
-    assert blocked.wait(10)
-    wrapper.cancel()
-    assert wrapper.done.wait(10)
-    response.exception(10)
+    await cancel_when_blocked(client, wrapper, method, blocked)
 
     assert wrapper.raised is None
     assert events == [
@@ -665,8 +624,8 @@ def test_cancelled_in_handler(
         ),
     ],
 )
-def test_timeout_in_handler(
-    client: HaberdasherClientSync,
+async def test_timeout_in_handler(
+    client: HaberdasherClient,
     wrapper: Wrapper,
     method: str,
     interceptors: Callable[[list[str]], list[Any]],
@@ -674,14 +633,15 @@ def test_timeout_in_handler(
 ) -> None:
     events: list[str] = []
     wrapper.app = HaberdasherASGIApplication(
-        BlockedHats(threading.Event(), events, in_nursery=True),
+        BlockedHats(trio.Event(), events, in_nursery=True),
         interceptors=interceptors(events),
     )
 
     # The header alone, so that only the server enforces the timeout.
     with pytest.raises(ConnectError) as exc_info:
-        call(client, method, headers={"connect-timeout-ms": "100"})
-    assert wrapper.done.wait(10)
+        await call(client, method, headers={"connect-timeout-ms": "100"})
+    with trio.fail_after(10):
+        await wrapper.done.wait()
 
     assert exc_info.value.code == Code.DEADLINE_EXCEEDED
     assert wrapper.raised is None
@@ -700,11 +660,8 @@ def leaves(error: BaseException) -> list[BaseException]:
 @pytest.mark.parametrize(
     "method", ["MakeHat", "MakeFlexibleHat", "MakeSimilarHats", "MakeVariousHats"]
 )
-def test_cancelled_in_handler_whose_cleanup_fails(
-    client: HaberdasherClientSync,
-    wrapper: Wrapper,
-    executor: ThreadPoolExecutor,
-    method: str,
+async def test_cancelled_in_handler_whose_cleanup_fails(
+    client: HaberdasherClient, wrapper: Wrapper, method: str
 ) -> None:
     """A cancellation beside a handler error is handled as a cancellation.
 
@@ -712,18 +669,14 @@ def test_cancelled_in_handler_whose_cleanup_fails(
     application for the server to log.
     """
     events: list[str] = []
-    blocked = threading.Event()
+    blocked = trio.Event()
     cleanup_error = OSError("cleanup failed")
     wrapper.app = HaberdasherASGIApplication(
         BlockedHats(blocked, events, in_nursery=True, cleanup_error=cleanup_error),
         interceptors=[Recorder(events)],
     )
 
-    response = executor.submit(call, client, method)
-    assert blocked.wait(10)
-    wrapper.cancel()
-    assert wrapper.done.wait(10)
-    response.exception(10)
+    await cancel_when_blocked(client, wrapper, method, blocked)
 
     assert wrapper.raised is not None
     assert leaves(wrapper.raised) == [cleanup_error]
@@ -739,25 +692,18 @@ def test_cancelled_in_handler_whose_cleanup_fails(
 @pytest.mark.parametrize(
     "method", ["MakeHat", "MakeFlexibleHat", "MakeSimilarHats", "MakeVariousHats"]
 )
-def test_cancelled_in_handler_whose_on_end_fails(
-    client: HaberdasherClientSync,
-    wrapper: Wrapper,
-    executor: ThreadPoolExecutor,
-    method: str,
+async def test_cancelled_in_handler_whose_on_end_fails(
+    client: HaberdasherClient, wrapper: Wrapper, method: str
 ) -> None:
     """The cancellation still reaches the server when an on_end hook fails."""
     events: list[str] = []
-    blocked = threading.Event()
+    blocked = trio.Event()
     wrapper.app = HaberdasherASGIApplication(
         BlockedHats(blocked, events, in_nursery=True),
         interceptors=[Recorder(events, error=RuntimeError("on_end failed"))],
     )
 
-    response = executor.submit(call, client, method)
-    assert blocked.wait(10)
-    wrapper.cancel()
-    assert wrapper.done.wait(10)
-    response.exception(10)
+    await cancel_when_blocked(client, wrapper, method, blocked)
 
     # The wrapper's cancel scope absorbs the cancellation; the hook's error
     # raised in its place would escape the scope.
@@ -771,21 +717,14 @@ def test_cancelled_in_handler_whose_on_end_fails(
     assert wrapper.error() == {"code": "unknown", "message": "on_end failed"}
 
 
-def test_handler_cleanup_after_cancellation_is_bounded(
-    client: HaberdasherClientSync,
-    wrapper: Wrapper,
-    executor: ThreadPoolExecutor,
-    cleanup_timeout: float,
+async def test_handler_cleanup_after_cancellation_is_bounded(
+    client: HaberdasherClient, wrapper: Wrapper, cleanup_timeout: float
 ) -> None:
     events: list[str] = []
     wrapper.app = HaberdasherASGIApplication(EndlessHats(events, cleanup_seconds=60))
     wrapper.on_send = wrapper.block_on_first_message
 
-    response = executor.submit(call, client, "MakeSimilarHats")
-    assert wrapper.blocked.wait(10)
-    wrapper.cancel()
-    assert wrapper.done.wait(10)
-    response.exception(10)
+    await cancel_when_blocked(client, wrapper, "MakeSimilarHats", wrapper.blocked)
 
     assert events == []
     assert cleanup_timeout <= wrapper.finished_at - wrapper.cancelled_at < 5
@@ -811,10 +750,9 @@ def test_handler_cleanup_after_cancellation_is_bounded(
         ),
     ],
 )
-def test_on_end_after_cancellation_is_bounded(
-    client: HaberdasherClientSync,
+async def test_on_end_after_cancellation_is_bounded(
+    client: HaberdasherClient,
     wrapper: Wrapper,
-    executor: ThreadPoolExecutor,
     cleanup_timeout: float,
     interceptors: Callable[[list[str]], list[Any]],
     on_ends: int,
@@ -825,19 +763,15 @@ def test_on_end_after_cancellation_is_bounded(
     )
     wrapper.on_send = wrapper.block_on_first_message
 
-    response = executor.submit(call, client, "MakeSimilarHats")
-    assert wrapper.blocked.wait(10)
-    wrapper.cancel()
-    assert wrapper.done.wait(10)
-    response.exception(10)
+    await cancel_when_blocked(client, wrapper, "MakeSimilarHats", wrapper.blocked)
 
     assert events == ["handler cleaned up", *["on_end started canceled"] * on_ends]
     assert cleanup_timeout <= wrapper.finished_at - wrapper.cancelled_at < 5
 
 
 @pytest.mark.parametrize("method", ["MakeHat", "MakeSimilarHats"])
-def test_on_end_is_bounded_by_deadline(
-    client: HaberdasherClientSync, wrapper: Wrapper, method: str
+async def test_on_end_is_bounded_by_deadline(
+    client: HaberdasherClient, wrapper: Wrapper, method: str
 ) -> None:
     events: list[str] = []
     wrapper.app = HaberdasherASGIApplication(
@@ -845,8 +779,9 @@ def test_on_end_is_bounded_by_deadline(
     )
 
     with pytest.raises(ConnectError) as exc_info:
-        call(client, method, headers={"connect-timeout-ms": "100"})
-    assert wrapper.done.wait(10)
+        await call(client, method, headers={"connect-timeout-ms": "100"})
+    with trio.fail_after(10):
+        await wrapper.done.wait()
 
     assert exc_info.value.code == Code.DEADLINE_EXCEEDED
     assert wrapper.raised is None
@@ -859,22 +794,24 @@ def test_on_end_is_bounded_by_deadline(
 
 
 @pytest.mark.parametrize("method", ["MakeHat", "MakeSimilarHats"])
-def test_on_end_is_not_bounded_without_cancellation(
-    client: HaberdasherClientSync, wrapper: Wrapper, cleanup_timeout: float, method: str
+async def test_on_end_is_not_bounded_without_cancellation(
+    client: HaberdasherClient, wrapper: Wrapper, cleanup_timeout: float, method: str
 ) -> None:
     events: list[str] = []
     wrapper.app = HaberdasherASGIApplication(
         TrioHaberdasher(), interceptors=[Recorder(events, seconds=2 * cleanup_timeout)]
     )
 
-    call(client, method)
+    await call(client, method)
+    with trio.fail_after(10):
+        await wrapper.done.wait()
 
     assert events == ["on_end started None", "on_end finished"]
 
 
 @pytest.mark.parametrize("method", ["MakeHat", "MakeSimilarHats"])
-def test_base_exception_in_handler(
-    client: HaberdasherClientSync, wrapper: Wrapper, method: str
+async def test_base_exception_in_handler(
+    client: HaberdasherClient, wrapper: Wrapper, method: str
 ) -> None:
     """A SystemExit from the handler reaches the server and is reported as an error."""
     events: list[str] = []
@@ -893,7 +830,7 @@ def test_base_exception_in_handler(
     app = HaberdasherASGIApplication(ExitingHats(), interceptors=[Recorder(events)])
 
     async def catching_app(scope: Any, receive: Any, send: Any) -> None:
-        # Raised into hypercorn, a SystemExit would stop the module's server.
+        # A SystemExit escaping the application would end the trio run.
         try:
             await app(scope, receive, send)
         except SystemExit as e:
@@ -902,8 +839,9 @@ def test_base_exception_in_handler(
     wrapper.app = catching_app
 
     with pytest.raises(ConnectError):
-        call(client, method)
-    assert wrapper.done.wait(10)
+        await call(client, method)
+    with trio.fail_after(10):
+        await wrapper.done.wait()
 
     assert [type(e) for e in raised] == [SystemExit]
     assert events == ["on_end started unknown", "on_end finished"]
@@ -914,8 +852,8 @@ def test_base_exception_in_handler(
         }
 
 
-def test_handler_timeout_on_request_stream(
-    client: HaberdasherClientSync, wrapper: Wrapper, executor: ThreadPoolExecutor
+async def test_handler_timeout_on_request_stream(
+    client: HaberdasherClient, wrapper: Wrapper
 ) -> None:
     timed_out: list[bool] = []
 
@@ -931,23 +869,22 @@ def test_handler_timeout_on_request_stream(
             return Hat(size=total)
 
     wrapper.app = HaberdasherASGIApplication(Service())
-    release = threading.Event()
 
-    def stalling_sizes() -> Iterator[Size]:
+    async def stalling_sizes() -> AsyncGenerator[Size]:
         # One message, then the client stalls without ending the body.
         yield Size(inches=7)
-        release.wait(10)
+        await trio.sleep_forever()
 
-    response = executor.submit(client.make_flexible_hat, stalling_sizes())
-    assert wrapper.done.wait(10)
-    release.set()
+    with trio.fail_after(10):
+        async with contextlib.aclosing(stalling_sizes()) as request:
+            hat = await client.make_flexible_hat(request)
 
     assert timed_out == [True]
-    assert response.result(10) == Hat(size=7)
+    assert hat == Hat(size=7)
 
 
-def test_bidi_handler_returns_early(
-    client: HaberdasherClientSync, wrapper: Wrapper
+async def test_bidi_handler_returns_early(
+    client: HaberdasherClient, wrapper: Wrapper
 ) -> None:
     """The request stream is closed by the server, not the garbage collector."""
 
@@ -961,7 +898,8 @@ def test_bidi_handler_returns_early(
 
     wrapper.app = HaberdasherASGIApplication(FirstSizeOnly())
 
-    hats = list(client.make_various_hats(sizes()))
+    async with contextlib.aclosing(sizes(1, 2, 3)) as request:
+        hats = [hat async for hat in client.make_various_hats(request)]
 
     assert [hat.size for hat in hats] == [1]
 
