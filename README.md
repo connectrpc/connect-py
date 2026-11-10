@@ -31,7 +31,7 @@ Connect already works with your current tech stack:
 
 - **Servers:** WSGI and ASGI-ready (including Trio), use with any [compatible server](https://connectrpc.com/docs/python/deployment/)
 - **Clients:** Lightweight sync and async clients, backed by `pyqwest`
-- **Protocols:** Supports Connect, gRPC, and gRPC-Web (HTTP/1.1 and HTTP/2)
+- **Protocols:** Supports Connect and gRPC-Web over HTTP/1.1 and HTTP/2, and gRPC over HTTP/2
 - **Type safety:** Fully type-annotated generated code
 - **Streaming:** Full support for server, client, and bidirectional streaming
 - **Compression:** Built-in support for gzip, brotli, and zstd
@@ -121,8 +121,9 @@ class MyHelloService(HelloService):
 
 app = HelloServiceASGIApplication(MyHelloService())
 
-# Run with any ASGI server, e.g. uvicorn:
-# uvicorn server:app --port 8080
+# Run with any ASGI server. gRPC and full-duplex bidirectional streaming
+# need HTTP/2, which pyvoy supports:
+# pyvoy server:app --port 8080
 ```
 
 Client libraries are automatically generated for you. Here's what the async client looks like:
