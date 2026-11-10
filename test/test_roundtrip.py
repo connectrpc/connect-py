@@ -632,8 +632,7 @@ async def test_server_stream_client_disconnect() -> None:
 
 
 @pytest.mark.anyio
-# On trio, a stream handler is not cancelled on disconnect. It polls for the
-# disconnect between messages, which test_server_trio covers.
+# trio doesn't cancel stream handlers on disconnect. See test_server_trio.
 @pytest.mark.asyncio_only
 async def test_server_stream_client_disconnect_while_blocked() -> None:
     """A handler blocked between messages is cancelled when the client disconnects."""
@@ -707,8 +706,8 @@ async def test_server_stream_client_disconnect_while_blocked() -> None:
     [
         pytest.param("MakeHat", "POST", b"application/proto", id="connect_unary"),
         pytest.param("MakeHat", "GET", b"", id="connect_unary_get"),
-        # On trio, a handler served as a stream is not cancelled on
-        # disconnect. test_server_trio covers its behavior there.
+        # trio doesn't cancel stream handlers on disconnect. See
+        # test_server_trio.
         pytest.param(
             "MakeHat",
             "POST",
@@ -847,7 +846,7 @@ async def test_client_disconnect_cancels_blocked_handler(
 
 
 @pytest.mark.anyio
-# This test patches the asyncio loop's clock.
+# Patches the asyncio event loop's clock.
 @pytest.mark.asyncio_only
 async def test_client_disconnects_as_deadline_fires() -> None:
     """A disconnect noticed while the deadline's cancellation is in flight is harmless.

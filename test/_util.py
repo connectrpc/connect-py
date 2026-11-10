@@ -60,12 +60,12 @@ async def call(method: MethodType, request: Size | list[Size]) -> Hat | list[Hat
 async def cancel_when(
     event: anyio.Event, func: Callable[[], Awaitable[object]]
 ) -> BaseException | None:
-    """Runs func until the event is set, then cancels it as a server would.
+    """Run func until the event is set, then cancel it the way a server would.
 
-    Servers on asyncio cancel the request's task, which delivers the
-    cancellation once, while trio cancels a scope, which delivers it at every
-    checkpoint until the scope exits. Returns what func raised, which is the
-    backend's cancellation exception when func propagates the cancellation.
+    asyncio servers cancel the request's task, which raises CancelledError
+    once. trio servers cancel a scope, which raises Cancelled at every
+    checkpoint until the scope exits. Returns the exception func raised, if
+    any.
     """
     raised: BaseException | None = None
 

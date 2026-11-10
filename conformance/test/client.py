@@ -255,7 +255,7 @@ async def client_async(
 
 
 class _Call(typing.Protocol):
-    """The call under test, running concurrently with the test."""
+    """A request running in the background, which the test can cancel."""
 
     def cancel(self) -> None: ...
 
@@ -263,7 +263,7 @@ class _Call(typing.Protocol):
 
 
 class _AsyncioCall:
-    """The call under test in a task, cancelled as asyncio applications do."""
+    """Runs a request in an asyncio task."""
 
     def __init__(self, coro: Coroutine[object, object, object]) -> None:
         self._task = asyncio.create_task(coro)
@@ -276,10 +276,10 @@ class _AsyncioCall:
 
 
 class _TrioCall:
-    """The call under test in a cancel scope, cancelled as trio applications do.
+    """Runs a request in a trio cancel scope.
 
-    The client lets trio's cancellation propagate to the scope instead of
-    raising an error, so a call that the scope cancelled is CANCELED.
+    The client doesn't turn trio cancellation into an error, so this reports a
+    cancelled request as CANCELED itself.
     """
 
     def __init__(
@@ -314,15 +314,15 @@ class _TrioCall:
 async def _call_starter(
     mode: Mode,
 ) -> AsyncGenerator[Callable[[Coroutine[object, object, object]], _Call]]:
-    """Yields what starts the call under test, on the mode's event loop."""
+    """Yield a function that starts a request in the background."""
     if mode == "trio":
         error: Exception | None = None
         async with trio.open_nursery() as nursery:
             try:
                 yield functools.partial(_TrioCall, nursery)
             except Exception as e:
-                # A nursery wraps an error raised in its body in an
-                # ExceptionGroup. This error is raised after the nursery exits.
+                # Re-raised outside the nursery so it isn't wrapped in an
+                # ExceptionGroup.
                 error = e
                 nursery.cancel_scope.cancel()
         if error is not None:

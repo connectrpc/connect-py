@@ -1,4 +1,4 @@
-"""Configures async tests of every package in the repository."""
+"""Shared pytest configuration for every package in the repository."""
 
 from __future__ import annotations
 
@@ -7,14 +7,14 @@ import pytest
 
 @pytest.fixture(scope="session", params=["asyncio", "trio"])
 def anyio_backend(request: pytest.FixtureRequest) -> str:
-    """Return each backend async tests run on, with one runner for the session."""
+    """Run async tests on both asyncio and trio."""
     return request.param
 
 
 def pytest_collection_modifyitems(
     config: pytest.Config, items: list[pytest.Item]
 ) -> None:
-    """Deselects `asyncio_only` tests on the other backends."""
+    """Deselect tests marked `asyncio_only` when running on trio."""
     kept: list[pytest.Item] = []
     dropped: list[pytest.Item] = []
     for item in items:

@@ -224,7 +224,7 @@ def test_request_content_sync(protocol: ProtocolType) -> None:
 @pytest.mark.anyio
 @pytest.mark.parametrize("method", ["unary", "server_stream"])
 async def test_cancelled_by_scope(anyio_backend: str, method: str) -> None:
-    """A trio cancellation reaches its scope; asyncio's is reported as CANCELED."""
+    """Cancellation propagates under trio and raises CANCELED under asyncio."""
 
     class BlockingHaberdasher(Haberdasher):
         async def make_hat(self, _request, _ctx):
@@ -246,8 +246,8 @@ async def test_cancelled_by_scope(anyio_backend: str, method: str) -> None:
                 case "unary":
                     await client.make_hat(Size(inches=10))
                 case "server_stream":
-                    # The generated client types streams as AsyncIterator, but
-                    # they are async generators.
+                    # Generated stream methods are typed as AsyncIterator but
+                    # return async generators.
                     hats = cast(
                         "AsyncGenerator[Hat]", client.make_similar_hats(Size(inches=10))
                     )

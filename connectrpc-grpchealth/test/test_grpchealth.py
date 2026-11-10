@@ -94,7 +94,7 @@ def _serve_trio(app: ASGIFramework) -> Iterator[str]:
     params=[
         pytest.param("sync", marks=pytest.mark.asyncio_only),
         "async",
-        # This client's server runs on its own trio thread, apart from the backend.
+        # Serves from its own trio thread regardless of the backend.
         pytest.param("trio", marks=pytest.mark.asyncio_only),
     ]
 )
@@ -141,7 +141,7 @@ async def _watch(
         for response in client.watch(request, timeout_ms=timeout_ms):
             yield response.status
         return
-    # The generated client types streams as AsyncIterator, but they are async
+    # Generated stream methods are typed as AsyncIterator but return async
     # generators.
     responses = cast(
         "AsyncGenerator[HealthCheckResponse]",

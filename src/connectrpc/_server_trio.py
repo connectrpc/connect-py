@@ -1,7 +1,7 @@
-"""The event loop operations of requests and clients under trio.
+"""Event loop operations under trio, for the server and client.
 
-Imported the first time a request or client call runs under trio, so that
-applications on asyncio never import trio.
+This module is only imported once code runs under trio, so asyncio
+applications never import trio.
 """
 
 from __future__ import annotations

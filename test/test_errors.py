@@ -973,7 +973,7 @@ async def test_async_server_timeout_writing_unary_response() -> None:
 
 
 @pytest.mark.anyio
-# On trio, a write after the deadline is cancelled even when it would not wait.
+# trio cancels the write once the deadline has passed, even if it wouldn't block.
 @pytest.mark.asyncio_only
 async def test_async_unary_response_written_after_deadline() -> None:
     """A handler that finishes late without suspending still gets its reply out.
@@ -1000,8 +1000,8 @@ async def _sizes() -> AsyncIterator[Size]:
     yield Size(inches=10)
 
 
-# The client reports an asyncio cancellation as CANCELED, while a trio
-# cancellation propagates to its scope.
+# The client only converts asyncio cancellation to CANCELED. trio cancellation
+# propagates as is.
 @pytest.mark.anyio
 @pytest.mark.asyncio_only
 @pytest.mark.parametrize("protocol", _protocols)

@@ -50,7 +50,7 @@ test = [
   "example",
 
   "anyio==4.16.0",
-  # ASGITransport runs the application under trio since 0.14.0.
+  # ASGITransport supports trio from 0.14.0.
   "pyqwest>=0.14.0",
   "pytest==9.2.0",
   "pytest-timeout==2.5.0",

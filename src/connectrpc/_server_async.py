@@ -681,8 +681,8 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
         # Get request body
         chunks: list[bytes] = []
         read_bytes = 0
-        # The body generator is unfinished when the limit is exceeded, and trio
-        # warns when an unfinished generator is garbage collected.
+        # Close the generator explicitly if the limit is exceeded. trio warns
+        # about unfinished async generators left to the garbage collector.
         async with contextlib.aclosing(_read_body(receive)) as body:
             async for chunk in body:
                 read_bytes += len(chunk)

@@ -37,14 +37,14 @@ EXTRA = {
         "idna>=2",
     ],
     "connectrpc_grpcreflect": [
-        # trio leaves these floors unbounded, as for connectrpc.
+        # trio's unbounded floors, as for connectrpc.
         "sortedcontainers>=2.1",
         "idna>=2",
     ],
     "connectrpc_otel": [
         # The tests need this repository's connectrpc.
         "dist/connectrpc-*.whl",
-        # trio leaves these floors unbounded, as for connectrpc.
+        # trio's unbounded floors, as for connectrpc.
         "sortedcontainers>=2.1",
         "idna>=2",
         # Two of opentelemetry-instrumentation's transitive floors don't

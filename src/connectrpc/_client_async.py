@@ -349,8 +349,7 @@ class ConnectClient:
         except ConnectError:
             raise
         except CancelledError as e:
-            # trio.Cancelled is not a CancelledError, so it propagates to its
-            # cancel scope unchanged.
+            # trio.Cancelled isn't caught here. It has to reach its cancel scope.
             raise ConnectError(Code.CANCELED, "Request was cancelled") from e
         except Exception as e:
             raise _client_shared.map_error(e) from e

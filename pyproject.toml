@@ -109,7 +109,7 @@ filterwarnings = [
   "ignore:SelectableGroups dict interface is deprecated. Use select.",
 ]
 markers = [
-  "asyncio_only: runs only on the asyncio backend, for code that calls asyncio directly or runs off the event loop, like the sync client",
+  "asyncio_only: skip on trio, e.g. for the sync client or asyncio-specific behavior",
 ]
 strict = true
 testpaths = ["test"]

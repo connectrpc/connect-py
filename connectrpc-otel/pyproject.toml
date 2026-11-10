@@ -77,7 +77,7 @@ test = [
   "opentelemetry-instrumentation-asgi>=0.60b1",
   "opentelemetry-instrumentation-wsgi>=0.60b1",
   "opentelemetry-sdk>=1.39.1",
-  # ASGITransport runs the application under trio since 0.14.0.
+  # ASGITransport supports trio from 0.14.0.
   "pyqwest>=0.14.0",
   "pytest==9.2.0",
   "pytest-timeout==2.5.0",
