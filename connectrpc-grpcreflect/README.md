@@ -45,4 +45,5 @@ Mount both `grpc.reflection.v1` and `grpc.reflection.v1alpha`. Both are
 listed by `list_services`, and a client that calls v1alpha gets a 404 if it
 isn't mounted.
 
-Reflection uses the gRPC protocol which requires a server that supports HTTP/2 trailers such as [pyvoy](https://pyvoy.dev).
+Reflection uses the gRPC protocol which requires a server that supports HTTP/2
+trailers such as [pyvoy](https://pyvoy.dev).
