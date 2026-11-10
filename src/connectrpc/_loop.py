@@ -116,12 +116,7 @@ _ASYNCIO_LOOP = AsyncioLoop()
 
 
 def current_loop() -> AsyncioLoop | TrioLoop:
-    """Return the operations of the running event loop.
-
-    The loop is picked with sniffio, as pyqwest picks it, so the two agree. This
-    matters when trio runs as a guest on an asyncio host, where asyncio's running
-    loop is also set.
-    """
+    """Return the operations of the running event loop."""
     if sniffio is not None:
         with contextlib.suppress(sniffio.AsyncLibraryNotFoundError):
             if sniffio.current_async_library() == "trio":
