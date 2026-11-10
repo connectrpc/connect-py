@@ -42,7 +42,4 @@ checker.set_status("connectrpc.eliza.v1.ElizaService", ServingStatus.NOT_SERVING
 
 To compute statuses some other way, pass the service any implementation of `Checker`.
 
-`grpc-health-probe` and Kubernetes gRPC probes speak the gRPC protocol,
-which needs HTTP/2 and the ASGI trailers extension. Serve the app with
-[pyvoy](https://github.com/curioswitch/pyvoy), which supports both; Uvicorn
-(HTTP/1.1 only) and Granian (no trailers) don't.
+`grpc-health-probe` and Kubernetes gRPC probes use the gRPC protocol, which requires a server that supports HTTP/2 trailers such as [pyvoy](https://pyvoy.dev).
