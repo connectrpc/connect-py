@@ -43,6 +43,7 @@ from ._server_shared import (
     EndpointClientStream,
     EndpointServerStream,
     EndpointUnary,
+    check_deadline,
     method_info,
     method_url,
 )
@@ -203,7 +204,9 @@ class _StreamResponse:
     writer: EnvelopeWriter
     request_stream: AsyncGenerator[Any] | None = None
 
-    async def send_headers(self, send: _ResponseSender, ctx: RequestContext) -> None:
+    async def send_headers(
+        self, send: _ResponseSender, ctx: RequestContext | None
+    ) -> None:
         headers = [
             (b"content-type", self.protocol.content_type(self.codec).encode()),
             (
@@ -211,10 +214,11 @@ class _StreamResponse:
                 self.compression.name().encode(),
             ),
         ]
-        headers.extend(
-            (key.encode(), value.encode())
-            for key, value in ctx.response_headers.allitems()
-        )
+        if ctx is not None:
+            headers.extend(
+                (key.encode(), value.encode())
+                for key, value in ctx.response_headers.allitems()
+            )
         await send(
             {
                 "type": "http.response.start",
@@ -225,16 +229,19 @@ class _StreamResponse:
         )
 
     async def end(
-        self, send: _ResponseSender, error: Exception | None, ctx: RequestContext
+        self, send: _ResponseSender, error: Exception | None, ctx: RequestContext | None
     ) -> bool:
-        """End the stream, unless a failed send means it can't be."""
+        """End the stream, unless a failed send means it can't be.
+
+        ctx is None when the request failed before its context was created.
+        """
         if send.failed:
             return False
         if not send.started:
             # Exception before any response message is returned
             await self.send_headers(send, ctx)
         end_message = self.writer.end(
-            ctx.response_trailers,
+            ctx.response_trailers if ctx is not None else Headers(),
             ConnectWireError.from_exception(error) if error else None,
         )
         if isinstance(end_message, bytes):
@@ -459,17 +466,6 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
                         msg = f"ASGI server does not support ASGI trailers extension but protocol for content-type '{content_type}' requires trailers"
                         raise RuntimeError(msg)
 
-                    ctx = protocol.create_request_context(
-                        endpoint.method,
-                        http_method,
-                        http_scheme,
-                        headers,
-                        client_address,
-                    )
-                    if (timeout_ms := ctx.timeout_ms) is not None:
-                        deadline = loop.time() + timeout_ms / 1000
-                        timeout.reschedule(deadline)
-
                     if http_method == "GET":
                         query_string = scope.get("query_string", b"").decode("utf-8")
                         query_params = parse_qs(query_string, keep_blank_values=True)
@@ -481,6 +477,42 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
                             stream=not isinstance(endpoint, EndpointUnary),
                         )
                     codec = self._codecs.get(codec_name)
+
+                    stream_response: _StreamResponse | None = None
+                    req_compression: Compression | None = None
+                    if codec and not (
+                        isinstance(endpoint, EndpointUnary)
+                        and isinstance(protocol, ConnectServerProtocol)
+                    ):
+                        req_compression, resp_compression = (
+                            protocol.negotiate_stream_compression(
+                                headers, self._compressions
+                            )
+                        )
+                        stream_response = _StreamResponse(
+                            protocol,
+                            codec,
+                            resp_compression,
+                            protocol.create_envelope_writer(codec, resp_compression),
+                        )
+                        if isinstance(protocol, ConnectServerProtocol):
+                            # Connect reports a stream's errors in its end-stream
+                            # message, including errors in the request headers
+                            # validated below, so it needs the response first.
+                            stream = stream_response
+
+                    ctx = protocol.create_request_context(
+                        endpoint.method,
+                        http_method,
+                        http_scheme,
+                        headers,
+                        client_address,
+                    )
+                    check_deadline(ctx)
+                    if (timeout_ms := ctx.timeout_ms) is not None:
+                        deadline = loop.time() + timeout_ms / 1000
+                        timeout.reschedule(deadline)
+
                     if not codec:
                         accept_post = (
                             "application/json, application/proto"
@@ -519,17 +551,8 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
                             ctx,
                         )
                     else:
-                        req_compression, resp_compression = (
-                            protocol.negotiate_stream_compression(
-                                headers, self._compressions
-                            )
-                        )
-                        stream = _StreamResponse(
-                            protocol,
-                            codec,
-                            resp_compression,
-                            protocol.create_envelope_writer(codec, resp_compression),
-                        )
+                        assert stream_response is not None  # noqa: S101 # set with codec
+                        stream = stream_response
                         await metadata_run.start()
                         if not req_compression:
                             raise unknown_compression_error(
@@ -588,8 +611,8 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
                         if cancelled
                         else contextlib.nullcontext()
                     ):
-                        if stream is not None:
-                            assert ctx is not None  # noqa: S101 # set before stream
+                        # An HTTP error is always a plain HTTP response.
+                        if stream is not None and not isinstance(error, HTTPError):
                             responded = await stream.end(sender, error, ctx)
                         elif error is not None:
                             responded = await self._handle_error(

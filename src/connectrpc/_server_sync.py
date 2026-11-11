@@ -4,7 +4,7 @@ import base64
 import functools
 import traceback
 from abc import ABC
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from http import HTTPStatus
 from typing import TYPE_CHECKING, Generic, TypeVar, cast, overload
 from urllib.parse import parse_qs
@@ -45,6 +45,7 @@ from ._server_shared import (
     EndpointClientStreamSync,
     EndpointServerStreamSync,
     EndpointUnarySync,
+    check_deadline,
     method_info,
     method_url,
 )
@@ -189,6 +190,45 @@ def _read_body(request_body: _RequestBody) -> Iterator[bytes]:
         yield chunk
 
 
+@dataclass(slots=True)
+class _StreamResponse:
+    """How a stream's response is written."""
+
+    protocol: ServerProtocol
+    codec: Codec
+    compression: Compression
+    writer: EnvelopeWriter
+
+    def send_headers(
+        self, start_response: StartResponse, ctx: RequestContext | None
+    ) -> None:
+        headers = [
+            ("content-type", self.protocol.content_type(self.codec)),
+            (self.protocol.compression_header_name(), self.compression.name()),
+        ]
+        if ctx is not None:
+            headers.extend(ctx.response_headers.allitems())
+        start_response("200 OK", headers)
+
+    def end(
+        self,
+        start_response: StartResponse,
+        send_trailers: Callable[[list[tuple[str, str]]], None] | None,
+        ctx: RequestContext | None,
+        error: Exception | None,
+    ) -> list[bytes]:
+        """Respond with only the end of the stream.
+
+        ctx is None when the request failed before its context was created.
+        """
+        self.send_headers(start_response, ctx)
+        end_message = self.writer.end(
+            ctx.response_trailers if ctx is not None else Headers(),
+            ConnectWireError.from_exception(error) if error else None,
+        )
+        return [_end_response(end_message, send_trailers)]
+
+
 class ConnectWSGIApplication(ABC, Generic[_SVC]):
     """A WSGI application for the Connect protocol."""
 
@@ -328,6 +368,8 @@ class ConnectWSGIApplication(ABC, Generic[_SVC]):
     ) -> Iterable[bytes]:
         ctx: RequestContext | None = None
         protocol: ServerProtocol | None = None
+        stream: _StreamResponse | None = None
+        send_trailers: Callable[[list[tuple[str, str]]], None] | None = None
         request_body = _RequestBody.from_environ(environ)
         try:
             path = environ["PATH_INFO"]
@@ -353,16 +395,42 @@ class ConnectWSGIApplication(ABC, Generic[_SVC]):
 
             content_type = headers.get("content-type", "")
             protocol = negotiate_server_protocol(content_type)
-            send_trailers: Callable[[list[tuple[str, str]]], None] | None = None
 
             if protocol.uses_trailers():
                 send_trailers = environ.get("wsgi.ext.http.send_trailers")
                 if not send_trailers:
                     msg = f"WSGI server does not support WSGI trailers extension but protocol for content-type '{content_type}' requires trailers"
                     raise RuntimeError(msg)
+
+            stream_response: _StreamResponse | None = None
+            req_compression: Compression | None = None
+            if not (
+                isinstance(endpoint, EndpointUnarySync)
+                and isinstance(protocol, ConnectServerProtocol)
+            ) and (
+                codec := self._codecs.get(
+                    protocol.codec_name_from_content_type(content_type, stream=True)
+                )
+            ):
+                req_compression, resp_compression = (
+                    protocol.negotiate_stream_compression(headers, self._compressions)
+                )
+                stream_response = _StreamResponse(
+                    protocol,
+                    codec,
+                    resp_compression,
+                    protocol.create_envelope_writer(codec, resp_compression),
+                )
+                if isinstance(protocol, ConnectServerProtocol):
+                    # Connect reports a stream's errors in its end-stream message,
+                    # including errors in the request headers validated below, so
+                    # it needs the response first.
+                    stream = stream_response
+
             ctx = protocol.create_request_context(
                 endpoint.method, http_method, http_scheme, headers, client_address
             )
+            check_deadline(ctx)
 
             if isinstance(endpoint, EndpointUnarySync) and isinstance(
                 protocol, ConnectServerProtocol
@@ -376,12 +444,23 @@ class ConnectWSGIApplication(ABC, Generic[_SVC]):
                     ctx,
                     headers,
                 )
+            if stream_response is None:
+                raise HTTPError(
+                    HTTPStatus.UNSUPPORTED_MEDIA_TYPE,
+                    [
+                        (
+                            "Accept-Post",
+                            "application/connect+json, application/connect+proto",
+                        )
+                    ],
+                )
             return self._handle_stream(
                 environ,
                 request_body,
                 start_response,
                 send_trailers,
-                protocol,
+                stream_response,
+                req_compression,
                 headers,
                 endpoint,
                 ctx,
@@ -390,6 +469,9 @@ class ConnectWSGIApplication(ABC, Generic[_SVC]):
         except Exception as e:  # noqa: BLE001 # invoking user callback
             _drain_request_body(environ, request_body)
             _maybe_log_exception(environ, e)
+            # An HTTP error is always a plain HTTP response.
+            if stream is not None and not isinstance(e, HTTPError):
+                return stream.end(start_response, send_trailers, ctx, e)
             return self._handle_error(e, ctx, protocol, start_response)
 
     def _handle_unary(
@@ -572,42 +654,24 @@ class ConnectWSGIApplication(ABC, Generic[_SVC]):
         request_body: _RequestBody,
         start_response: StartResponse,
         send_trailers: Callable[[list[tuple[str, str]]], None] | None,
-        protocol: ServerProtocol,
+        stream: _StreamResponse,
+        req_compression: Compression | None,
         headers: Headers,
         endpoint: EndpointSync[_REQ, _RES],
         ctx: RequestContext[_REQ, _RES],
     ) -> Iterable[bytes]:
-        req_compression, resp_compression = protocol.negotiate_stream_compression(
-            headers, self._compressions
-        )
-
-        codec_name = protocol.codec_name_from_content_type(
-            headers.get("content-type", ""), stream=True
-        )
-        codec = self._codecs.get(codec_name)
-        if not codec:
-            raise HTTPError(
-                HTTPStatus.UNSUPPORTED_MEDIA_TYPE,
-                [
-                    (
-                        "Accept-Post",
-                        "application/connect+json, application/connect+proto",
-                    )
-                ],
-            )
-        writer = protocol.create_envelope_writer(codec, resp_compression)
         metadata_run = MetadataInterceptorsRunSync(self._metadata_interceptors, ctx)
         try:
             metadata_run.start()
             if not req_compression:
                 raise unknown_compression_error(
-                    headers.get(protocol.compression_header_name(), ""),
+                    headers.get(stream.protocol.compression_header_name(), ""),
                     self._compressions,
                 )
             request_stream = _request_stream(
                 request_body,
                 endpoint.method.input,
-                codec,
+                stream.codec,
                 req_compression,
                 self._read_max_bytes,
             )
@@ -633,24 +697,14 @@ class ConnectWSGIApplication(ABC, Generic[_SVC]):
 
             # Trigger service logic by consuming the first (possibly only) response message.
             first_response = next(response_stream, None)
-            # Response headers set before the first message should be set to the context and
-            # we can send them.
-            _send_stream_response_headers(
-                start_response, protocol, codec, resp_compression.name(), ctx
-            )
             if first_response is None:
                 # It's valid for a service method to return no messages, finish the response
                 # without error.
                 error = metadata_run.end(None)
-                return [
-                    _end_response(
-                        writer.end(
-                            ctx.response_trailers,
-                            ConnectWireError.from_exception(error) if error else None,
-                        ),
-                        send_trailers,
-                    )
-                ]
+                return stream.end(start_response, send_trailers, ctx, error)
+            # Response headers set before the first message should be set to the context and
+            # we can send them.
+            stream.send_headers(start_response, ctx)
 
             # WSGI requires start_response to be called before returning the body iterator.
             # This means we cannot call yield in this function since the function would not
@@ -662,7 +716,7 @@ class ConnectWSGIApplication(ABC, Generic[_SVC]):
                 environ,
                 request_body,
                 response_stream,
-                writer,
+                stream.writer,
                 send_trailers,
                 ctx,
                 metadata_run,
@@ -675,17 +729,7 @@ class ConnectWSGIApplication(ABC, Generic[_SVC]):
             assert error is not None  # noqa: S101 # end never discards an error
             _drain_request_body(environ, request_body)
             _maybe_log_exception(environ, error)
-            _send_stream_response_headers(
-                start_response, protocol, codec, resp_compression.name(), ctx
-            )
-            return [
-                _end_response(
-                    writer.end(
-                        ctx.response_trailers, ConnectWireError.from_exception(error)
-                    ),
-                    send_trailers,
-                )
-            ]
+            return stream.end(start_response, send_trailers, ctx, error)
         except BaseException as e:
             # Report the error to on_end, then let the exception reach the app server.
             error = ConnectError(Code.UNKNOWN, "Request was interrupted")
@@ -744,23 +788,6 @@ def _add_context_headers(headers: list[tuple[str, str]], ctx: RequestContext) ->
     headers.extend(
         (f"trailer-{key}", value) for key, value in ctx.response_trailers.allitems()
     )
-
-
-def _send_stream_response_headers(
-    start_response: StartResponse,
-    protocol: ServerProtocol,
-    codec: Codec,
-    compression_name: str,
-    ctx: RequestContext,
-) -> None:
-    response_headers = [
-        ("content-type", protocol.content_type(codec)),
-        (protocol.compression_header_name(), compression_name),
-    ]
-    response_headers.extend(
-        (key, value) for key, value in ctx.response_headers.allitems()
-    )
-    start_response("200 OK", response_headers)
 
 
 def _request_stream(

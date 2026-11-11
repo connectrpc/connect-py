@@ -98,7 +98,7 @@ class ConnectServerProtocol:
             )
 
         timeout_header = headers.get(CONNECT_HEADER_TIMEOUT)
-        if timeout_header:
+        if timeout_header is not None:
             if len(timeout_header) > 10:
                 raise ConnectError(
                     Code.INVALID_ARGUMENT,
