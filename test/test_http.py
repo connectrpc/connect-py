@@ -17,7 +17,7 @@ from pyqwest.testing import ASGITransport, WSGITransport
 
 from connectrpc._server_sync import _RequestBody
 from connectrpc.code import Code
-from connectrpc.codec import proto_json_codec
+from connectrpc.codec import proto_binary_codec, proto_json_codec
 from connectrpc.errors import ConnectError
 
 from .connectrpc.example.haberdasher_connect import (
@@ -40,6 +40,9 @@ _charset_content_type_cases = [
     "application/json;charset=utf-8",
     "application/json;    charset=utf-8",
     "application/json; charset=utf-8; version=1",
+    'application/json; charset="utf-8"',
+    "application/json; version=1",
+    "application/json; version=1; charset=utf-8",
     "application/JSON",
 ]
 
@@ -151,6 +154,65 @@ async def test_json_charset_content_type_stream_async(header: str) -> None:
     async for hat in client.make_similar_hats(Size(inches=2)):
         hats.append(hat)
     assert hats == [Hat(size=2), Hat(size=3)]
+
+
+_unsupported_content_type_cases = [
+    "application/json; charset=iso-8859-1",
+    "application/json; version=1; charset=iso-8859-1",
+    "application/connect+json; charset=iso-8859-1",
+]
+
+
+@pytest.mark.parametrize("header", _unsupported_content_type_cases)
+def test_json_unsupported_charset(header: str) -> None:
+    class NoopHaberdasherSync(HaberdasherSync):
+        pass
+
+    transport = WSGITransport(HaberdasherWSGIApplication(NoopHaberdasherSync()))
+    client = SyncClient(transport=transport)
+
+    method = "MakeSimilarHats" if "connect+" in header else "MakeHat"
+    res = client.post(
+        f"http://localhost/connectrpc.example.Haberdasher/{method}",
+        content=b"{}",
+        headers={"content-type": header},
+    )
+    assert res.status == 415
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("header", _unsupported_content_type_cases)
+async def test_json_unsupported_charset_async(header: str) -> None:
+    class NoopHaberdasher(Haberdasher):
+        pass
+
+    transport = ASGITransport(HaberdasherASGIApplication(NoopHaberdasher()))
+    client = Client(transport=transport)
+
+    method = "MakeSimilarHats" if "connect+" in header else "MakeHat"
+    res = await client.post(
+        f"http://localhost/connectrpc.example.Haberdasher/{method}",
+        content=b"{}",
+        headers={"content-type": header},
+    )
+    assert res.status == 415
+
+
+def test_proto_charset_ignored() -> None:
+    class HeadersHaberdasherSync(HaberdasherSync):
+        def make_hat(self, _request, _ctx):
+            return Hat(size=2)
+
+    transport = WSGITransport(HaberdasherWSGIApplication(HeadersHaberdasherSync()))
+    client = SyncClient(transport=transport)
+
+    res = client.post(
+        "http://localhost/connectrpc.example.Haberdasher/MakeHat",
+        content=b"",
+        headers={"content-type": "application/proto; charset=iso-8859-1"},
+    )
+    assert res.status == 200
+    assert proto_binary_codec().decode(res.content, Hat) == Hat(size=2)
 
 
 def test_error_response_does_not_read_past_content_length() -> None:
