@@ -149,11 +149,7 @@ class EndpointBidiStreamSync(EndpointSync[REQ, RES]):
 
 
 def check_deadline(ctx: RequestContext) -> None:
-    """Raise deadline_exceeded if the request's deadline has already passed.
-
-    A timeout of zero is valid but has expired on arrival. The handler isn't
-    called since it may finish without yielding to the deadline.
-    """
+    """Raise deadline_exceeded if the request's deadline has already passed."""
     if (timeout_ms := ctx.timeout_ms) is not None and timeout_ms <= 0:
         raise ConnectError(Code.DEADLINE_EXCEEDED, "Request timed out")
 

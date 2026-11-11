@@ -508,10 +508,10 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
                         headers,
                         client_address,
                     )
+                    check_deadline(ctx)
                     if (timeout_ms := ctx.timeout_ms) is not None:
                         deadline = loop.time() + timeout_ms / 1000
                         timeout.reschedule(deadline)
-                    check_deadline(ctx)
 
                     if not codec:
                         accept_post = (
