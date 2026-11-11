@@ -1,21 +1,15 @@
 from __future__ import annotations
 
-import asyncio
 import threading
-from concurrent.futures import Future
-from contextlib import contextmanager
-from functools import partial
+from contextlib import aclosing
 from types import SimpleNamespace
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
+import anyio
 import pytest
-import pytest_asyncio
-import trio
 from connectrpc.code import Code
 from connectrpc.errors import ConnectError
-from hypercorn.config import Config
-from hypercorn.trio import serve
-from pyqwest import Client, HTTPVersion, SyncClient, SyncHTTPTransport
+from pyqwest import Client, SyncClient
 from pyqwest.testing import ASGITransport, WSGITransport
 
 from connectrpc_grpchealth import (
@@ -40,9 +34,7 @@ from connectrpc_grpchealth._gen.grpc.health.v1.health_pb import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncIterator, Iterator, Mapping
-
-    from hypercorn.typing import ASGIFramework
+    from collections.abc import AsyncGenerator, AsyncIterator, Mapping
 
 ELIZA = "connectrpc.eliza.v1.ElizaService"
 HABERDASHER = "connectrpc.example.Haberdasher"
@@ -55,43 +47,7 @@ def checker() -> StaticChecker:
     return StaticChecker(ELIZA, HABERDASHER)
 
 
-@contextmanager
-def _serve_trio(app: ASGIFramework) -> Iterator[str]:
-    """Serve the app with hypercorn's trio worker on a background thread."""
-    stop = threading.Event()
-    started: Future[str] = Future()
-
-    async def stopped() -> None:
-        await trio.to_thread.run_sync(stop.wait, abandon_on_cancel=True)
-
-    async def main() -> None:
-        config = Config()
-        config.bind = ["127.0.0.1:0"]
-        async with trio.open_nursery() as nursery:
-            binds = await nursery.start(
-                partial(serve, app, config, shutdown_trigger=stopped)
-            )
-            started.set_result(binds[0])
-
-    def run() -> None:
-        try:
-            trio.run(main)
-        except BaseException as e:
-            if not started.done():
-                started.set_exception(e)
-            raise
-
-    thread = threading.Thread(target=run, daemon=True)
-    thread.start()
-    try:
-        yield started.result(timeout=10)
-    finally:
-        stop.set()
-        thread.join(10)
-    assert not thread.is_alive(), "server did not stop"
-
-
-@pytest_asyncio.fixture(params=["sync", "async", "trio"])
+@pytest.fixture(params=[pytest.param("sync", marks=pytest.mark.asyncio_only), "async"])
 async def client(
     request: pytest.FixtureRequest, checker: StaticChecker
 ) -> AsyncIterator[AnyHealthClient]:
@@ -107,14 +63,6 @@ async def client(
             async with HealthClient(
                 "http://localhost", http_client=Client(ASGITransport(app))
             ) as client:
-                yield client
-        case "trio":
-            app = HealthASGIApplication(HealthService(checker))
-            with (
-                _serve_trio(app) as url,
-                SyncHTTPTransport(http_version=HTTPVersion.HTTP1) as transport,
-                HealthClientSync(url, http_client=SyncClient(transport)) as client,
-            ):
                 yield client
 
 
@@ -135,17 +83,24 @@ async def _watch(
         for response in client.watch(request, timeout_ms=timeout_ms):
             yield response.status
         return
-    async for response in client.watch(request, timeout_ms=timeout_ms):
-        yield response.status
+    # Generated stream methods are typed as AsyncIterator but return async
+    # generators.
+    responses = cast(
+        "AsyncGenerator[HealthCheckResponse]",
+        client.watch(request, timeout_ms=timeout_ms),
+    )
+    async with aclosing(responses):
+        async for response in responses:
+            yield response.status
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_check_serving(client: AnyHealthClient) -> None:
     assert await _check(client, ELIZA) == ServingStatus.SERVING
     assert await _check(client, "") == ServingStatus.SERVING
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_check_not_serving(
     client: AnyHealthClient, checker: StaticChecker
 ) -> None:
@@ -157,14 +112,14 @@ async def test_check_not_serving(
     assert await _check(client, HABERDASHER) == ServingStatus.SERVING
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_check_unknown_service(client: AnyHealthClient) -> None:
     with pytest.raises(ConnectError, match=r"unknown service missing\.Service") as e:
         await _check(client, "missing.Service")
     assert e.value.code == Code.NOT_FOUND
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_list(client: AnyHealthClient, checker: StaticChecker) -> None:
     checker.set_status(HABERDASHER, ServingStatus.NOT_SERVING)
 
@@ -198,7 +153,7 @@ class _OnDemandChecker(Checker, CheckerSync):
         return {ELIZA: ServingStatus.NOT_SERVING}
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 @pytest.mark.parametrize("checker", [_OnDemandChecker()])
 async def test_custom_checker(client: AnyHealthClient) -> None:
     assert await _check(client, ELIZA) == ServingStatus.NOT_SERVING
@@ -219,7 +174,7 @@ async def test_custom_checker(client: AnyHealthClient) -> None:
     assert e.value.code == Code.UNIMPLEMENTED
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_watch_update(client: AnyHealthClient, checker: StaticChecker) -> None:
     statuses = _watch(client, ELIZA)
 
@@ -233,7 +188,7 @@ async def test_watch_update(client: AnyHealthClient, checker: StaticChecker) -> 
     await statuses.aclose()
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_watch_unknown_service(
     client: AnyHealthClient, checker: StaticChecker
 ) -> None:
@@ -254,7 +209,7 @@ class _EarlyEvent(threading.Event):
         return super().wait(max(timeout - 0.05, 0))
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 @pytest.mark.parametrize("early_wait", [False, True])
 async def test_watch_deadline(
     monkeypatch: pytest.MonkeyPatch, client: AnyHealthClient, early_wait: bool
@@ -269,25 +224,17 @@ async def test_watch_deadline(
     assert e.value.code == Code.DEADLINE_EXCEEDED
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_watch_stops_on_close(
-    request: pytest.FixtureRequest, client: AnyHealthClient, checker: StaticChecker
+    client: AnyHealthClient, checker: StaticChecker
 ) -> None:
     statuses = _watch(client, ELIZA)
     assert await anext(statuses) == ServingStatus.SERVING
     assert checker._watchers
     await statuses.aclose()
-    # Under trio, the server notices the disconnect only once the call next sends
-    # a status, and the disconnect may not have arrived by the first one. asyncio
-    # and the in-process WSGI transport stop the call right away.
-    changes = request.node.callspec.params["client"] == "trio"
     # Well before the call's deadline, which would also stop it.
-    for i in range(50):
+    for _ in range(50):
         if not checker._watchers:
             break
-        if changes:
-            checker.set_status(
-                ELIZA, (ServingStatus.NOT_SERVING, ServingStatus.SERVING)[i % 2]
-            )
-        await asyncio.sleep(0.01)
+        await anyio.sleep(0.01)
     assert not checker._watchers

@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-import asyncio
 import contextlib
 import functools
-from asyncio import CancelledError, sleep, timeout_at as asyncio_timeout_at, wait_for
+import inspect
+from asyncio import CancelledError
 from typing import TYPE_CHECKING, Any, Protocol, TypeVar
 from urllib.parse import urlencode
 
@@ -20,6 +20,7 @@ from ._interceptor_async import (
     UnaryInterceptor,
     resolve_interceptors,
 )
+from ._loop import current_loop
 from ._protocol import ConnectWireError
 from ._protocol_connect import ConnectClientProtocol, ConnectEnvelopeWriter
 from ._protocol_grpc import GRPCClientProtocol, GRPCWebClientProtocol
@@ -295,12 +296,13 @@ class ConnectClient:
 
         request_headers = HTTPHeaders(ctx.request_headers.allitems())
         url = f"{self._address}/{ctx.method.service_name}/{ctx.method.name}"
+        loop = current_loop()
         if (timeout_ms := ctx.timeout_ms) is not None:
             if timeout_ms <= 0:
                 raise ConnectError(Code.DEADLINE_EXCEEDED, "Request timed out")
-            timeout_s = timeout_ms / 1000.0
+            deadline = loop.time() + timeout_ms / 1000.0
         else:
-            timeout_s = None
+            deadline = None
 
         try:
             request_data = self._codec.encode(request)
@@ -314,16 +316,13 @@ class ConnectClient:
                 params_str = urlencode(params)
                 url = f"{url}?{params_str}"
                 request_headers.pop("content-type", None)
-                resp = await wait_for(
-                    self._http_client.get(url=url, headers=request_headers), timeout_s
-                )
+                async with loop.timeout_at(deadline):
+                    resp = await self._http_client.get(url=url, headers=request_headers)
             else:
-                resp = await wait_for(
-                    self._http_client.post(
+                async with loop.timeout_at(deadline):
+                    resp = await self._http_client.post(
                         url=url, headers=request_headers, content=request_data
-                    ),
-                    timeout_s,
-                )
+                    )
             handle_response_headers(resp.status, resp.headers)
 
             self._protocol.validate_response(
@@ -351,6 +350,7 @@ class ConnectClient:
         except ConnectError:
             raise
         except CancelledError as e:
+            # trio.Cancelled isn't caught here. It has to reach its cancel scope.
             raise ConnectError(Code.CANCELED, "Request was cancelled") from e
         except Exception as e:
             raise _client_shared.map_error(e) from e
@@ -372,7 +372,7 @@ class ConnectClient:
     ) -> AsyncIterator[RES]:
         request_headers = HTTPHeaders(ctx.request_headers.allitems())
         url = f"{self._address}/{ctx.method.service_name}/{ctx.method.name}"
-        loop = asyncio.get_running_loop()
+        loop = current_loop()
         if (timeout_ms := ctx.timeout_ms) is not None:
             if timeout_ms <= 0:
                 raise ConnectError(Code.DEADLINE_EXCEEDED, "Request timed out")
@@ -391,7 +391,7 @@ class ConnectClient:
             # block, so it is never in effect while suspended at a yield, where it
             # would cancel the caller's task instead of the request.
             async with contextlib.AsyncExitStack() as stack:
-                async with asyncio_timeout_at(deadline):
+                async with loop.timeout_at(deadline):
                     resp = await stack.enter_async_context(
                         self._http_client.stream(
                             "POST", url, headers=request_headers, content=request_data
@@ -417,7 +417,7 @@ class ConnectClient:
                             # alone wouldn't fire once the deadline has passed.
                             if deadline is not None and loop.time() >= deadline:
                                 raise TimeoutError
-                            async with asyncio_timeout_at(deadline):
+                            async with loop.timeout_at(deadline):
                                 try:
                                     chunk = await anext(it)
                                 except StopAsyncIteration:
@@ -426,11 +426,11 @@ class ConnectClient:
                                 yield message
                                 # Check for cancellation each message. While this seems heavyweight,
                                 # conformance tests require it.
-                                await sleep(0)
+                                await loop.checkpoint()
                     reader.handle_response_complete(resp)
                 else:
                     content = bytearray()
-                    async with asyncio_timeout_at(deadline):
+                    async with loop.timeout_at(deadline):
                         async for chunk in resp.content:
                             content.extend(chunk)
                     fres = FullResponse(
@@ -469,8 +469,15 @@ async def _streaming_request_content(
     msgs: AsyncIterator[Any], codec: Codec, compression: Compression | None
 ) -> AsyncIterator[bytes]:
     writer = ConnectEnvelopeWriter(codec, compression)
-    async for msg in msgs:
-        yield writer.write(msg)
+    try:
+        async for msg in msgs:
+            yield writer.write(msg)
+    finally:
+        # A call can end before the request stream does, for example when the
+        # server responds early. Other iterators, such as the receive side of a
+        # channel, belong to the caller.
+        if inspect.isasyncgen(msgs):
+            await msgs.aclose()
 
 
 async def _consume_single_response(stream: AsyncIterator[RES]) -> RES:

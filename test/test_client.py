@@ -1,8 +1,14 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+import asyncio
+import contextlib
+from typing import TYPE_CHECKING, cast
 
+import anyio
+import anyio.lowlevel
 import pytest
+import trio
+import trio.lowlevel
 from pyqwest import (
     Client,
     ReadError,
@@ -35,7 +41,9 @@ from .connectrpc.example.haberdasher_connect import (
 from .connectrpc.example.haberdasher_pb import Hat, Size
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncIterator, Iterator
+    from collections.abc import AsyncGenerator, AsyncIterator, Iterator
+
+    from outcome import Outcome
 
 _default_headers = (
     ("content-type", "application/proto"),
@@ -67,8 +75,10 @@ _headers_cases = [
 ]
 
 
-@pytest.mark.asyncio
-@pytest.mark.parametrize("mode", ["async", "sync"])
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    "mode", ["async", pytest.param("sync", marks=pytest.mark.asyncio_only)]
+)
 @pytest.mark.parametrize(
     ("headers", "trailers", "response_headers", "response_trailers"), _headers_cases
 )
@@ -122,7 +132,7 @@ async def test_headers(
 _protocols = [ProtocolType.CONNECT, ProtocolType.GRPC, ProtocolType.GRPC_WEB]
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 @pytest.mark.parametrize("protocol", _protocols)
 async def test_request_content_async(protocol: ProtocolType) -> None:
     """A request with one message reaches the transport as sized bytes; a stream stays a stream."""
@@ -216,6 +226,54 @@ def test_request_content_sync(protocol: ProtocolType) -> None:
     assert not isinstance(contents["MakeVariousHats"], bytes)
 
 
+@pytest.mark.anyio
+@pytest.mark.parametrize("method", ["unary", "server_stream"])
+async def test_cancelled_by_scope(anyio_backend: str, method: str) -> None:
+    """Cancellation propagates under trio and raises CANCELED under asyncio."""
+
+    class BlockingHaberdasher(Haberdasher):
+        async def make_hat(self, _request, _ctx):
+            await anyio.Event().wait()
+            return Hat()
+
+        async def make_similar_hats(self, _request, _ctx):
+            yield Hat()
+            await anyio.Event().wait()
+
+    async def call() -> None:
+        async with HaberdasherClient(
+            "http://localhost",
+            http_client=Client(
+                ASGITransport(HaberdasherASGIApplication(BlockingHaberdasher()))
+            ),
+        ) as client:
+            match method:
+                case "unary":
+                    await client.make_hat(Size(inches=10))
+                case "server_stream":
+                    # Generated stream methods are typed as AsyncIterator but
+                    # return async generators.
+                    hats = cast(
+                        "AsyncGenerator[Hat]", client.make_similar_hats(Size(inches=10))
+                    )
+                    async with contextlib.aclosing(hats):
+                        async for _ in hats:
+                            pass
+
+    if anyio_backend == "trio":
+        with anyio.move_on_after(0.1) as scope:
+            await call()
+        assert scope.cancelled_caught
+        return
+
+    task = asyncio.ensure_future(call())
+    await anyio.sleep(0.1)
+    task.cancel()
+    with pytest.raises(ConnectError) as exc_info:
+        await task
+    assert exc_info.value.code == Code.CANCELED
+
+
 # Workaround pyqwest testing transports raising the response error instead of request.
 # TODO: Cleanup after https://github.com/curioswitch/pyqwest/pull/290
 
@@ -236,7 +294,7 @@ class _FailingSyncTransport(SyncTransport):
         pytest.fail("request content did not raise")
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 @pytest.mark.parametrize("protocol", _protocols)
 async def test_request_iterator_error_async(protocol: ProtocolType) -> None:
     """A request iterator that raises fails the call with INTERNAL, chained from it."""
@@ -314,7 +372,7 @@ class _RaisingSyncTransport(SyncTransport):
         raise self._error
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 @pytest.mark.parametrize(("error", "code"), _transport_errors)
 async def test_transport_error_async(error: Exception, code: Code) -> None:
     """An I/O failure is UNAVAILABLE and any other transport failure is INTERNAL."""
@@ -347,3 +405,109 @@ def test_transport_error_sync(error: Exception, code: Code) -> None:
                 pass
         assert exc_info.value.code == code
         assert exc_info.value.__cause__ is error
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("method", ["client_stream", "bidi_stream"])
+async def test_request_stream_closed_when_call_ends(method: str) -> None:
+    """The client closes a request stream that the server stops reading."""
+
+    class FirstSizeOnly(Haberdasher):
+        async def make_flexible_hat(self, request, _ctx):
+            async for size in request:
+                return Hat(size=size.inches)
+            return Hat()
+
+        async def make_various_hats(self, request, _ctx):
+            async for size in request:
+                yield Hat(size=size.inches)
+                return
+
+    closed = False
+
+    async def endless_sizes() -> AsyncIterator[Size]:
+        nonlocal closed
+        try:
+            while True:
+                yield Size(inches=10)
+                await anyio.lowlevel.checkpoint()
+        finally:
+            closed = True
+
+    async with HaberdasherClient(
+        "http://localhost",
+        http_client=Client(ASGITransport(HaberdasherASGIApplication(FirstSizeOnly()))),
+    ) as client:
+        match method:
+            case "client_stream":
+                await client.make_flexible_hat(endless_sizes())
+            case "bidi_stream":
+                [hat async for hat in client.make_various_hats(endless_sizes())]
+
+    assert closed
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("method", ["client_stream", "bidi_stream"])
+async def test_request_iterator_left_open_when_call_ends(method: str) -> None:
+    """The client does not close a request iterator that is not a generator."""
+
+    class FirstSizeOnly(Haberdasher):
+        async def make_flexible_hat(self, request, _ctx):
+            async for size in request:
+                return Hat(size=size.inches)
+            return Hat()
+
+        async def make_various_hats(self, request, _ctx):
+            async for size in request:
+                yield Hat(size=size.inches)
+                return
+
+    send_sizes, receive_sizes = anyio.create_memory_object_stream[Size](1)
+    send_sizes.send_nowait(Size(inches=10))
+    async with HaberdasherClient(
+        "http://localhost",
+        http_client=Client(ASGITransport(HaberdasherASGIApplication(FirstSizeOnly()))),
+    ) as client:
+        match method:
+            case "client_stream":
+                await client.make_flexible_hat(receive_sizes)
+            case "bidi_stream":
+                [hat async for hat in client.make_various_hats(receive_sizes)]
+
+    # send_nowait raises BrokenResourceError if the client closed the receive
+    # side.
+    send_sizes.send_nowait(Size(inches=11))
+    send_sizes.close()
+    receive_sizes.close()
+
+
+def test_trio_guest_on_asyncio() -> None:
+    """A trio guest run on an asyncio host makes calls on trio."""
+
+    class Echo(Haberdasher):
+        async def make_hat(self, request, _ctx):
+            return Hat(size=request.inches)
+
+    async def trio_main() -> Hat:
+        async with HaberdasherClient(
+            "http://localhost",
+            http_client=Client(ASGITransport(HaberdasherASGIApplication(Echo()))),
+        ) as client:
+            return await client.make_hat(Size(inches=3), timeout_ms=10_000)
+
+    async def asyncio_host() -> Hat:
+        loop = asyncio.get_running_loop()
+        done: asyncio.Future[Outcome[Hat]] = loop.create_future()
+        trio.lowlevel.start_guest_run(
+            trio_main,
+            run_sync_soon_threadsafe=loop.call_soon_threadsafe,  # ty: ignore[invalid-argument-type]
+            done_callback=lambda outcome: loop.call_soon_threadsafe(
+                done.set_result, outcome
+            ),
+            # asyncio sets signal.set_wakeup_fd on Windows.
+            host_uses_signal_set_wakeup_fd=True,
+        )
+        return (await done).unwrap()
+
+    assert asyncio.run(asyncio_host()).size == 3

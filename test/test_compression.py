@@ -58,7 +58,7 @@ class _BlueHaberdasherSync(HaberdasherSync):
         yield Hat(size=request.inches, color="blue")
 
 
-@pytest.fixture(params=["async", "sync"])
+@pytest.fixture(params=["async", pytest.param("sync", marks=pytest.mark.asyncio_only)])
 def new_client(request: pytest.FixtureRequest):
     """Returns a factory for clients of a server with the given compressions."""
 
@@ -94,7 +94,7 @@ def new_client(request: pytest.FixtureRequest):
     return new_client
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 @pytest.mark.parametrize(
     ("compressions", "encoding"),
     [
@@ -126,7 +126,7 @@ _methods = [
 ]
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 @pytest.mark.parametrize("protocol", _protocols)
 @pytest.mark.parametrize("method", _methods)
 async def test_unknown_request_compression(
@@ -180,7 +180,7 @@ class _XorCompression:
         return bytes(b ^ 0x5A for b in data)
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 @pytest.mark.parametrize("method", _methods)
 async def test_mixed_case_request_compression(new_client, method: str) -> None:
     client = new_client([_XorCompression()], send_compression=_XorCompression())
@@ -258,7 +258,7 @@ def test_empty_request_compression_sync(method, query, headers, body) -> None:
     assert res.json() == {"size": 10, "color": "blue"}
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 @pytest.mark.parametrize(
     ("method", "query", "headers", "body"), _empty_compression_requests
 )

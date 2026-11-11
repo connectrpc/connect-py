@@ -38,7 +38,7 @@ def test_roundtrip_sync(proto_json: bool) -> None:
 
 
 @pytest.mark.parametrize("proto_json", [False, True])
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_roundtrip_async(proto_json: bool) -> None:
     class DetailsHaberdasher(Haberdasher):
         async def make_hat(self, request, _ctx):
@@ -101,7 +101,7 @@ def test_roundtrip_sync_unknown_request_field(ignore_unknown_fields: bool) -> No
 
 
 @pytest.mark.parametrize("ignore_unknown_fields", [True, False])
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_roundtrip_async_unknown_request_field(
     ignore_unknown_fields: bool,
 ) -> None:
@@ -164,7 +164,7 @@ def test_roundtrip_sync_unknown_response_field(ignore_unknown_fields: bool) -> N
 
 
 @pytest.mark.parametrize("ignore_unknown_fields", [True, False])
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_roundtrip_async_unknown_response_field(
     ignore_unknown_fields: bool,
 ) -> None:

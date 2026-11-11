@@ -7,6 +7,8 @@ import random
 import struct
 from typing import TYPE_CHECKING, Any
 
+import anyio
+import anyio.lowlevel
 import pytest
 from pyqwest import Client, SyncClient
 from pyqwest.testing import ASGITransport, WSGITransport
@@ -16,7 +18,7 @@ from connectrpc.codec import proto_binary_codec, proto_json_codec
 from connectrpc.errors import ConnectError
 from connectrpc.server import DEFAULT_READ_MAX_BYTES
 
-from ._util import call, resolve_compression
+from ._util import call, cancel_when, resolve_compression
 from .connectrpc.example.haberdasher_connect import (
     Haberdasher,
     HaberdasherASGIApplication,
@@ -35,8 +37,10 @@ if TYPE_CHECKING:
     from connectrpc.request import RequestContext
 
 
-@pytest.mark.asyncio
-@pytest.mark.parametrize("mode", ["async", "sync"])
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    "mode", ["async", pytest.param("sync", marks=pytest.mark.asyncio_only)]
+)
 @pytest.mark.parametrize("proto_json", [False, True])
 @pytest.mark.parametrize("compression_name", ["gzip", "br", "zstd", "identity"])
 async def test_roundtrip(mode: str, proto_json: bool, compression_name: str) -> None:
@@ -121,7 +125,7 @@ def test_roundtrip_sync_unknown_request_field(ignore_unknown_fields: bool) -> No
 
 
 @pytest.mark.parametrize("ignore_unknown_fields", [True, False])
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_roundtrip_async_unknown_request_field(
     ignore_unknown_fields: bool,
 ) -> None:
@@ -184,7 +188,7 @@ def test_roundtrip_sync_unknown_response_field(ignore_unknown_fields: bool) -> N
 
 
 @pytest.mark.parametrize("ignore_unknown_fields", [True, False])
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_roundtrip_async_unknown_response_field(
     ignore_unknown_fields: bool,
 ) -> None:
@@ -215,8 +219,10 @@ async def test_roundtrip_async_unknown_response_field(
                 await client.make_hat(request=Size(inches=10))
 
 
-@pytest.mark.asyncio
-@pytest.mark.parametrize("mode", ["async", "sync"])
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    "mode", ["async", pytest.param("sync", marks=pytest.mark.asyncio_only)]
+)
 async def test_roundtrip_connect_get_empty_request(mode: str) -> None:
     compression = resolve_compression("identity")
     if mode == "async":
@@ -256,7 +262,7 @@ async def test_roundtrip_connect_get_empty_request(mode: str) -> None:
 
 @pytest.mark.parametrize("proto_json", [False, True])
 @pytest.mark.parametrize("compression_name", ["gzip", "br", "zstd", "identity"])
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_roundtrip_response_stream_async(
     proto_json: bool, compression_name: str
 ) -> None:
@@ -293,8 +299,10 @@ async def test_roundtrip_response_stream_async(
     assert exc_info.value.message == "No more hats available"
 
 
-@pytest.mark.asyncio
-async def test_response_stream_deadline_during_consumer_work_async() -> None:
+@pytest.mark.anyio
+async def test_response_stream_deadline_during_consumer_work_async(
+    anyio_backend: str,
+) -> None:
     """A deadline that passes while the caller handles a message fails the stream, not the caller's task."""
 
     class StreamingHaberdasher(Haberdasher):
@@ -312,13 +320,14 @@ async def test_response_stream_deadline_during_consumer_work_async() -> None:
                 request=Size(inches=10), timeout_ms=50
             ):
                 hats.append(h)
-                await asyncio.sleep(0.1)
+                await anyio.sleep(0.1)
 
     assert [h.color for h in hats] == ["green"]
     assert exc_info.value.code == Code.DEADLINE_EXCEEDED
-    task = asyncio.current_task()
-    assert task is not None
-    assert task.cancelling() == 0
+    if anyio_backend == "asyncio":
+        task = asyncio.current_task()
+        assert task is not None
+        assert task.cancelling() == 0
 
 
 def _payload(compressible: bool) -> str:
@@ -399,7 +408,7 @@ def test_message_limit_sync(
 @pytest.mark.parametrize("compressible", [False, True])
 @pytest.mark.parametrize("client_bad", [False, True])
 @pytest.mark.parametrize("compression_name", ["gzip", "br", "zstd", "identity"])
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_message_limit_async(
     client_bad: bool, compression_name: str, compressible: bool
 ) -> None:
@@ -467,8 +476,10 @@ async def test_message_limit_async(
             assert len(responses) == 1
 
 
-@pytest.mark.asyncio
-@pytest.mark.parametrize("mode", ["async", "sync"])
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    "mode", ["async", pytest.param("sync", marks=pytest.mark.asyncio_only)]
+)
 @pytest.mark.parametrize("large", [False, True])
 async def test_message_limit_unary_error(mode: str, large: bool) -> None:
     message = "x" * 100 if large else "small"
@@ -512,8 +523,10 @@ async def test_message_limit_unary_error(mode: str, large: bool) -> None:
 _BIG_DESCRIPTION_LENGTH = DEFAULT_READ_MAX_BYTES + 1 - 5
 
 
-@pytest.mark.asyncio
-@pytest.mark.parametrize("mode", ["async", "sync"])
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    "mode", ["async", pytest.param("sync", marks=pytest.mark.asyncio_only)]
+)
 @pytest.mark.parametrize("unlimited", [False, True])
 async def test_message_limit_default(mode: str, unlimited: bool) -> None:
     big_size = Size(description="X" * _BIG_DESCRIPTION_LENGTH)
@@ -560,20 +573,20 @@ async def test_message_limit_default(mode: str, unlimited: bool) -> None:
         )
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_server_stream_client_disconnect() -> None:
     """Server streaming generator should be closed when the client disconnects.
 
     Regression test for https://github.com/connectrpc/connect-py/issues/174.
     """
-    generator_closed = asyncio.Event()
+    generator_closed = anyio.Event()
 
     class InfiniteHaberdasher(Haberdasher):
         async def make_similar_hats(self, request, _ctx):
             try:
                 while True:
                     yield Hat(size=request.inches, color="green")
-                    await asyncio.sleep(0)  # yield control to event loop
+                    await anyio.lowlevel.checkpoint()  # yield control to event loop
             finally:
                 generator_closed.set()
 
@@ -586,7 +599,7 @@ async def test_server_stream_client_disconnect() -> None:
     # We invoke the ASGI app directly rather than using a real client with a
     # short timeout because a real client could trigger the disconnect before the
     # request body has been fully read, which would be a different code path.
-    disconnect_trigger = asyncio.Event()
+    disconnect_trigger = anyio.Event()
     response_count = 0
     call_count = 0
 
@@ -610,14 +623,17 @@ async def test_server_stream_client_disconnect() -> None:
 
     scope = _make_similar_hats_scope()
 
-    await asyncio.wait_for(app(scope, receive, send), timeout=5.0)
+    with anyio.fail_after(5):
+        await app(scope, receive, send)
 
     assert generator_closed.is_set(), (
         "generator should be closed after client disconnect"
     )
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
+# trio doesn't cancel stream handlers on disconnect. See test_server_trio.
+@pytest.mark.asyncio_only
 async def test_server_stream_client_disconnect_while_blocked() -> None:
     """A handler blocked between messages is cancelled when the client disconnects."""
     events: list[str] = []
@@ -626,7 +642,7 @@ async def test_server_stream_client_disconnect_while_blocked() -> None:
         async def make_similar_hats(self, request, _ctx):
             try:
                 yield Hat(size=request.inches)
-                await asyncio.Event().wait()
+                await anyio.Event().wait()
             finally:
                 events.append("handler closed")
 
@@ -653,7 +669,7 @@ async def test_server_stream_client_disconnect_while_blocked() -> None:
     request_bytes = Size(inches=10).to_binary()
     request_body = struct.pack(">BI", 0, len(request_bytes)) + request_bytes
 
-    first_message_sent = asyncio.Event()
+    first_message_sent = anyio.Event()
     sent_request = False
     sent: list[bytes] = []
 
@@ -672,7 +688,8 @@ async def test_server_stream_client_disconnect_while_blocked() -> None:
 
     scope = _make_similar_hats_scope()
 
-    await asyncio.wait_for(app(scope, receive, send), timeout=1.0)
+    with anyio.fail_after(1):
+        await app(scope, receive, send)
 
     assert events == ["handler closed", "interceptor closed", "on_end canceled"]
     assert len(sent) == 2
@@ -683,18 +700,34 @@ async def test_server_stream_client_disconnect_while_blocked() -> None:
     }
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 @pytest.mark.parametrize(
     ("method", "http_method", "content_type"),
     [
         pytest.param("MakeHat", "POST", b"application/proto", id="connect_unary"),
         pytest.param("MakeHat", "GET", b"", id="connect_unary_get"),
-        pytest.param("MakeHat", "POST", b"application/grpc", id="grpc_unary"),
+        # trio doesn't cancel stream handlers on disconnect. See
+        # test_server_trio.
         pytest.param(
-            "MakeFlexibleHat", "POST", b"application/connect+proto", id="client_stream"
+            "MakeHat",
+            "POST",
+            b"application/grpc",
+            id="grpc_unary",
+            marks=pytest.mark.asyncio_only,
         ),
         pytest.param(
-            "MakeVariousHats", "POST", b"application/connect+proto", id="bidi_stream"
+            "MakeFlexibleHat",
+            "POST",
+            b"application/connect+proto",
+            id="client_stream",
+            marks=pytest.mark.asyncio_only,
+        ),
+        pytest.param(
+            "MakeVariousHats",
+            "POST",
+            b"application/connect+proto",
+            id="bidi_stream",
+            marks=pytest.mark.asyncio_only,
         ),
     ],
 )
@@ -708,7 +741,7 @@ async def test_client_disconnect_cancels_blocked_handler(
     the same as a unary one.
     """
     events: list[str] = []
-    blocked = asyncio.Event()
+    blocked = anyio.Event()
 
     class BlockedHaberdasher(Haberdasher):
         async def make_hat(self, request, _ctx):
@@ -729,7 +762,7 @@ async def test_client_disconnect_cancels_blocked_handler(
         async def _block(self):
             try:
                 blocked.set()
-                await asyncio.Event().wait()
+                await anyio.Event().wait()
             finally:
                 events.append("handler cleaned up")
 
@@ -785,7 +818,8 @@ async def test_client_disconnect_cancels_blocked_handler(
     }
 
     # Without the watch, the handler blocks until the test's timeout.
-    await asyncio.wait_for(app(scope, receive, send), timeout=1.0)
+    with anyio.fail_after(1):
+        await app(scope, receive, send)
 
     assert events == ["handler cleaned up", "on_end canceled"]
     types = [m["type"].removeprefix("http.response.") for m in sent]
@@ -811,7 +845,9 @@ async def test_client_disconnect_cancels_blocked_handler(
         }
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
+# Patches the asyncio event loop's clock.
+@pytest.mark.asyncio_only
 async def test_client_disconnects_as_deadline_fires() -> None:
     """A disconnect noticed while the deadline's cancellation is in flight is harmless.
 
@@ -819,19 +855,19 @@ async def test_client_disconnects_as_deadline_fires() -> None:
     disconnects at the same moment the server's deadline fires.
     """
     events: list[str] = []
-    cancelled = asyncio.Event()
+    cancelled = anyio.Event()
 
     class BlockedHaberdasher(Haberdasher):
         async def make_similar_hats(self, request, _ctx):
             try:
                 yield Hat(size=request.inches)
-                await asyncio.Event().wait()
+                await anyio.Event().wait()
             finally:
                 events.append("handler cleaned up")
                 cancelled.set()
                 # Let the watch report the disconnect before the scope exits.
-                await asyncio.sleep(0)
-                await asyncio.sleep(0)
+                await anyio.lowlevel.checkpoint()
+                await anyio.lowlevel.checkpoint()
 
     class Recorder:
         async def on_start(self, ctx):
@@ -870,7 +906,8 @@ async def test_client_disconnects_as_deadline_fires() -> None:
     real_time = loop.time
     loop.time = lambda: real_time() // resolution * resolution
 
-    await asyncio.wait_for(app(scope, receive, send), timeout=1.0)
+    with anyio.fail_after(1):
+        await app(scope, receive, send)
 
     assert events == ["handler cleaned up", "on_end deadline_exceeded"]
     end = sent[-1]
@@ -880,7 +917,7 @@ async def test_client_disconnects_as_deadline_fires() -> None:
     }
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 @pytest.mark.parametrize("unary", [False, True], ids=["stream", "unary"])
 async def test_failed_send_ends_response(unary: bool) -> None:
     """A send the server rejects is raised to it, with nothing sent after it.
@@ -924,7 +961,7 @@ async def test_failed_send_ends_response(unary: bool) -> None:
         if not sent_request:
             sent_request = True
             return {"type": "http.request", "body": request_body, "more_body": False}
-        await asyncio.Event().wait()
+        await anyio.Event().wait()
         raise AssertionError
 
     async def send(message):
@@ -958,15 +995,15 @@ async def test_failed_send_ends_response(unary: bool) -> None:
     assert errors == [None] if unary else [connection_lost]
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_server_cancelled_with_failed_send() -> None:
     """The cancellation propagates even if the error response can't be sent."""
-    blocked = asyncio.Event()
+    blocked = anyio.Event()
 
     class BlockedHaberdasher(Haberdasher):
         async def make_hat(self, request, _ctx):
             blocked.set()
-            await asyncio.Event().wait()
+            await anyio.Event().wait()
             return Hat(size=request.inches)
 
     app = HaberdasherASGIApplication(BlockedHaberdasher())
@@ -981,7 +1018,7 @@ async def test_server_cancelled_with_failed_send() -> None:
                 "body": Size(inches=10).to_binary(),
                 "more_body": False,
             }
-        await asyncio.Event().wait()
+        await anyio.Event().wait()
         raise AssertionError
 
     async def send(_message):
@@ -1004,11 +1041,8 @@ async def test_server_cancelled_with_failed_send() -> None:
         "extensions": None,
     }
 
-    task = asyncio.create_task(app(scope, receive, send))
-    await blocked.wait()
-    task.cancel()
-    with pytest.raises(asyncio.CancelledError):
-        await task
+    raised = await cancel_when(blocked, lambda: app(scope, receive, send))
+    assert isinstance(raised, anyio.get_cancelled_exc_class())
 
 
 def _make_similar_hats_scope() -> HTTPScope:
@@ -1033,14 +1067,14 @@ def _make_similar_hats_scope() -> HTTPScope:
 @pytest.mark.parametrize(
     "on_end_fails", [False, True], ids=["on_end-ok", "on_end-fails"]
 )
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_server_cancelled(unary: bool, on_end_fails: bool) -> None:
     """A cancelled request is answered, then the cancellation propagates.
 
     The answer is CANCELED unless an on_end hook fails.
     """
     events: list[str] = []
-    blocked = asyncio.Event()
+    blocked = anyio.Event()
     on_end_error = RuntimeError("on_end failed")
 
     class BlockedHaberdasher(Haberdasher):
@@ -1055,7 +1089,7 @@ async def test_server_cancelled(unary: bool, on_end_fails: bool) -> None:
         async def _block(self):
             try:
                 blocked.set()
-                await asyncio.Event().wait()
+                await anyio.Event().wait()
             finally:
                 events.append("handler cleaned up")
 
@@ -1066,7 +1100,7 @@ async def test_server_cancelled(unary: bool, on_end_fails: bool) -> None:
         async def on_end(
             self, _token: None, _ctx: RequestContext, error: Exception | None, /
         ) -> None:
-            await asyncio.sleep(0)
+            await anyio.lowlevel.checkpoint()
             code = error.code.value if isinstance(error, ConnectError) else error
             events.append(f"on_end {code}")
             if on_end_fails:
@@ -1091,7 +1125,7 @@ async def test_server_cancelled(unary: bool, on_end_fails: bool) -> None:
         if not sent_request:
             sent_request = True
             return {"type": "http.request", "body": request_body, "more_body": False}
-        await asyncio.Event().wait()
+        await anyio.Event().wait()
         raise AssertionError
 
     async def send(message):
@@ -1113,11 +1147,8 @@ async def test_server_cancelled(unary: bool, on_end_fails: bool) -> None:
         "extensions": None,
     }
 
-    task = asyncio.create_task(app(scope, receive, send))
-    await blocked.wait()
-    task.cancel()
-    with pytest.raises(asyncio.CancelledError):
-        await task
+    raised = await cancel_when(blocked, lambda: app(scope, receive, send))
+    assert isinstance(raised, anyio.get_cancelled_exc_class())
 
     assert events == ["handler cleaned up", "on_end canceled"]
     if on_end_fails:

@@ -1,13 +1,13 @@
 from __future__ import annotations
 
-import asyncio
 import contextlib
 import itertools
 from collections.abc import Generator
 from typing import TYPE_CHECKING
 
+import anyio
+import anyio.lowlevel
 import pytest
-import pytest_asyncio
 from pyqwest import Client, SyncClient
 from pyqwest.testing import ASGITransport, WSGITransport
 
@@ -16,7 +16,7 @@ from connectrpc.code import Code
 from connectrpc.errors import ConnectError
 from connectrpc.protocol import ProtocolType
 
-from ._util import call
+from ._util import call, cancel_when
 from .connectrpc.example.haberdasher_connect import (
     Haberdasher,
     HaberdasherASGIApplication,
@@ -124,7 +124,7 @@ class SimpleHaberdasherSync(HaberdasherSync):
             yield Hat(size=s.inches, color=next(colors))
 
 
-@pytest_asyncio.fixture(params=["async", "sync"])
+@pytest.fixture(params=["async", pytest.param("sync", marks=pytest.mark.asyncio_only)])
 async def client(
     request: pytest.FixtureRequest,
     client_interceptor: RequestInterceptor,
@@ -152,7 +152,7 @@ async def client(
             yield client
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 @pytest.mark.parametrize(
     ("method", "request_", "expected", "name"),
     [
@@ -204,7 +204,7 @@ async def test_intercept(
     assert server_interceptor.result == [f"Hello {name} and goodbye"]
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 @pytest.mark.parametrize(
     ("method", "request_", "name"),
     [
@@ -312,7 +312,7 @@ async def _run_connect_app(
         "extensions": None,
     }
     received = False
-    disconnected = asyncio.Event()
+    disconnected = anyio.Event()
 
     async def receive() -> HTTPRequestEvent | HTTPDisconnectEvent:
         nonlocal received
@@ -329,7 +329,7 @@ async def _run_connect_app(
     await app(scope, receive, send)
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_metadata_interceptor_unparseable_unary_async(
     server_interceptor: RequestInterceptor,
 ) -> None:
@@ -390,7 +390,7 @@ def test_metadata_interceptor_unparseable_unary_sync(
     assert trailing_interceptor.result == []
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_metadata_interceptor_unparseable_stream_async(
     server_interceptor: RequestInterceptor,
 ) -> None:
@@ -435,7 +435,7 @@ def test_metadata_interceptor_unparseable_stream_sync(
     )
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_metadata_interceptor_ordering_async() -> None:
     """A leading metadata interceptor wraps message interceptors after it."""
     events: list[str] = []
@@ -478,7 +478,7 @@ async def test_metadata_interceptor_ordering_async() -> None:
     ]
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 @pytest.mark.parametrize(
     ("method", "streaming"),
     [
@@ -491,7 +491,7 @@ async def test_metadata_interceptor_ordering_async() -> None:
 async def test_non_hoisted_metadata_interceptor_reports_cancellation(
     method: str, streaming: bool
 ) -> None:
-    entered = asyncio.Event()
+    entered = anyio.Event()
     request_body = b'{"inches":10}'
     if streaming:
         request_body = b"\x00" + len(request_body).to_bytes(4, "big") + request_body
@@ -499,7 +499,7 @@ async def test_non_hoisted_metadata_interceptor_reports_cancellation(
     class BlockingHaberdasher(Haberdasher):
         async def _block(self):
             entered.set()
-            await asyncio.Event().wait()
+            await anyio.Event().wait()
 
         async def make_hat(self, request, _ctx):
             await self._block()
@@ -547,19 +547,11 @@ async def test_non_hoisted_metadata_interceptor_reports_cancellation(
     app = HaberdasherASGIApplication(
         BlockingHaberdasher(), interceptors=(PassthroughInterceptor(), observer)
     )
-    task = asyncio.create_task(
-        _run_connect_app(app, method, request_body, streaming=streaming)
+    raised = await cancel_when(
+        entered,
+        lambda: _run_connect_app(app, method, request_body, streaming=streaming),
     )
-    try:
-        await asyncio.wait_for(entered.wait(), timeout=5.0)
-        task.cancel()
-        with pytest.raises(asyncio.CancelledError):
-            await task
-    finally:
-        if not task.done():
-            task.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
-            await task
+    assert isinstance(raised, anyio.get_cancelled_exc_class())
 
     assert len(observer.errors) == 1
     error = observer.errors[0]
@@ -567,7 +559,7 @@ async def test_non_hoisted_metadata_interceptor_reports_cancellation(
     assert error.code == Code.CANCELED
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 @pytest.mark.parametrize("method", ["MakeSimilarHats", "MakeVariousHats"])
 @pytest.mark.parametrize(
     "send_error",
@@ -637,14 +629,14 @@ async def test_request_ended_during_send_reaches_handler_async(
     request = Size(inches=10).to_binary()
     body = b"\x00" + len(request).to_bytes(4, "big") + request
     sent_request = False
-    blocked = asyncio.Event()
+    blocked = anyio.Event()
 
     async def receive() -> HTTPRequestEvent | HTTPDisconnectEvent:
         nonlocal sent_request
         if not sent_request:
             sent_request = True
             return {"type": "http.request", "body": body, "more_body": False}
-        await asyncio.Event().wait()
+        await anyio.Event().wait()
         return {"type": "http.disconnect"}
 
     async def send(message) -> None:
@@ -653,26 +645,17 @@ async def test_request_ended_during_send_reaches_handler_async(
         blocked.set()
         if send_error is not None:
             raise send_error
-        await asyncio.Event().wait()
-
-    task = asyncio.create_task(app(scope, receive, send))
-    try:
-        await asyncio.wait_for(blocked.wait(), timeout=5.0)
-        if send_error is None:
-            task.cancel()
-            with pytest.raises(asyncio.CancelledError):
-                await task
-        else:
-            with pytest.raises(OSError, match="lost"):
-                await task
-    finally:
-        if not task.done():
-            task.cancel()
-        with contextlib.suppress(BaseException):
-            await task
+        await anyio.Event().wait()
 
     if send_error is None:
-        assert events[0] == "handler: CancelledError"
+        raised = await cancel_when(blocked, lambda: app(scope, receive, send))
+        assert isinstance(raised, anyio.get_cancelled_exc_class())
+    else:
+        with pytest.raises(OSError, match="lost"), anyio.fail_after(5):
+            await app(scope, receive, send)
+
+    if send_error is None:
+        assert events[0] == f"handler: {anyio.get_cancelled_exc_class().__name__}"
         assert isinstance(events[1], ConnectError)
         assert events[1].code == Code.CANCELED
     else:
@@ -681,7 +664,7 @@ async def test_request_ended_during_send_reaches_handler_async(
     assert len(events) == 2
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 @pytest.mark.parametrize(
     "middle_raises",
     [pytest.param(False, id="canceled-error"), pytest.param(True, id="cleanup-error")],
@@ -689,8 +672,8 @@ async def test_request_ended_during_send_reaches_handler_async(
 async def test_hoisted_metadata_interceptors_unwind_after_cancellation(
     middle_raises: bool,
 ) -> None:
-    cleanup_entered = asyncio.Event()
-    cleanup_release = asyncio.Event()
+    cleanup_entered = anyio.Event()
+    cleanup_release = anyio.Event()
     middle_error = ValueError("middle cleanup failed") if middle_raises else None
 
     class CancellationObserver:
@@ -721,17 +704,10 @@ async def test_hoisted_metadata_interceptors_unwind_after_cancellation(
     app = HaberdasherASGIApplication(
         SimpleHaberdasher(), interceptors=(outer, middle, inner)
     )
-    task = asyncio.create_task(_run_connect_app(app, "MakeHat", b'{"inches":10}'))
-    try:
-        await asyncio.wait_for(cleanup_entered.wait(), timeout=5.0)
-        task.cancel()
-        with pytest.raises(asyncio.CancelledError):
-            await task
-    finally:
-        if not task.done():
-            task.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
-            await task
+    raised = await cancel_when(
+        cleanup_entered, lambda: _run_connect_app(app, "MakeHat", b'{"inches":10}')
+    )
+    assert isinstance(raised, anyio.get_cancelled_exc_class())
 
     assert inner.errors == [None]
     assert len(middle.errors) == 1
@@ -789,7 +765,7 @@ def test_metadata_interceptor_ordering_sync() -> None:
     ]
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 @pytest.mark.parametrize("method", ["MakeSimilarHats", "MakeVariousHats"])
 async def test_metadata_interceptor_closes_stream_async(method: str) -> None:
     """An early end of the response closes the handler's stream."""
@@ -807,17 +783,20 @@ async def test_metadata_interceptor_closes_stream_async(method: str) -> None:
             try:
                 while True:
                     yield Hat(size=request.inches)
-                    await asyncio.sleep(0)
+                    await anyio.lowlevel.checkpoint()
             finally:
-                await asyncio.sleep(0)
+                await anyio.lowlevel.checkpoint()
                 events.append("handler closed")
 
         async def make_various_hats(self, request, ctx):
             # Read the whole request so the server can watch for the disconnect.
             async for _ in request:
                 pass
-            async for hat in self.make_similar_hats(Size(inches=10), ctx):
-                yield hat
+            async with contextlib.aclosing(
+                self.make_similar_hats(Size(inches=10), ctx)
+            ) as hats:
+                async for hat in hats:
+                    yield hat
 
     app = HaberdasherASGIApplication(
         EndlessHaberdasher(),
@@ -841,7 +820,7 @@ async def test_metadata_interceptor_closes_stream_async(method: str) -> None:
     }
     request = Size(inches=10).to_binary()
     body = b"\x00" + len(request).to_bytes(4, "big") + request
-    disconnected = asyncio.Event()
+    disconnected = anyio.Event()
     sent_request = False
 
     async def receive() -> HTTPRequestEvent | HTTPDisconnectEvent:
@@ -856,7 +835,8 @@ async def test_metadata_interceptor_closes_stream_async(method: str) -> None:
         if message["type"] == "http.response.body" and message["more_body"]:
             disconnected.set()
 
-    await asyncio.wait_for(app(scope, receive, send), timeout=5.0)
+    with anyio.fail_after(5):
+        await app(scope, receive, send)
 
     assert events == ["metadata start", "handler closed", "metadata end"]
 
@@ -962,7 +942,7 @@ class _ResponseMetadataInterceptor:
         ctx.response_trailers.add("x-interceptor-trailer", "ran")
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_metadata_interceptor_response_metadata_async() -> None:
     """Response metadata set in on_end is still sent to the client."""
 

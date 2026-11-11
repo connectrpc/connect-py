@@ -3,7 +3,6 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import pytest
-import pytest_asyncio
 from connectrpc.errors import ConnectError
 from example.gen.connectrpc.eliza.v1 import eliza_pb
 from protobuf import DescFile, Oneof
@@ -54,7 +53,7 @@ if TYPE_CHECKING:
 ReflectionClient = ServerReflectionClient | ServerReflectionClientSync
 
 
-@pytest_asyncio.fixture(params=["sync", "async"])
+@pytest.fixture(params=[pytest.param("sync", marks=pytest.mark.asyncio_only), "async"])
 async def reflection_client(
     request: pytest.FixtureRequest,
 ) -> AsyncIterator[ReflectionClient]:
@@ -101,7 +100,7 @@ def _file_names(res: ServerReflectionResponse) -> list[str]:
     ]
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_list_services(reflection_client: ReflectionClient) -> None:
     req = ServerReflectionRequest(
         host="example.com", message_request=Oneof("list_services", "")
@@ -142,7 +141,7 @@ def test_list_services_service_descriptor() -> None:
     ]
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_file_by_filename(reflection_client: ReflectionClient) -> None:
     [res] = await _responses(
         reflection_client,
@@ -161,7 +160,7 @@ async def test_file_by_filename(reflection_client: ReflectionClient) -> None:
     ]
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_file_dependencies(reflection_client: ReflectionClient) -> None:
     file_res, symbol_res = await _responses(
         reflection_client,
@@ -179,7 +178,7 @@ async def test_file_dependencies(reflection_client: ReflectionClient) -> None:
     assert _file_names(symbol_res) == ["google/protobuf/empty.proto"]
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_file_containing_symbol(reflection_client: ReflectionClient) -> None:
     [res] = await _responses(
         reflection_client,
@@ -198,7 +197,7 @@ async def test_file_containing_symbol(reflection_client: ReflectionClient) -> No
     ]
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_file_containing_method(reflection_client: ReflectionClient) -> None:
     [res] = await _responses(
         reflection_client,
@@ -214,7 +213,7 @@ async def test_file_containing_method(reflection_client: ReflectionClient) -> No
     assert _file_names(res) == ["connectrpc/eliza/v1/eliza.proto"]
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_file_containing_field_or_oneof(
     reflection_client: ReflectionClient,
 ) -> None:
@@ -247,7 +246,7 @@ async def test_file_containing_field_or_oneof(
     assert _file_names(oneof_res) == ["connectrpc/example/haberdasher.proto"]
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_dependencies_sent_once(reflection_client: ReflectionClient) -> None:
     first, second = await _responses(
         reflection_client,
@@ -272,7 +271,7 @@ async def test_dependencies_sent_once(reflection_client: ReflectionClient) -> No
     assert _file_names(second) == ["connectrpc/example/haberdasher.proto"]
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_not_found(reflection_client: ReflectionClient) -> None:
     responses = await _responses(
         reflection_client,
@@ -319,7 +318,7 @@ async def test_not_found(reflection_client: ReflectionClient) -> None:
     ]
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_invalid_request(reflection_client: ReflectionClient) -> None:
     with pytest.raises(ConnectError, match="invalid request"):
         await _responses(reflection_client, [ServerReflectionRequest()])
@@ -455,7 +454,7 @@ def test_extensions() -> None:
     assert sorted(numbers_res.message_response.value.extension_number) == [100, 101]
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_v1alpha() -> None:
     app = ServerReflectionAlphaASGIApplication(
         ServerReflectionAlphaService(eliza_pb.desc())
@@ -471,7 +470,7 @@ async def test_v1alpha() -> None:
         async def request_iter() -> AsyncIterator[ServerReflectionAlphaRequest]:
             yield req
 
-        res = await anext(client.server_reflection_info(request_iter()))
+        (res,) = [r async for r in client.server_reflection_info(request_iter())]
 
     assert res.valid_host == "alpha.example.com"
     assert res.original_request == req

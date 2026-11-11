@@ -157,7 +157,7 @@ async def post(
     return status, response_headers, b"".join(chunks)
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_unary() -> None:
     app = create_app()
     async with create_client(app) as client:
@@ -168,7 +168,7 @@ async def test_unary() -> None:
     assert app.state.events == ["open", "say", "close", "open", "say", "close"]
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_streaming() -> None:
     app = create_app()
     async with create_client(app) as client:
@@ -191,7 +191,7 @@ async def test_streaming() -> None:
     assert app.state.events[-2:] == ["open", "close"]
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_prefix() -> None:
     app = FastAPI()
     app.state.events = []
@@ -228,7 +228,7 @@ async def test_prefix() -> None:
     }
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_dependency_overrides() -> None:
     class FakeElizaService(ElizaService):
         async def say(self, request: SayRequest, _ctx: Any, /) -> SayResponse:
@@ -245,7 +245,7 @@ async def test_dependency_overrides() -> None:
     assert app.state.events == []
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_include_router_dependencies() -> None:
     def require_auth(request: Request) -> None:
         if request.headers.get("authorization") != "Bearer secret":
@@ -267,7 +267,7 @@ async def test_include_router_dependencies() -> None:
     assert app.state.events == ["open", "say", "close"]
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_background_tasks_and_headers() -> None:
     ran: list[str] = []
 
@@ -302,7 +302,7 @@ async def test_background_tasks_and_headers() -> None:
     assert ran == ["open", "task", "close"]
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_application() -> None:
     created: list[ElizaService] = []
 
@@ -529,7 +529,7 @@ def test_message_schemas_nested() -> None:
         assert "." in name, name
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_mount_and_root_path() -> None:
     sub = FastAPI()
     sub.state.events = []
@@ -557,7 +557,7 @@ async def test_mount_and_root_path() -> None:
         assert (await client.say(SayRequest(sentence="Hello"), use_get=True)).sentence
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_dependency_reads_body() -> None:
     bodies: list[bytes] = []
 
@@ -627,7 +627,7 @@ def test_dynamic_message_types() -> None:
     ] == {"sentence": {"type": "string", "title": "sentence"}}
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_client_disconnect_during_request() -> None:
     """A client that disconnects while sending is handled and cleaned up after."""
     app = create_app()
@@ -873,7 +873,7 @@ def test_other_definition_of_message_does_not_leak() -> None:
     assert set(other_properties) == {"sentence", "extra"}
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_connect_error_does_not_reach_dependency() -> None:
     """A Connect error is a response, so a yield dependency sees no exception."""
     outcomes: list[str] = []
@@ -1026,7 +1026,7 @@ def test_openapi_regenerated() -> None:
     assert "x-connect-message" in str(app.openapi_schema)
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_grpc_protocols() -> None:
     class StrictElizaService(DemoElizaService):
         async def say(self, request: SayRequest, _ctx: RequestContext) -> SayResponse:
@@ -1093,7 +1093,7 @@ def test_add_connect_schemas_before_include() -> None:
     assert "connectrpc.eliza.v1.SayRequest" in schema["components"]["schemas"]
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_dependency_streams_body() -> None:
     """A dependency that consumes the body stream fails the RPC with a clear error."""
 

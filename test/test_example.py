@@ -32,7 +32,7 @@ def test_sync(sync_server: WSGIServer) -> None:
         assert len(response.sentence) > 0
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_async_client_basic(sync_server: WSGIServer) -> None:
     async with ElizaServiceClient(
         f"http://localhost:{sync_server.server_port}"

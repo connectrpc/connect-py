@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-import asyncio
+import functools
 from typing import TYPE_CHECKING, cast
 
+import anyio
 import pytest
 from connectrpc.code import Code
 from connectrpc.errors import ConnectError
@@ -145,7 +146,7 @@ def client_sync(
     )
 
 
-@pytest.fixture(params=["async", "sync"])
+@pytest.fixture(params=["async", pytest.param("sync", marks=pytest.mark.asyncio_only)])
 def client(
     request: pytest.FixtureRequest,
     client_async: ElizaServiceClient,
@@ -161,7 +162,7 @@ def client(
             raise ValueError(msg)
 
 
-@pytest.fixture(params=["async", "sync"])
+@pytest.fixture(params=["async", pytest.param("sync", marks=pytest.mark.asyncio_only)])
 def app(
     request: pytest.FixtureRequest,
     app_async: ElizaServiceASGIApplication,
@@ -190,7 +191,7 @@ def get_metric_data(metric_reader: InMemoryMetricReader) -> list[Metric]:
     return metrics
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_basic(
     client: ElizaServiceClient | ElizaServiceClientSync,
     span_exporter: InMemorySpanExporter,
@@ -200,7 +201,7 @@ async def test_basic(
     if isinstance(client, ElizaServiceClient):
         await client.say(SayRequest(sentence="Hi"))
     else:
-        await asyncio.to_thread(client.say, SayRequest(sentence="Hi"))
+        await anyio.to_thread.run_sync(client.say, SayRequest(sentence="Hi"))
 
     spans = span_exporter.get_finished_spans()
     assert len(spans) == 2
@@ -273,7 +274,7 @@ async def test_basic(
     }
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_connect_error(
     client: ElizaServiceClient | ElizaServiceClientSync,
     span_exporter: InMemorySpanExporter,
@@ -283,7 +284,9 @@ async def test_connect_error(
         if isinstance(client, ElizaServiceClient):
             await client.say(SayRequest(sentence="connect error"))
         else:
-            await asyncio.to_thread(client.say, SayRequest(sentence="connect error"))
+            await anyio.to_thread.run_sync(
+                client.say, SayRequest(sentence="connect error")
+            )
 
     spans = span_exporter.get_finished_spans()
     assert len(spans) == 2
@@ -356,7 +359,7 @@ async def test_connect_error(
     }
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_unknown_error(
     client: ElizaServiceClient | ElizaServiceClientSync,
     span_exporter: InMemorySpanExporter,
@@ -366,7 +369,9 @@ async def test_unknown_error(
         if isinstance(client, ElizaServiceClient):
             await client.say(SayRequest(sentence="unknown error"))
         else:
-            await asyncio.to_thread(client.say, SayRequest(sentence="unknown error"))
+            await anyio.to_thread.run_sync(
+                client.say, SayRequest(sentence="unknown error")
+            )
 
     spans = span_exporter.get_finished_spans()
     assert len(spans) == 2
@@ -445,7 +450,7 @@ async def test_unknown_error(
     }
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_http_server_parent(
     app: ElizaServiceASGIApplication | ElizaServiceWSGIApplication,
     tracer_provider: TracerProvider,
@@ -479,7 +484,7 @@ async def test_http_server_parent(
                 OpenTelemetryInterceptor(tracer_provider=tracer_provider, client=True)
             ],
         )
-        await asyncio.to_thread(client.say, SayRequest(sentence="Hi"))
+        await anyio.to_thread.run_sync(client.say, SayRequest(sentence="Hi"))
 
     spans = [
         s
@@ -516,7 +521,7 @@ async def test_http_server_parent(
     assert server_attrs["client.port"] == 143
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_non_standard_port(
     app: ElizaServiceASGIApplication | ElizaServiceWSGIApplication,
     tracer_provider: TracerProvider,
@@ -541,7 +546,7 @@ async def test_non_standard_port(
                 OpenTelemetryInterceptor(tracer_provider=tracer_provider, client=True)
             ],
         )
-        await asyncio.to_thread(client.say, SayRequest(sentence="Hi"))
+        await anyio.to_thread.run_sync(client.say, SayRequest(sentence="Hi"))
 
     spans = span_exporter.get_finished_spans()
     assert len(spans) == 2
@@ -573,7 +578,7 @@ async def test_non_standard_port(
     assert server_attrs["client.port"] == 143
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_base_url_with_path(
     app: ElizaServiceASGIApplication | ElizaServiceWSGIApplication,
     tracer_provider: TracerProvider,
@@ -596,7 +601,7 @@ async def test_base_url_with_path(
                 http_client=SyncClient(transport=WSGITransport(app)),
                 interceptors=[interceptor],
             )
-            await asyncio.to_thread(client.say, SayRequest(sentence="Hi"))
+            await anyio.to_thread.run_sync(client.say, SayRequest(sentence="Hi"))
 
     (span,) = span_exporter.get_finished_spans()
     assert span.kind == SpanKind.CLIENT
@@ -606,7 +611,7 @@ async def test_base_url_with_path(
     assert attrs["server.port"] == 9123
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_invalid_host_header(
     app: ElizaServiceASGIApplication | ElizaServiceWSGIApplication,
     span_exporter: InMemorySpanExporter,
@@ -618,11 +623,13 @@ async def test_invalid_host_header(
             url, headers=headers, content=b"{}"
         )
     else:
-        res = await asyncio.to_thread(
-            SyncClient(transport=WSGITransport(app)).post,
-            url,
-            headers=headers,
-            content=b"{}",
+        res = await anyio.to_thread.run_sync(
+            functools.partial(
+                SyncClient(transport=WSGITransport(app)).post,
+                url,
+                headers=headers,
+                content=b"{}",
+            )
         )
 
     assert res.status == 200

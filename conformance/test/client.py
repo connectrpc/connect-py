@@ -3,15 +3,19 @@ from __future__ import annotations
 import argparse
 import asyncio
 import contextlib
+import functools
+import math
 import multiprocessing
 import queue
 import sys
 import time
 import traceback
+import typing
 from typing import TYPE_CHECKING, Literal, TypeVar, get_args
 
 import _cov_embed  # noqa: F401
-from _util import create_standard_streams
+import anyio
+import trio
 from gen.connectrpc.conformance.v1 import client_compat_pb, service_pb
 from gen.connectrpc.conformance.v1.client_compat_pb import (
     ClientCompatRequest,
@@ -62,7 +66,13 @@ from connectrpc.protocol import ProtocolType
 from connectrpc.request import Headers
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncGenerator, AsyncIterator, Iterator
+    from collections.abc import (
+        AsyncGenerator,
+        AsyncIterator,
+        Callable,
+        Coroutine,
+        Iterator,
+    )
 
     from protobuf.wkt import Any
 
@@ -244,6 +254,83 @@ async def client_async(
         yield client
 
 
+class _Call(typing.Protocol):
+    """A request running in the background, which the test can cancel."""
+
+    def cancel(self) -> None: ...
+
+    async def wait(self) -> None: ...
+
+
+class _AsyncioCall:
+    """Runs a request in an asyncio task."""
+
+    def __init__(self, coro: Coroutine[object, object, object]) -> None:
+        self._task = asyncio.create_task(coro)
+
+    def cancel(self) -> None:
+        self._task.cancel()
+
+    async def wait(self) -> None:
+        await self._task
+
+
+class _TrioCall:
+    """Runs a request in a trio cancel scope.
+
+    The client doesn't turn trio cancellation into an error, so this reports a
+    cancelled request as CANCELED itself.
+    """
+
+    def __init__(
+        self, nursery: trio.Nursery, coro: Coroutine[object, object, object]
+    ) -> None:
+        self._scope = trio.CancelScope()
+        self._done = trio.Event()
+        self._error: Exception | None = None
+        nursery.start_soon(self._run, coro)
+
+    async def _run(self, coro: Coroutine[object, object, object]) -> None:
+        try:
+            with self._scope:
+                await coro
+        except Exception as e:
+            self._error = e
+        finally:
+            self._done.set()
+
+    def cancel(self) -> None:
+        self._scope.cancel()
+
+    async def wait(self) -> None:
+        await self._done.wait()
+        if self._error is not None:
+            raise self._error
+        if self._scope.cancelled_caught:
+            raise ConnectError(Code.CANCELED, "Request was cancelled")
+
+
+@contextlib.asynccontextmanager
+async def _call_starter(
+    mode: Mode,
+) -> AsyncGenerator[Callable[[Coroutine[object, object, object]], _Call]]:
+    """Yield a function that starts a request in the background."""
+    if mode == "trio":
+        error: Exception | None = None
+        async with trio.open_nursery() as nursery:
+            try:
+                yield functools.partial(_TrioCall, nursery)
+            except Exception as e:
+                # Re-raised outside the nursery so it isn't wrapped in an
+                # ExceptionGroup.
+                error = e
+                nursery.cancel_scope.cancel()
+        if error is not None:
+            raise error
+    else:
+        yield _AsyncioCall
+
+
 async def _run_test(
     mode: Mode, test_request: ClientCompatRequest
 ) -> ClientCompatResponse:
@@ -264,11 +351,14 @@ async def _run_test(
 
     with ResponseMetadata() as meta:
         try:
-            task: asyncio.Task
-            request_closed = asyncio.Event()
+            task: _Call
+            request_closed = anyio.Event()
             match mode:
                 case "sync":
-                    async with client_sync(test_request) as client:
+                    async with (
+                        _call_starter(mode) as start,
+                        client_sync(test_request) as client,
+                    ):
                         match test_request.method:
                             case "BidiStream":
                                 request_queue = queue.Queue()
@@ -336,7 +426,7 @@ async def _run_test(
                                             return
                                         yield request
 
-                                task = asyncio.create_task(
+                                task = start(
                                     asyncio.to_thread(
                                         send_bidi_stream_request_sync,
                                         client,
@@ -372,7 +462,7 @@ async def _run_test(
                                                 task.cancel()
                                     request_closed.set()
 
-                                task = asyncio.create_task(
+                                task = start(
                                     asyncio.to_thread(
                                         send_client_stream_request_sync,
                                         client,
@@ -393,7 +483,7 @@ async def _run_test(
                                     )
                                     payloads.append(res.payload or ConformancePayload())
 
-                                task = asyncio.create_task(
+                                task = start(
                                     asyncio.to_thread(
                                         send_idempotent_unary_request_sync,
                                         client,
@@ -424,7 +514,7 @@ async def _run_test(
                                                     if len(payloads) >= num:
                                                         task.cancel()
 
-                                task = asyncio.create_task(
+                                task = start(
                                     asyncio.to_thread(
                                         send_server_stream_request_sync,
                                         client,
@@ -448,7 +538,7 @@ async def _run_test(
                                     )
                                     payloads.append(res.payload or ConformancePayload())
 
-                                task = asyncio.create_task(
+                                task = start(
                                     asyncio.to_thread(
                                         send_unary_request_sync,
                                         client,
@@ -460,7 +550,7 @@ async def _run_test(
                                 )
                                 request_closed.set()
                             case "Unimplemented":
-                                task = asyncio.create_task(
+                                task = start(
                                     asyncio.to_thread(
                                         client.unimplemented,
                                         _unpack_request(
@@ -479,14 +569,21 @@ async def _run_test(
                             match test_request.cancel.cancel_timing:
                                 case Oneof("after_close_send_ms", after_close_send_ms):
                                     await request_closed.wait()
-                                    await asyncio.sleep(after_close_send_ms / 1000.0)
+                                    await anyio.sleep(after_close_send_ms / 1000.0)
                                     task.cancel()
-                        await task
-                case "async":
-                    async with client_async(test_request) as client:
+                        await task.wait()
+                case "async" | "trio":
+                    async with (
+                        _call_starter(mode) as start,
+                        client_async(test_request) as client,
+                    ):
                         match test_request.method:
                             case "BidiStream":
-                                request_queue = asyncio.Queue()
+                                send_requests, receive_requests = (
+                                    anyio.create_memory_object_stream[
+                                        BidiStreamRequest | None
+                                    ](math.inf)
+                                )
 
                                 async def send_bidi_stream_request(
                                     client: ConformanceServiceClient,
@@ -499,10 +596,10 @@ async def _run_test(
                                     )
                                     for message in test_request.request_messages:
                                         if test_request.request_delay_ms:
-                                            await asyncio.sleep(
+                                            await anyio.sleep(
                                                 test_request.request_delay_ms / 1000.0
                                             )
-                                        await request_queue.put(
+                                        send_requests.send_nowait(
                                             _unpack_request(message, BidiStreamRequest)
                                         )
 
@@ -530,7 +627,7 @@ async def _run_test(
                                             case Oneof("before_close_send", _):
                                                 task.cancel()
 
-                                    await request_queue.put(None)
+                                    send_requests.send_nowait(None)
 
                                     request_closed.set()
 
@@ -546,12 +643,12 @@ async def _run_test(
 
                                 async def bidi_stream_request():
                                     while True:
-                                        request = await request_queue.get()
+                                        request = await receive_requests.receive()
                                         if request is None:
                                             return
                                         yield request
 
-                                task = asyncio.create_task(
+                                task = start(
                                     send_bidi_stream_request(
                                         client, bidi_stream_request()
                                     )
@@ -573,7 +670,7 @@ async def _run_test(
                                 async def client_stream_request():
                                     for message in test_request.request_messages:
                                         if test_request.request_delay_ms:
-                                            await asyncio.sleep(
+                                            await anyio.sleep(
                                                 test_request.request_delay_ms / 1000.0
                                             )
                                         yield _unpack_request(
@@ -585,7 +682,7 @@ async def _run_test(
                                                 task.cancel()
                                     request_closed.set()
 
-                                task = asyncio.create_task(
+                                task = start(
                                     send_client_stream_request(
                                         client, client_stream_request()
                                     )
@@ -604,7 +701,7 @@ async def _run_test(
                                     )
                                     payloads.append(res.payload or ConformancePayload())
 
-                                task = asyncio.create_task(
+                                task = start(
                                     send_idempotent_unary_request(
                                         client,
                                         _unpack_request(
@@ -634,7 +731,7 @@ async def _run_test(
                                                     if len(payloads) >= num:
                                                         task.cancel()
 
-                                task = asyncio.create_task(
+                                task = start(
                                     send_server_stream_request(
                                         client,
                                         _unpack_request(
@@ -657,7 +754,7 @@ async def _run_test(
                                     )
                                     payloads.append(res.payload or ConformancePayload())
 
-                                task = asyncio.create_task(
+                                task = start(
                                     send_unary_request(
                                         client,
                                         _unpack_request(
@@ -668,7 +765,7 @@ async def _run_test(
                                 )
                                 request_closed.set()
                             case "Unimplemented":
-                                task = asyncio.create_task(
+                                task = start(
                                     client.unimplemented(
                                         _unpack_request(
                                             test_request.request_messages[0],
@@ -686,9 +783,9 @@ async def _run_test(
                             match test_request.cancel.cancel_timing:
                                 case Oneof("after_close_send_ms", after_close_send_ms):
                                     await request_closed.wait()
-                                    await asyncio.sleep(after_close_send_ms / 1000.0)
+                                    await anyio.sleep(after_close_send_ms / 1000.0)
                                     task.cancel()
-                        await task
+                        await task.wait()
         except ConnectError as e:
             client_response_result.error = ConformanceError(
                 code=_convert_code(e.code),
@@ -715,7 +812,7 @@ async def _run_test(
     return test_response
 
 
-Mode = Literal["sync", "async"]
+Mode = Literal["sync", "async", "trio"]
 
 
 class Args(argparse.Namespace):
@@ -723,39 +820,35 @@ class Args(argparse.Namespace):
     parallel: int
 
 
-async def main() -> None:
+async def main(args: Args) -> None:
+    stdin = anyio.wrap_file(sys.stdin.buffer)
+    stdout = anyio.wrap_file(sys.stdout.buffer)
+    sema = anyio.Semaphore(args.parallel)
+    write_lock = anyio.Lock()
+
+    async def task(request: ClientCompatRequest) -> None:
+        async with sema:
+            response = await _run_test(args.mode, request)
+        response_buf = response.to_binary()
+        size_buf = len(response_buf).to_bytes(4, byteorder="big")
+        async with write_lock:
+            await stdout.write(size_buf + response_buf)
+            await stdout.flush()
+
+    async with anyio.create_task_group() as tg:
+        while True:
+            size_buf = await stdin.read(4)
+            if len(size_buf) < 4:
+                return
+            size = int.from_bytes(size_buf, byteorder="big")
+            # Allow to raise even on EOF since we always should have a message
+            request_buf = await stdin.read(size)
+            tg.start_soon(task, ClientCompatRequest.from_binary(request_buf))
+
+
+if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Conformance client")
     parser.add_argument("--mode", choices=get_args(Mode))
     parser.add_argument("--parallel", type=int, default=multiprocessing.cpu_count() * 4)
     args = parser.parse_args(namespace=Args())
-
-    stdin, stdout = await create_standard_streams()
-    sema = asyncio.Semaphore(args.parallel)
-    tasks: list[asyncio.Task] = []
-    try:
-        while True:
-            try:
-                size_buf = await stdin.readexactly(4)
-            except asyncio.IncompleteReadError:
-                return
-            size = int.from_bytes(size_buf, byteorder="big")
-            # Allow to raise even on EOF since we always should have a message
-            request_buf = await stdin.readexactly(size)
-            request = ClientCompatRequest.from_binary(request_buf)
-
-            async def task(request: ClientCompatRequest) -> None:
-                async with sema:
-                    response = await _run_test(args.mode, request)
-
-                    response_buf = response.to_binary()
-                    size_buf = len(response_buf).to_bytes(4, byteorder="big")
-                    stdout.write(size_buf + response_buf)
-                    await stdout.drain()
-
-            tasks.append(asyncio.create_task(task(request)))
-    finally:
-        asyncio.gather(*tasks)
-
-
-if __name__ == "__main__":
-    asyncio.run(main())
+    anyio.run(main, args, backend="trio" if args.mode == "trio" else "asyncio")

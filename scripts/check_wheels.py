@@ -23,24 +23,25 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 
+_trio_floors = [
+    # trio doesn't bound sortedcontainers or idna. Their oldest releases
+    # predate Python 3, and sortedcontainers 2.0 needs collections.Sequence.
+    "sortedcontainers>=2.1",
+    "idna>=2",
+]
+
 # Requirements each package's tests need beyond its test group.
 EXTRA = {
-    "connectrpc": [
-        # trio doesn't bound sortedcontainers or idna. Their oldest releases
-        # predate Python 3, and sortedcontainers 2.0 needs collections.Sequence.
-        "sortedcontainers>=2.1",
-        "idna>=2",
-    ],
+    "connectrpc": [*_trio_floors],
     "connectrpc_fastapi": [
+        *_trio_floors,
         # The package needs changes to connectrpc that are not released yet.
-        "dist/connectrpc-*.whl"
+        "dist/connectrpc-*.whl",
     ],
-    "connectrpc_grpchealth": [
-        # trio's unbounded floors, as for connectrpc.
-        "sortedcontainers>=2.1",
-        "idna>=2",
-    ],
+    "connectrpc_grpchealth": [*_trio_floors],
+    "connectrpc_grpcreflect": [*_trio_floors],
     "connectrpc_otel": [
+        *_trio_floors,
         # The tests need this repository's connectrpc.
         "dist/connectrpc-*.whl",
         # Two of opentelemetry-instrumentation's transitive floors don't
