@@ -49,9 +49,8 @@ CONNECT_STREAMING_HEADER_ACCEPT_COMPRESSION = "connect-accept-encoding"
 _DEFAULT_CONNECT_USER_AGENT = f"connectrpc/{__version__}"
 
 
-def _parse_content_type(content_type: str) -> tuple[str, str | None]:
-    """Return the normalized media type and the charset parameter, if any."""
-    media_type, _, params = content_type.partition(";")
+def _charset(params: str) -> str | None:
+    """Return the charset parameter, if any, from content type parameters."""
     charset = None
     for param in params.split(";"):
         name, _, value = param.partition("=")
@@ -60,12 +59,13 @@ def _parse_content_type(content_type: str) -> tuple[str, str | None]:
             if len(value) >= 2 and value[0] == value[-1] == '"':
                 value = value[1:-1]
             charset = value.lower()
-    return media_type.strip().lower(), charset
+    return charset
 
 
-def codec_name_from_content_type(content_type: str, *, stream: bool) -> str:
-    """Return the codec name for the content type."""
-    media_type, charset = _parse_content_type(content_type)
+def _parse_content_type(content_type: str, *, stream: bool) -> tuple[str, str]:
+    """Return the normalized media type and the codec name for the content type."""
+    media_type, _, params = content_type.partition(";")
+    media_type = media_type.strip().lower()
     prefix = (
         CONNECT_STREAMING_CONTENT_TYPE_PREFIX
         if stream
@@ -74,9 +74,14 @@ def codec_name_from_content_type(content_type: str, *, stream: bool) -> str:
     # Follow connect-go behavior for malformed content type. If the content type misses the prefix,
     # it will still be coincidentally handled.
     codec_name = media_type.removeprefix(prefix)
-    if codec_name == CODEC_NAME_JSON and charset not in (None, "utf-8"):
-        return ""
-    return codec_name
+    if codec_name == CODEC_NAME_JSON and _charset(params) not in (None, "utf-8"):
+        codec_name = ""
+    return media_type, codec_name
+
+
+def codec_name_from_content_type(content_type: str, *, stream: bool) -> str:
+    """Return the codec name for the content type."""
+    return _parse_content_type(content_type, stream=stream)[1]
 
 
 class ConnectServerProtocol:
@@ -243,7 +248,9 @@ class ConnectClientProtocol:
     def validate_response(
         self, request_codec_name: str, status_code: int, response_content_type: str
     ) -> None:
-        media_type, _ = _parse_content_type(response_content_type)
+        media_type, response_codec_name = _parse_content_type(
+            response_content_type, stream=False
+        )
         if status_code != HTTPStatus.OK:
             # Error responses must be JSON-encoded
             if media_type == CONNECT_UNARY_CONTENT_TYPE_JSON:
@@ -256,9 +263,6 @@ class ConnectClientProtocol:
                 f"invalid content-type: '{response_content_type}'; expecting '{CONNECT_UNARY_CONTENT_TYPE_PREFIX}{request_codec_name}'",
             )
 
-        response_codec_name = codec_name_from_content_type(
-            response_content_type, stream=False
-        )
         if response_codec_name == request_codec_name:
             return
 
@@ -270,16 +274,15 @@ class ConnectClientProtocol:
     def validate_stream_response(
         self, request_codec_name: str, response_content_type: str
     ) -> None:
-        media_type, _ = _parse_content_type(response_content_type)
+        media_type, response_codec_name = _parse_content_type(
+            response_content_type, stream=True
+        )
         if not media_type.startswith(CONNECT_STREAMING_CONTENT_TYPE_PREFIX):
             raise ConnectError(
                 Code.UNKNOWN,
                 f"invalid content-type: '{response_content_type}'; expecting '{CONNECT_STREAMING_CONTENT_TYPE_PREFIX}{request_codec_name}'",
             )
 
-        response_codec_name = codec_name_from_content_type(
-            response_content_type, stream=True
-        )
         if response_codec_name != request_codec_name:
             raise ConnectError(
                 Code.INTERNAL,

@@ -215,6 +215,24 @@ def test_proto_charset_ignored() -> None:
     assert proto_binary_codec().decode(res.content, Hat) == Hat(size=2)
 
 
+@pytest.mark.anyio
+async def test_proto_charset_ignored_async() -> None:
+    class HeadersHaberdasher(Haberdasher):
+        async def make_hat(self, _request, _ctx):
+            return Hat(size=2)
+
+    transport = ASGITransport(HaberdasherASGIApplication(HeadersHaberdasher()))
+    client = Client(transport=transport)
+
+    res = await client.post(
+        "http://localhost/connectrpc.example.Haberdasher/MakeHat",
+        content=b"",
+        headers={"content-type": "application/proto; charset=iso-8859-1"},
+    )
+    assert res.status == 200
+    assert proto_binary_codec().decode(res.content, Hat) == Hat(size=2)
+
+
 def test_error_response_does_not_read_past_content_length() -> None:
     body = b"{}"
 
