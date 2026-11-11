@@ -64,11 +64,7 @@ def _parse_content_type(content_type: str) -> tuple[str, str | None]:
 
 
 def codec_name_from_content_type(content_type: str, *, stream: bool) -> str:
-    """Return the codec name for the content type.
-
-    If the content type is not valid for its codec, an empty string is returned,
-    which never matches a codec.
-    """
+    """Return the codec name for the content type."""
     media_type, charset = _parse_content_type(content_type)
     prefix = (
         CONNECT_STREAMING_CONTENT_TYPE_PREFIX
