@@ -259,7 +259,7 @@ async def upgrade_websocket(
         return None
     try:
         metadata = _parse_leading_metadata(metadata_payload)
-    except ValueError as e:
+    except (TypeError, ValueError) as e:
         await _fail_rpc(
             send, ConnectError(Code.INVALID_ARGUMENT, str(e)), _CLOSE_PROTOCOL_ERROR
         )
@@ -471,7 +471,9 @@ def _wrap_receive(
 
             match chr(marker):
                 case "B" | "C" as marker_char:
-                    if payload and is_text == binary_bodies:
+                    if (
+                        payload or marker_char == _MARKER_BODY
+                    ) and is_text == binary_bodies:
                         raise _stream_error(
                             state,
                             _CLOSE_UNSUPPORTED_DATA,

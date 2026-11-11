@@ -687,7 +687,7 @@ async def serve_uvicorn(
     cafile: str | None,
     port_future: asyncio.Future[int],
 ):
-    args = ["--port=0", "--no-access-log"]
+    args = ["--port=0", "--no-access-log", "--ws-per-message-deflate=false"]
     if certfile:
         args.append(f"--ssl-certfile={certfile}")
     if keyfile:
