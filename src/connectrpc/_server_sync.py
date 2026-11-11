@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import contextvars
 import functools
 import traceback
 from abc import ABC
@@ -55,7 +56,14 @@ from .errors import ConnectError
 from .request import Headers, RequestContext
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
+    from collections.abc import (
+        Callable,
+        Generator,
+        Iterable,
+        Iterator,
+        Mapping,
+        Sequence,
+    )
     from io import BytesIO
     from wsgiref.types import ErrorStream, StartResponse, WSGIEnvironment
 
@@ -454,7 +462,9 @@ class ConnectWSGIApplication(ABC, Generic[_SVC]):
                         )
                     ],
                 )
-            return self._handle_stream(
+            context = contextvars.copy_context()
+            return context.run(
+                self._handle_stream,
                 environ,
                 request_body,
                 start_response,
@@ -464,6 +474,7 @@ class ConnectWSGIApplication(ABC, Generic[_SVC]):
                 headers,
                 endpoint,
                 ctx,
+                context,
             )
 
         except Exception as e:  # noqa: BLE001 # invoking user callback
@@ -659,6 +670,7 @@ class ConnectWSGIApplication(ABC, Generic[_SVC]):
         headers: Headers,
         endpoint: EndpointSync[_REQ, _RES],
         ctx: RequestContext[_REQ, _RES],
+        context: contextvars.Context,
     ) -> Iterable[bytes]:
         metadata_run = MetadataInterceptorsRunSync(self._metadata_interceptors, ctx)
         try:
@@ -711,15 +723,18 @@ class ConnectWSGIApplication(ABC, Generic[_SVC]):
             # run at all until the iterator is consumed, meaning start_response wouldn't have
             # been called in time. So we return the response stream as a separate generator
             # function. This means some duplication of error handling.
-            return _response_stream(
-                first_response,
-                environ,
-                request_body,
-                response_stream,
-                stream.writer,
-                send_trailers,
-                ctx,
-                metadata_run,
+            return _iterate_in_context(
+                context,
+                _response_stream(
+                    first_response,
+                    environ,
+                    request_body,
+                    response_stream,
+                    stream.writer,
+                    send_trailers,
+                    ctx,
+                    metadata_run,
+                ),
             )
         except Exception as e:  # noqa: BLE001 # invoking user callback
             # Exception before any response message was returned. An error after the first
@@ -822,6 +837,25 @@ def _end_stream(stream: Iterator[object], error: Exception | None) -> None:
         close()
 
 
+def _iterate_in_context(
+    context: contextvars.Context, stream: Generator[bytes]
+) -> Generator[bytes]:
+    """Iterate stream, and close it, in context.
+
+    The app server iterates the response after the application returns, outside
+    any context middleware set up around the call.
+    """
+    try:
+        while True:
+            try:
+                chunk = context.run(stream.__next__)
+            except StopIteration:
+                return
+            yield chunk
+    finally:
+        context.run(stream.close)
+
+
 def _response_stream(
     first_response: _RES,
     environ: WSGIEnvironment,
@@ -831,7 +865,7 @@ def _response_stream(
     send_trailers: Callable[[list[tuple[str, str]]], None] | None,
     ctx: RequestContext,
     metadata_run: MetadataInterceptorsRunSync,
-) -> Iterable[bytes]:
+) -> Generator[bytes]:
     error: Exception | None = None
     try:
         body = writer.write(first_response)
