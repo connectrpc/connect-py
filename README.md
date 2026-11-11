@@ -19,7 +19,7 @@ Connect is the **easiest way to build modern APIs**.
 
 ## Why Connect?
 
-Building an API usually means writing the same types at least twice: once on the server, and once in every client. Connect makes this simple: define your API schema using Protobuf, and Connect generates type-safe server stubs and idiomatic client libraries in **every major language**, including for your frontend. All that's left to write is your business logic, in plain Python.
+Building an API usually means writing the same types at least twice: once on the server, and once in every client. Connect makes this simple—define your API schema using Protobuf, and Connect generates type-safe server stubs and idiomatic client libraries in **every major language**, including for your frontend. All that's left to write is your business logic, in plain Python.
 
 Connect already works with your current tech stack:
 
@@ -121,9 +121,8 @@ class MyHelloService(HelloService):
 
 app = HelloServiceASGIApplication(MyHelloService())
 
-# Run with any ASGI server. gRPC and full-duplex bidirectional streaming
-# need HTTP/2, which pyvoy supports:
-# pyvoy server:app --port 8080
+# Run with any ASGI server, e.g. uvicorn:
+# uvicorn server:app --port 8080
 ```
 
 Client libraries are automatically generated for you. Here's what the async client looks like:
