@@ -107,8 +107,6 @@ build-backend = "uv_build"
 # Turn all warnings into errors
 filterwarnings = [
   "error",
-  # Workaround https://github.com/open-telemetry/opentelemetry-python/issues/5231
-  "ignore:SelectableGroups dict interface is deprecated. Use select.",
 ]
 markers = [
   "asyncio_only: skip on trio, e.g. for the sync client or asyncio-specific behavior",
@@ -194,9 +192,6 @@ split-on-trailing-comma = false
 
 [tool.ty.src]
 exclude = [
-  # gRPC generated code references `grpc.experimental`, which is not exposed by the
-  # `grpc` package's public API. See https://github.com/grpc/grpc/issues/39555.
-  "**/*_pb2_grpc.py",
   # Workaround lack of monorepo support by excluding subproject code from top-level project.
   # https://docs.astral.sh/ty/reference/typing-faq/#does-ty-support-monorepos
   # https://github.com/astral-sh/ty/issues/819
