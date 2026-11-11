@@ -18,14 +18,10 @@ from pyqwest import Client, SyncClient
 from pyqwest.testing import ASGITransport, WSGITransport
 
 from connectrpc_grpcreflect import (
-    ServerReflectionAlphaASGIApplication,
-    ServerReflectionAlphaService,
-    ServerReflectionAlphaServiceSync,
-    ServerReflectionAlphaWSGIApplication,
-    ServerReflectionASGIApplication,
-    ServerReflectionService,
     ServerReflectionServiceSync,
     ServerReflectionWSGIApplication,
+    reflection_apps,
+    reflection_apps_sync,
 )
 from connectrpc_grpcreflect._gen.grpc.reflection.v1.reflection_connect import (
     ServerReflectionClient,
@@ -59,17 +55,13 @@ async def reflection_client(
 ) -> AsyncIterator[ReflectionClient]:
     match request.param:
         case "sync":
-            app = ServerReflectionWSGIApplication(
-                ServerReflectionServiceSync(haberdasher_pb.desc(), eliza_pb.desc())
-            )
+            app, _ = reflection_apps_sync(haberdasher_pb.desc(), eliza_pb.desc())
             with ServerReflectionClientSync(
                 "http://localhost", http_client=SyncClient(WSGITransport(app=app))
             ) as client:
                 yield client
         case "async":
-            app = ServerReflectionASGIApplication(
-                ServerReflectionService(haberdasher_pb.desc(), eliza_pb.desc())
-            )
+            app, _ = reflection_apps(haberdasher_pb.desc(), eliza_pb.desc())
             async with ServerReflectionClient(
                 "http://localhost", http_client=Client(ASGITransport(app))
             ) as client:
@@ -456,9 +448,8 @@ def test_extensions() -> None:
 
 @pytest.mark.anyio
 async def test_v1alpha() -> None:
-    app = ServerReflectionAlphaASGIApplication(
-        ServerReflectionAlphaService(eliza_pb.desc())
-    )
+    _, app = reflection_apps(eliza_pb.desc())
+    assert app.path == "/grpc.reflection.v1alpha.ServerReflection"
     req = ServerReflectionAlphaRequest(
         host="alpha.example.com", message_request=Oneof("list_services", "")
     )
@@ -484,9 +475,8 @@ async def test_v1alpha() -> None:
 
 
 def test_v1alpha_sync() -> None:
-    app = ServerReflectionAlphaWSGIApplication(
-        ServerReflectionAlphaServiceSync(eliza_pb.desc())
-    )
+    _, app = reflection_apps_sync(eliza_pb.desc())
+    assert app.path == "/grpc.reflection.v1alpha.ServerReflection"
     req = ServerReflectionAlphaRequest(
         host="alpha.example.com", message_request=Oneof("list_services", "")
     )
