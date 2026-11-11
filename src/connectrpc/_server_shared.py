@@ -5,6 +5,8 @@ from typing import TYPE_CHECKING, Any, Generic, TypeVar
 
 from protobuf.wkt.google.protobuf.descriptor_pb import MethodOptions
 
+from .code import Code
+from .errors import ConnectError
 from .method import IdempotencyLevel, MethodInfo, StreamType
 
 if TYPE_CHECKING:
@@ -144,6 +146,16 @@ class EndpointServerStreamSync(EndpointSync[REQ, RES]):
 @dataclass(kw_only=True, frozen=True, slots=True)
 class EndpointBidiStreamSync(EndpointSync[REQ, RES]):
     function: Callable[[Iterator[REQ], RequestContext[REQ, RES]], Iterator[RES]]
+
+
+def check_deadline(ctx: RequestContext) -> None:
+    """Raise deadline_exceeded if the request's deadline has already passed.
+
+    A timeout of zero is valid but has expired on arrival. The handler isn't
+    called since it may finish without yielding to the deadline.
+    """
+    if (timeout_ms := ctx.timeout_ms) is not None and timeout_ms <= 0:
+        raise ConnectError(Code.DEADLINE_EXCEEDED, "Request timed out")
 
 
 def method_url(method: DescMethod) -> str:
