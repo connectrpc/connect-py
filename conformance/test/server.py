@@ -644,9 +644,12 @@ async def serve_pyvoy(
     if mode == "sync":
         interface = "wsgi"
         app = "server:wsgi_app"
+        # WebSockets require ASGI.
+        websockets = False
     else:
         interface = "asgi"
         app = "server:asgi_app"
+        websockets = True
 
     async def start():
         # Currently explicit env not accepted but it's safe to set it here.
@@ -660,7 +663,7 @@ async def serve_pyvoy(
             tls_cert=tls_cert,
             tls_ca_cert=tls_ca_cert,
             loop=loop,
-            websockets=True,
+            websockets=websockets,
             websockets_compression_no_context_takeover=True,
         ) as server:
             if (
@@ -689,7 +692,15 @@ async def serve_uvicorn(
     cafile: str | None,
     port_future: asyncio.Future[int],
 ):
-    args = ["--port=0", "--no-access-log", "--ws-per-message-deflate=false"]
+    args = [
+        "--port=0",
+        "--no-access-log",
+        # The default wsproto implementation does not send a close frame for
+        # protocol errors it detects itself, such as invalid UTF-8 in a text
+        # frame, so the client sees 1006 instead of 1007.
+        "--ws=websockets-sansio",
+        "--ws-per-message-deflate=false",
+    ]
     if certfile:
         args.append(f"--ssl-certfile={certfile}")
     if keyfile:

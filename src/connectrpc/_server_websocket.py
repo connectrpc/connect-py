@@ -1,34 +1,4 @@
-"""Server support for the Connect-over-WebSocket protocol.
-
-The wire format is defined in the "Connect-over-WebSocket Protocol"
-specification:
-
-- The RPC is selected by the handshake URI, and the codec by the WebSocket
-  subprotocol (connectrpc.1+proto or connectrpc.1+json). The deadline is the
-  connect-timeout-ms query parameter.
-- Every message is a one-byte marker followed by the payload: B (body),
-  M (leading metadata), C (client end-of-stream, with an optional final
-  body), and S (server end-of-stream, an EndStreamResponse). M and S are
-  always JSON text messages. A body is a text frame under the JSON codec and
-  a binary frame under Protobuf.
-- Both directions open with exactly one M message. The client's is consumed
-  before dispatch and overlays the upgrade request's headers to form the
-  RPC's effective headers.
-- The server ends with S and a close frame: 1000 normally, 1002 for a
-  protocol error, 1003 for a body in the wrong frame type, and 1009 for an
-  oversized message, each sent after the S message.
-
-The connection is adapted to the HTTP control flow in ConnectASGIApplication.
-B and C payloads are wrapped in an envelope prefix and fed through the
-EnvelopeReader machinery, the response's http.response.start becomes the
-server's M message, and the envelopes produced by the EnvelopeWriter are
-unwrapped into B and S messages.
-
-The ASGI protocol does not expose permessage-deflate negotiation (the
-specification requires no_context_takeover in both directions) or PING
-frames, so both are left to the ASGI server. A WebSocket path prefix and a
-server-imposed default deadline are not implemented.
-"""
+"""Server support for the Connect-over-WebSocket protocol."""
 
 from __future__ import annotations
 
@@ -302,11 +272,7 @@ async def upgrade_websocket(
 
 
 def _same_origin(origin: str, host: str | None) -> bool:
-    """Compare the Origin's host and port with the Host header.
-
-    The comparison is case-insensitive, ignores the scheme, and does not
-    normalize default ports.
-    """
+    """Compare the Origin's host and port with the Host header."""
     _, sep, origin_host = origin.partition("://")
     if not sep or host is None:
         # An opaque origin ("null") or a malformed value never matches.

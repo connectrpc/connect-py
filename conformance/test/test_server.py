@@ -44,6 +44,20 @@ _known_flaky = [
     "Server Message Size/HTTPVersion:1/**/first-request-exceeds-server-limit",
 ]
 
+# WSGI servers cannot handle WebSocket upgrades.
+_skipped_websocket = [
+    "--skip",
+    "**/Protocol:PROTOCOL_CONNECT_WEBSOCKET/**",
+    "--skip",
+    "WebSocket Server Framing/**",
+    "--skip",
+    "WebSocket Server Handshake/**",
+    "--skip",
+    "WebSocket Server Metadata/**",
+    "--skip",
+    "WebSocket Server Proto Framing/**",
+]
+
 
 def run_conformance(
     args: list[str],
@@ -81,7 +95,7 @@ def test_server_sync(server: str, cov: Coverage) -> None:
     )
     # WSGI applications can't enforce timeouts while a handler is blocked, and
     # the conformance handlers block for longer than the timeout.
-    opts = ["--skip", "Timeouts/**"]
+    opts = ["--skip", "Timeouts/**", *_skipped_websocket]
     match server:
         case "gunicorn":
             # gunicorn doesn't support HTTP/2 or 3
