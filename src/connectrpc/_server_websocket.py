@@ -21,7 +21,7 @@ from .code import Code
 from .errors import ConnectError
 
 if TYPE_CHECKING:
-    from collections.abc import Container, Iterable
+    from collections.abc import Collection, Container, Iterable
 
     from asgiref.typing import (
         ASGIReceiveCallable,
@@ -125,6 +125,7 @@ async def upgrade_websocket(
     endpoints: Container[str],
     codecs: Iterable[str],
     read_max_bytes: int | None,
+    allowed_origins: Collection[str] = (),
 ) -> tuple[HTTPScope, ASGIReceiveCallable, ASGISendCallable] | None:
     """Establish a Connect-over-WebSocket stream and adapt it to HTTP.
 
@@ -133,6 +134,12 @@ async def upgrade_websocket(
     receive/send callables that translate between marked WebSocket messages
     and enveloped HTTP body chunks. Returns None when the RPC must not be
     dispatched, in which case the connection has been rejected or closed.
+
+    allowed_origins holds lowercase host patterns permitted to open
+    cross-origin streams in addition to same-origin handshakes: an exact
+    host and optional port, a "*.example.com" domain wildcard, or "*" for
+    any origin. As in the same-origin check, the port is compared exactly
+    as written and the scheme is ignored.
     """
     message = await receive()
     if message["type"] != "websocket.connect":
@@ -156,7 +163,11 @@ async def upgrade_websocket(
         headers.setdefault(name_bytes.decode().lower(), []).append(value_bytes.decode())
 
     origin = headers.get("origin", (None,))[0]
-    if origin is not None and not _same_origin(origin, headers.get("host", (None,))[0]):
+    if (
+        origin is not None
+        and not _origin_allowed(origin, allowed_origins)
+        and not _same_origin(origin, headers.get("host", (None,))[0])
+    ):
         # A cross-origin handshake must be rejected before the upgrade so no
         # page from another origin can read the error.
         await _reject_handshake(scope, send, HTTPStatus.FORBIDDEN)
@@ -268,6 +279,26 @@ async def upgrade_websocket(
             read_max_bytes=read_max_bytes,
         ),
         _WebSocketSendAdapter(send, state, binary_bodies=binary_bodies),
+    )
+
+
+def _origin_allowed(origin: str, patterns: Collection[str]) -> bool:
+    """Match the Origin's host and port against lowercase allowed patterns.
+
+    Like the same-origin check, the comparison ignores the scheme and does
+    not normalize default ports.
+    """
+    if "*" in patterns:
+        # Covers even an opaque "null" origin, which never parses as a host.
+        return True
+    _, sep, authority = origin.partition("://")
+    if not sep:
+        return False
+    authority = authority.lower()
+    return any(
+        authority == pattern
+        or (pattern.startswith("*") and authority.endswith(pattern[1:]))
+        for pattern in patterns
     )
 
 

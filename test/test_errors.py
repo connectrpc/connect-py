@@ -31,7 +31,7 @@ from connectrpc.code import Code
 from connectrpc.compression.brotli import BrotliCompression
 from connectrpc.compression.gzip import GzipCompression
 from connectrpc.errors import ConnectError
-from connectrpc.protocol import ProtocolType
+from connectrpc.protocol import ClientProtocolType, ProtocolType
 
 from .connectrpc.example.haberdasher_connect import (
     Haberdasher,
@@ -827,7 +827,7 @@ _blocking_methods = ["unary", "client_stream", "server_stream"]
 class _ServerTimeoutTransport(Transport):
     """Gives each request a 50ms timeout, so that only the server enforces one."""
 
-    def __init__(self, transport: Transport, protocol: ProtocolType) -> None:
+    def __init__(self, transport: Transport, protocol: ClientProtocolType) -> None:
         self._transport = transport
         self._protocol = protocol
 
@@ -892,7 +892,7 @@ class _SlowOnEnd:
 @pytest.mark.anyio
 @pytest.mark.parametrize("protocol", _protocols)
 @pytest.mark.parametrize("method", _blocking_methods)
-async def test_async_server_timeout(protocol: ProtocolType, method: str) -> None:
+async def test_async_server_timeout(protocol: ClientProtocolType, method: str) -> None:
     interceptor = _ErrorRecordingInterceptor()
     app = HaberdasherASGIApplication(
         _BlockingHaberdasher(), interceptors=(interceptor,)
@@ -921,7 +921,7 @@ async def test_async_server_timeout(protocol: ProtocolType, method: str) -> None
 # A slow handler, as on a loaded machine, lets the deadline pass before on_end.
 @pytest.mark.parametrize("block", [0, 0.1], ids=["quick_handler", "slow_handler"])
 async def test_async_server_timeout_in_on_end(
-    protocol: ProtocolType, method: str, block: float
+    protocol: ClientProtocolType, method: str, block: float
 ) -> None:
     """A slow on_end is bounded by the request's deadline like the handler is."""
     on_end = _SlowOnEnd()
@@ -958,7 +958,7 @@ async def test_async_server_timeout_in_on_end(
 @pytest.mark.anyio
 @pytest.mark.parametrize("protocol", _protocols)
 async def test_async_server_timeout_in_on_end_keeps_handler_error(
-    protocol: ProtocolType,
+    protocol: ClientProtocolType,
 ) -> None:
     """A timeout that cuts on_end short after the handler failed keeps that failure."""
 
@@ -1082,7 +1082,9 @@ async def _sizes() -> AsyncIterator[Size]:
 @pytest.mark.asyncio_only
 @pytest.mark.parametrize("protocol", _protocols)
 @pytest.mark.parametrize("method", _blocking_methods)
-async def test_async_server_cancelled(protocol: ProtocolType, method: str) -> None:
+async def test_async_server_cancelled(
+    protocol: ClientProtocolType, method: str
+) -> None:
     interceptor = _ErrorRecordingInterceptor()
     app = HaberdasherASGIApplication(
         _BlockingHaberdasher(), interceptors=(interceptor,)
@@ -1195,7 +1197,7 @@ async def test_async_unhandled_exception_reraised(
 @pytest.mark.parametrize("protocol", _protocols)
 @pytest.mark.parametrize("method", ["unary", "server_stream"])
 async def test_async_handler_timeout_error_reraised(
-    protocol: ProtocolType, method: str
+    protocol: ClientProtocolType, method: str
 ) -> None:
     class RaisingHaberdasher(Haberdasher):
         async def make_hat(self, _request, _ctx) -> NoReturn:
@@ -1242,7 +1244,7 @@ async def test_async_handler_timeout_error_reraised(
     [(TypeError, "Something went wrong"), (SystemExit, "Request was interrupted")],
 )
 async def test_async_unhandled_exception_reraised_stream(
-    protocol: ProtocolType, exception: type[BaseException], message: str
+    protocol: ClientProtocolType, exception: type[BaseException], message: str
 ) -> None:
     class RaisingHaberdasher(Haberdasher):
         def make_similar_hats(self, _request: Size, _ctx: RequestContext) -> NoReturn:

@@ -21,7 +21,7 @@ from connectrpc.compression.brotli import BrotliCompression
 from connectrpc.compression.gzip import GzipCompression
 from connectrpc.compression.zstd import ZstdCompression
 from connectrpc.errors import ConnectError
-from connectrpc.protocol import ProtocolType
+from connectrpc.protocol import ClientProtocolType, ProtocolType
 from connectrpc.request import Headers
 
 from ._util import call, resolve_compression
@@ -67,7 +67,7 @@ def new_client(request: pytest.FixtureRequest):
         *,
         send_compression: Compression | None,
         accept_compression: Iterable[Compression] | None = None,
-        protocol: ProtocolType = ProtocolType.CONNECT,
+        protocol: ClientProtocolType = ProtocolType.CONNECT,
     ) -> HaberdasherClient | HaberdasherClientSync:
         if request.param == "async":
             app = HaberdasherASGIApplication(
@@ -130,7 +130,7 @@ _methods = [
 @pytest.mark.parametrize("protocol", _protocols)
 @pytest.mark.parametrize("method", _methods)
 async def test_unknown_request_compression(
-    new_client, protocol: ProtocolType, method: str
+    new_client, protocol: ClientProtocolType, method: str
 ) -> None:
     # The server only supports the default gzip.
     client = new_client(protocol=protocol, send_compression=ZstdCompression())
