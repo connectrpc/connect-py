@@ -660,6 +660,8 @@ async def serve_pyvoy(
             tls_cert=tls_cert,
             tls_ca_cert=tls_ca_cert,
             loop=loop,
+            websockets=True,
+            websockets_compression_no_context_takeover=True,
         ) as server:
             if (
                 request.http_version == HTTPVersion.HTTP_VERSION_3

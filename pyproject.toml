@@ -58,7 +58,7 @@ dev = [
   "hypercorn==0.18.0",
   "poethepoet==0.49.0",
   "pytest-cov==7.1.0",
-  "pyvoy==1.4.0",
+  "pyvoy==1.5.0",
   "ruff==0.17.4",
   "tombi==1.11.1",
   "ty==0.0.99",
