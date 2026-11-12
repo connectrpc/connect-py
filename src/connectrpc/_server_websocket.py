@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, cast
 from urllib.parse import parse_qs
 
 from ._codec import CODEC_NAME_JSON
+from ._loop import current_loop
 from ._protocol import ConnectWireError
 from ._protocol_connect import (
     CONNECT_STREAMING_HEADER_ACCEPT_COMPRESSION,
@@ -101,6 +102,9 @@ _STRIPPED_REQUEST_HEADERS = (
 )
 
 _FIELD_NAME_RE = re_compile(r"^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$")
+# A field value holds visible characters, spaces, and tabs. Every other
+# control character is invalid.
+_INVALID_FIELD_VALUE_RE = re_compile(r"[\x00-\x08\x0a-\x1f\x7f]")
 
 
 @dataclass
@@ -108,6 +112,9 @@ class _StreamState:
     """State the receive and send adapters share for one connection."""
 
     close_code: int = _CLOSE_NORMAL
+    # Set once the connection has ended. The client can no longer receive
+    # anything, so the send adapter drops the rest of the response.
+    disconnected: bool = False
     # The send adapter puts this error in the S message in place of the
     # end-stream payload. The receive side sets it for a protocol error
     # that it can only report as a synthetic disconnect.
@@ -158,6 +165,10 @@ async def upgrade_websocket(
         await _reject_handshake(scope, send, HTTPStatus.BAD_REQUEST)
         return None
 
+    if scope.get("http_version", "1.1") != "1.1":
+        await _reject_handshake(scope, send, HTTPStatus.BAD_REQUEST)
+        return None
+
     headers: dict[str, list[str]] = {}
     for name_bytes, value_bytes in scope.get("headers", ()):
         headers.setdefault(name_bytes.decode().lower(), []).append(value_bytes.decode())
@@ -182,6 +193,10 @@ async def upgrade_websocket(
             return None
 
     await send({"type": "websocket.accept", "subprotocol": subprotocol, "headers": []})
+    # The deadline bounds the whole RPC from here, including the wait for
+    # the client's Leading-Metadata message.
+    loop = current_loop()
+    accepted_at = loop.time()
 
     codec_name = _SUBPROTOCOL_CODECS[subprotocol]
     if codec_name not in codecs:
@@ -201,8 +216,11 @@ async def upgrade_websocket(
         scope.get("query_string", b"").decode(), keep_blank_values=True
     )
     timeout = query_params.get("connect-timeout-ms", (None,))[0]
-    # The specification allows at most ten digits.
-    if timeout is not None and (not timeout.isdigit() or len(timeout) > 10):
+    # The specification allows at most ten digits. int() also accepts other
+    # scripts' digits, so only ASCII ones are valid.
+    if timeout is not None and (
+        not (timeout.isascii() and timeout.isdigit()) or len(timeout) > 10
+    ):
         await _fail_rpc(
             send,
             ConnectError(
@@ -212,8 +230,19 @@ async def upgrade_websocket(
         )
         return None
 
+    deadline = None if timeout is None else accepted_at + int(timeout) / 1000
+
     # The first message in each direction is the Leading-Metadata message.
-    message = await receive()
+    try:
+        async with loop.timeout_at(deadline):
+            message = await receive()
+    except TimeoutError:
+        await _fail_rpc(
+            send,
+            ConnectError(Code.DEADLINE_EXCEEDED, "Request timed out"),
+            _CLOSE_NORMAL,
+        )
+        return None
     if message["type"] != "websocket.receive":
         return None
     metadata_text = message.get("text")
@@ -250,11 +279,13 @@ async def upgrade_websocket(
         headers.pop(name, None)
     headers.update(metadata)
     headers["content-type"] = [f"application/{codec_name}"]
-    if timeout is not None:
-        # The shared control flow reads the deadline from this header. The
+    if deadline is not None:
+        # The shared control flow reads the deadline from this header, as
+        # the time left of a deadline that started at the handshake. The
         # header is removed from the effective headers after the request
         # context is created.
-        headers["connect-timeout-ms"] = [timeout]
+        remaining_ms = max(0, int((deadline - loop.time()) * 1000))
+        headers["connect-timeout-ms"] = [str(remaining_ms)]
 
     http_scope = dict(scope)
     http_scope["type"] = "http"
@@ -382,7 +413,7 @@ def _parse_leading_metadata(payload: str) -> dict[str, list[str]]:
                 except ValueError as e:
                     msg = f"metadata key '{key}' has a value that is not valid base64"
                     raise ValueError(msg) from e
-            elif "\r" in value or "\n" in value or "\x00" in value:
+            elif _INVALID_FIELD_VALUE_RE.search(value):
                 msg = f"metadata key '{key}' has a value that is not a valid HTTP field value"
                 raise ValueError(msg)
         metadata[folded] = values
@@ -416,6 +447,7 @@ def _wrap_receive(
             message = await receive()
             match message["type"]:
                 case "websocket.disconnect":
+                    state.disconnected = True
                     return {"type": "http.disconnect"}
                 case "websocket.receive":
                     pass
@@ -552,6 +584,10 @@ class _WebSocketSendAdapter:
         self._error_status: int | None = None
 
     async def __call__(self, message: ASGISendEvent) -> None:
+        if self._state.disconnected:
+            # The client can no longer receive a response, so the server
+            # must not attempt to send one.
+            return
         match message["type"]:
             case "http.response.start":
                 if message["status"] != HTTPStatus.OK:

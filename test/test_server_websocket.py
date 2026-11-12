@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, cast
 
+import anyio
 import pytest
 
 from connectrpc.protocol import ProtocolType
@@ -30,32 +31,43 @@ class _FixedHaberdasher(Haberdasher):
 class _Connection:
     """Scripted ASGI websocket events and a recorder for sent events."""
 
-    def __init__(self, messages: list[dict[str, Any]]) -> None:
+    def __init__(self, messages: list[dict[str, Any]], *, hang: bool = False) -> None:
         self._messages = messages
+        # Once the messages run out, the client goes silent rather than
+        # disconnecting.
+        self._hang = hang
 
         self.sent: list[dict[str, Any]] = []
 
     async def receive(self) -> dict[str, Any]:
         if self._messages:
             return self._messages.pop(0)
+        if self._hang:
+            await anyio.sleep_forever()
         return {"type": "websocket.disconnect", "code": 1005}
 
     async def send(self, message: dict[str, Any]) -> None:
         self.sent.append(message)
 
 
-def _scope(origin: str | None, host: str = "example.com") -> dict[str, Any]:
+def _scope(
+    origin: str | None = None,
+    host: str = "example.com",
+    *,
+    query_string: bytes = b"",
+    http_version: str = "1.1",
+) -> dict[str, Any]:
     headers = [(b"host", host.encode())]
     if origin is not None:
         headers.append((b"origin", origin.encode()))
     return {
         "type": "websocket",
         "asgi": {"version": "3.0"},
-        "http_version": "1.1",
+        "http_version": http_version,
         "path": "/connectrpc.example.Haberdasher/MakeHat",
         "raw_path": b"/connectrpc.example.Haberdasher/MakeHat",
         "root_path": "",
-        "query_string": b"",
+        "query_string": query_string,
         "scheme": "ws",
         "headers": headers,
         "subprotocols": ["connectrpc.1+json"],
@@ -139,3 +151,102 @@ def test_invalid_allowed_origin_pattern(pattern: str) -> None:
         HaberdasherASGIApplication(
             _FixedHaberdasher(), websockets_allowed_origins=(pattern,)
         )
+
+
+async def _run(
+    scope: dict[str, Any], connection: _Connection
+) -> tuple[_FixedHaberdasher, list[Any]]:
+    """Run one connection, returning the service and what the server sent."""
+    service = _FixedHaberdasher()
+    app = HaberdasherASGIApplication(service)
+    with anyio.fail_after(5):
+        await app(
+            cast("WebSocketScope", scope),
+            cast("ASGIReceiveCallable", connection.receive),
+            cast("ASGISendCallable", connection.send),
+        )
+    sent: list[Any] = []
+    for message in connection.sent:
+        match message["type"]:
+            case "websocket.send":
+                sent.append(message["text"])
+            case "websocket.close":
+                sent.append(message["code"])
+    return service, sent
+
+
+@pytest.mark.anyio
+async def test_websocket_deadline_bounds_leading_metadata() -> None:
+    # The deadline starts at the handshake, so it ends the wait for a client
+    # that upgrades and then never sends its Leading-Metadata message.
+    connection = _Connection([{"type": "websocket.connect"}], hang=True)
+
+    service, sent = await _run(
+        _scope(query_string=b"connect-timeout-ms=50"), connection
+    )
+
+    assert sent == [
+        "M{}",
+        'S{"error": {"code": "deadline_exceeded", "message": "Request timed out"}}',
+        1000,
+    ]
+    assert service.protocols == []
+
+
+@pytest.mark.anyio
+async def test_websocket_rejects_http2_handshake() -> None:
+    connection = _Connection(_rpc_messages())
+
+    service, _ = await _run(_scope(http_version="2"), connection)
+
+    assert connection.sent == [
+        {"type": "websocket.http.response.start", "status": 400, "headers": []},
+        {"type": "websocket.http.response.body", "body": b""},
+    ]
+    assert service.protocols == []
+
+
+@pytest.mark.anyio
+async def test_websocket_sends_nothing_after_disconnect() -> None:
+    # The client disconnects before ending its stream, so it can no longer
+    # receive a response.
+    connection = _Connection(
+        [{"type": "websocket.connect"}, {"type": "websocket.receive", "text": "M{}"}]
+    )
+
+    service, _ = await _run(_scope(), connection)
+
+    assert connection.sent == [
+        {"type": "websocket.accept", "subprotocol": "connectrpc.1+json", "headers": []}
+    ]
+    assert service.protocols == []
+
+
+@pytest.mark.parametrize("value", ["a\\u0001b", "a\\u007fb", "a\\nb", "a\\u0000b"])
+@pytest.mark.anyio
+async def test_websocket_rejects_control_characters_in_metadata(value: str) -> None:
+    messages = _rpc_messages()
+    messages[1] = {"type": "websocket.receive", "text": f'M{{"x-custom": ["{value}"]}}'}
+
+    service, sent = await _run(_scope(), _Connection(messages))
+
+    assert sent == [
+        "M{}",
+        (
+            'S{"error": {"code": "invalid_argument", "message": "metadata key '
+            "'x-custom' has a value that is not a valid HTTP field value\"}}"
+        ),
+        1002,
+    ]
+    assert service.protocols == []
+
+
+@pytest.mark.anyio
+async def test_websocket_accepts_tab_in_metadata() -> None:
+    messages = _rpc_messages()
+    messages[1] = {"type": "websocket.receive", "text": 'M{"x-custom": ["a\\tb c"]}'}
+
+    service, sent = await _run(_scope(), _Connection(messages))
+
+    assert sent == ["M{}", 'B{"size":10,"color":"blue"}', "S{}", 1000]
+    assert service.protocols == [ProtocolType.CONNECT_WEBSOCKETS]
