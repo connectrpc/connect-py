@@ -26,8 +26,9 @@ def reflection_apps(
 ) -> tuple[ServerReflectionASGIApplication, ServerReflectionAlphaASGIApplication]:
     """Create ASGI applications for the v1 and v1alpha gRPC reflection services.
 
-    Both services list each other, so serve both: mount each application at its
-    `path`.
+    Mount both applications, each at its `path`: even if only one is mounted,
+    both services are returned in `ListServices`, and a client that calls the
+    unmounted service gets a 404.
 
     Args:
         *descs: The descriptors to make available for reflection, as accepted by
@@ -45,8 +46,9 @@ def reflection_apps_sync(
 ) -> tuple[ServerReflectionWSGIApplication, ServerReflectionAlphaWSGIApplication]:
     """Create WSGI applications for the v1 and v1alpha gRPC reflection services.
 
-    Both services list each other, so serve both: mount each application at its
-    `path`.
+    Mount both applications, each at its `path`: even if only one is mounted,
+    both services are returned in `ListServices`, and a client that calls the
+    unmounted service gets a 404.
 
     Args:
         *descs: The descriptors to make available for reflection, as accepted by

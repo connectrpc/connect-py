@@ -32,10 +32,10 @@ app = Starlette(
 )
 ```
 
-`reflection_apps` returns applications for both `grpc.reflection.v1` and
-`grpc.reflection.v1alpha`. Mount both: each lists the other, and a client
-that calls v1alpha gets a 404 if it isn't mounted. Use
-`reflection_apps_sync` for WSGI.
+`reflection_apps` (ASGI) and `reflection_apps_sync` (WSGI) return
+applications for both `grpc.reflection.v1` and `grpc.reflection.v1alpha`. It
+is recommended to mount both: even if only one is mounted, both are returned
+in `ListServices`, and a client that calls the unmounted service gets a 404.
 
 Reflection uses the gRPC protocol which requires a server that supports HTTP/2
 trailers such as [pyvoy](https://pyvoy.dev).
