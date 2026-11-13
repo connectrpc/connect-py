@@ -379,10 +379,7 @@ async def _fail_rpc(
 
 
 def _parse_leading_metadata(payload: str) -> dict[str, list[str]]:
-    """Validate and fold a Leading-Metadata payload into effective headers.
-
-    Raises ValueError naming the violated rule.
-    """
+    """Validate and fold a Leading-Metadata payload into effective headers."""
     parsed = json.loads(payload, object_pairs_hook=_reject_duplicate_keys)
     if not isinstance(parsed, dict):
         msg = "Leading-Metadata payload is not a JSON object"
