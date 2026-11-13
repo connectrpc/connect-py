@@ -39,6 +39,7 @@ if TYPE_CHECKING:
     from .codec import Codec
     from .compression import Compression
     from .method import MethodInfo
+    from .protocol import ClientProtocolType
     from .request import Headers, RequestContext
 else:
     Self = "Self"
@@ -82,7 +83,7 @@ class ConnectClient:
         address: str,
         *,
         codec: Codec | None = None,
-        protocol: ProtocolType = ProtocolType.CONNECT,
+        protocol: ClientProtocolType = ProtocolType.CONNECT,
         accept_compression: Iterable[Compression] | None = None,
         send_compression: Compression | None = _gzip,
         timeout_ms: int | None = None,
@@ -111,7 +112,8 @@ class ConnectClient:
             address: The address of the server to connect to, including scheme.
             codec: The [Codec][] to use for requests. If unset, defaults to binary protobuf.
                    For JSON encoding, use [proto_json_codec][connectrpc.codec.proto_json_codec].
-            protocol: The [ProtocolType][] to use for requests.
+            protocol: The [ProtocolType][] to use for requests. Clients support
+                      the Connect, gRPC, and gRPC-Web protocols.
             accept_compression: Compression algorithms to accept from the server. If unset,
                                 defaults to gzip. If set to empty, disables response compression.
             send_compression: Compression algorithm to use for sending requests. If unset,
@@ -143,6 +145,9 @@ class ConnectClient:
                 self._protocol = GRPCClientProtocol()
             case ProtocolType.GRPC_WEB:
                 self._protocol = GRPCWebClientProtocol()
+            case _:
+                msg = f"clients do not support protocol {protocol}"
+                raise ValueError(msg)
 
         interceptors = resolve_interceptors(interceptors)
         execute_unary = self._send_request_unary

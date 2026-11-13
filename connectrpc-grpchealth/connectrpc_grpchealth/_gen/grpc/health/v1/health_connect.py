@@ -98,6 +98,7 @@ class HealthASGIApplication(ConnectASGIApplication[Health]):
         read_max_bytes: int | None = DEFAULT_READ_MAX_BYTES,
         compressions: Iterable[Compression] | None = None,
         codecs: Iterable[Codec] | None = None,
+        websockets_allowed_origins: Iterable[str] = (),
     ) -> None:
         super().__init__(
             service=service,
@@ -106,6 +107,7 @@ class HealthASGIApplication(ConnectASGIApplication[Health]):
             read_max_bytes=read_max_bytes,
             compressions=compressions,
             codecs=codecs,
+            websockets_allowed_origins=websockets_allowed_origins,
         )
 
 

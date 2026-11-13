@@ -19,6 +19,7 @@ from ._version import __version__
 from .code import Code
 from .errors import ConnectError
 from .method import IdempotencyLevel, MethodInfo
+from .protocol import ProtocolType
 from .request import Headers, RequestContext
 
 if TYPE_CHECKING:
@@ -85,6 +86,8 @@ def codec_name_from_content_type(content_type: str, *, stream: bool) -> str:
 
 
 class ConnectServerProtocol:
+    _protocol_type = ProtocolType.CONNECT
+
     def create_request_context(
         self,
         method: MethodInfo[REQ, RES],
@@ -135,6 +138,7 @@ class ConnectServerProtocol:
             timeout_ms=timeout_ms,
             server_address=server_address,
             client_address=client_address,
+            protocol=self._protocol_type,
         )
 
     def create_envelope_writer(
@@ -183,6 +187,12 @@ class ConnectEnvelopeWriter(EnvelopeWriter):
         if self._compression:
             data = self._compression.compress(data)
         return struct.pack(">BI", self._prefix | 0b10, len(data)) + data
+
+
+class ConnectWebSocketServerProtocol(ConnectServerProtocol):
+    """The Connect protocol as adapted to a WebSocket upgrade request."""
+
+    _protocol_type = ProtocolType.CONNECT_WEBSOCKETS
 
 
 class ConnectClientProtocol:
@@ -243,6 +253,7 @@ class ConnectClientProtocol:
             request_headers=headers,
             timeout_ms=timeout_ms,
             server_address=server_address,
+            protocol=ProtocolType.CONNECT,
         )
 
     def validate_response(

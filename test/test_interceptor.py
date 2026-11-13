@@ -14,7 +14,7 @@ from pyqwest.testing import ASGITransport, WSGITransport
 from connectrpc.client import ResponseMetadata
 from connectrpc.code import Code
 from connectrpc.errors import ConnectError
-from connectrpc.protocol import ProtocolType
+from connectrpc.protocol import ClientProtocolType, ProtocolType
 
 from ._util import call, cancel_when
 from .connectrpc.example.haberdasher_connect import (
@@ -860,7 +860,7 @@ async def test_metadata_interceptor_closes_stream_async(method: str) -> None:
     "protocol", [ProtocolType.CONNECT, ProtocolType.GRPC, ProtocolType.GRPC_WEB]
 )
 def test_metadata_interceptor_closes_stream_sync(
-    protocol: ProtocolType,
+    protocol: ClientProtocolType,
     chunks: int | None,
     hats: int,
     cancelled: bool,

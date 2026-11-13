@@ -47,6 +47,7 @@ from ._server_shared import (
     method_info,
     method_url,
 )
+from ._server_websocket import upgrade_websocket
 from ._shared import decode_message, decompress
 from .code import Code
 from .errors import ConnectError
@@ -277,6 +278,7 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
         read_max_bytes: int | None = DEFAULT_READ_MAX_BYTES,
         compressions: Iterable[Compression] | None = None,
         codecs: Iterable[Codec] | None = None,
+        websockets_allowed_origins: Iterable[str] = (),
     ) -> None: ...
 
     @overload
@@ -293,6 +295,7 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
         read_max_bytes: int | None = DEFAULT_READ_MAX_BYTES,
         compressions: Iterable[Compression] | None = None,
         codecs: Iterable[Codec] | None = None,
+        websockets_allowed_origins: Iterable[str] = (),
     ) -> None: ...
 
     def __init__(
@@ -305,6 +308,7 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
         read_max_bytes: int | None = DEFAULT_READ_MAX_BYTES,
         compressions: Iterable[Compression] | None = None,
         codecs: Iterable[Codec] | None = None,
+        websockets_allowed_origins: Iterable[str] = (),
     ) -> None:
         """Initialize the ASGI application.
 
@@ -320,6 +324,13 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
                           If set to empty, disables compression.
             codecs: The codecs supported by the server. If unset, defaults to Protocol Buffers
                     binary and JSON codecs.
+            websockets_allowed_origins: Host patterns permitted to open cross-origin
+                Connect-over-WebSocket streams, matched case-insensitively against
+                the host and port of the handshake's Origin header exactly as
+                written, ignoring only the scheme: an exact value such as
+                "app.example.com" or "app.example.com:8443", a "*.example.com"
+                domain wildcard, or "*" to allow any origin. A handshake from the
+                same host as the Host header is always permitted.
 
         """
         super().__init__()
@@ -349,6 +360,26 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
         self._compressions = resolve_compressions(compressions)
         codecs = codecs if codecs is not None else get_default_codecs()
         self._codecs = {codec.name(): codec for codec in codecs}
+        origin_patterns = tuple(websockets_allowed_origins)
+        for pattern in origin_patterns:
+            if (
+                "/" in pattern
+                or "*" in pattern[1:]
+                or (
+                    pattern.startswith("*")
+                    and pattern != "*"
+                    and not pattern.startswith("*.")
+                )
+            ):
+                msg = (
+                    f"websockets_allowed_origins pattern '{pattern}' must be a "
+                    "host without a scheme, a '*.example.com' domain wildcard, "
+                    "or '*'"
+                )
+                raise ValueError(msg)
+        self._websockets_allowed_origins = tuple(
+            pattern.lower() for pattern in origin_patterns
+        )
 
     @property
     def path(self) -> str:
@@ -361,10 +392,6 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
     async def __call__(
         self, scope: Scope, receive: ASGIReceiveCallable, send: ASGISendCallable
     ) -> None:
-        if scope["type"] == "websocket":
-            msg = "connect does not support websockets"
-            raise RuntimeError(msg)
-
         if scope["type"] == "lifespan":
             await self._handle_lifespan(receive, send)
             return
@@ -377,7 +404,25 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
             self._resolved_endpoints = self._resolve_endpoints(
                 cast("_SVC", self._service)
             )
-        await self._handle_request(scope, receive, send, self._resolved_endpoints)
+
+        is_websocket = scope["type"] == "websocket"
+        if is_websocket:
+            upgraded = await upgrade_websocket(
+                scope,
+                receive,
+                send,
+                endpoints=self._resolved_endpoints,
+                codecs=self._codecs,
+                read_max_bytes=self._read_max_bytes,
+                allowed_origins=self._websockets_allowed_origins,
+            )
+            if upgraded is None:
+                return
+            scope, receive, send = upgraded
+
+        await self._handle_request(
+            scope, receive, send, self._resolved_endpoints, is_websocket=is_websocket
+        )
 
     async def _handle_lifespan(
         self, receive: ASGIReceiveCallable, send: ASGISendCallable
@@ -419,6 +464,8 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
         receive: ASGIReceiveCallable,
         send: ASGISendCallable,
         endpoints: Mapping[str, Endpoint],
+        *,
+        is_websocket: bool = False,
     ) -> None:
         loop = current_loop()
         receiver = _RequestReceiver(receive, loop.event())
@@ -457,7 +504,9 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
                     )
 
                     content_type = headers.get("content-type", "")
-                    protocol = negotiate_server_protocol(content_type)
+                    protocol = negotiate_server_protocol(
+                        content_type, websocket=is_websocket
+                    )
                     if (
                         protocol.uses_trailers()
                         and "http.response.trailers"
@@ -472,9 +521,12 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
                         codec_name = query_params.get("encoding", ("",))[0]
                     else:
                         query_params = _UNSET_QUERY_PARAMS
+                        # WebSocket requests use unary-style content types
+                        # (e.g. application/json) even for streams.
                         codec_name = protocol.codec_name_from_content_type(
                             headers.get("content-type", ""),
-                            stream=not isinstance(endpoint, EndpointUnary),
+                            stream=not isinstance(endpoint, EndpointUnary)
+                            and not is_websocket,
                         )
                     codec = self._codecs.get(codec_name)
 
@@ -482,6 +534,7 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
                     req_compression: Compression | None = None
                     if codec and not (
                         isinstance(endpoint, EndpointUnary)
+                        and not is_websocket
                         and isinstance(protocol, ConnectServerProtocol)
                     ):
                         req_compression, resp_compression = (
@@ -512,11 +565,16 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
                     if (timeout_ms := ctx.timeout_ms) is not None:
                         deadline = loop.time() + timeout_ms / 1000
                         timeout.reschedule(deadline)
+                    if is_websocket:
+                        # The upgrade injects this header to carry the
+                        # deadline into the request context. The protocol
+                        # keeps it out of the effective headers.
+                        headers.pop("connect-timeout-ms", None)
 
                     if not codec:
                         accept_post = (
                             "application/json, application/proto"
-                            if isinstance(endpoint, EndpointUnary)
+                            if isinstance(endpoint, EndpointUnary) or is_websocket
                             else "application/connect+json, application/connect+proto"
                         )
                         raise HTTPError(
@@ -528,9 +586,12 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
                         self._metadata_interceptors, ctx
                     )
                     # We resolve the response protocol before any fallible logic to
-                    # be able to return errors properly.
-                    if isinstance(endpoint, EndpointUnary) and isinstance(
-                        protocol, ConnectServerProtocol
+                    # be able to return errors properly. Over WebSocket, unary
+                    # RPCs also use the streaming message flow.
+                    if (
+                        isinstance(endpoint, EndpointUnary)
+                        and not is_websocket
+                        and isinstance(protocol, ConnectServerProtocol)
                     ):
                         unary = _UnaryResponse(
                             codec,
@@ -757,7 +818,9 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
         # Once the request has been fully read, watch receive() for a client
         # disconnect so a handler that is blocked or still streaming is stopped
         # promptly. The handler's generator is closed within the watch's scope.
-        async with loop.watch_for_disconnect(receive, scope) as disconnected:
+        async with loop.watch_for_disconnect(
+            receive, scope, cancel=isinstance(endpoint, EndpointUnary)
+        ) as disconnected:
             await self._stream_responses(
                 endpoint,
                 request_stream,

@@ -74,6 +74,7 @@ _HEADERS = _CONNECTRPC_REQUEST.ident("Headers", type_only=True)
 _REQUEST_CONTEXT = _CONNECTRPC_REQUEST.ident("RequestContext", type_only=True)
 _CONNECTRPC_PROTOCOL = Module("connectrpc.protocol")
 _PROTOCOL_TYPE = _CONNECTRPC_PROTOCOL.ident("ProtocolType")
+_CLIENT_PROTOCOL_TYPE = _CONNECTRPC_PROTOCOL.ident("ClientProtocolType", type_only=True)
 _CONNECTRPC_SERVER = Module("connectrpc.server")
 _DEFAULT_READ_MAX_BYTES = _CONNECTRPC_SERVER.ident("DEFAULT_READ_MAX_BYTES")
 _ENDPOINT = _CONNECTRPC_SERVER.ident("Endpoint")
@@ -213,6 +214,7 @@ def _generate_async_stubs(f: File, service: DescService, options: Options) -> No
                 default_server_codecs,
                 ",",
             )
+            f.print("websockets_allowed_origins: ", _ITERABLE, "[str] = (),")
         with f.scope(") -> None:"):
             with f.scope("super().__init__("):
                 f.print("service=service,")
@@ -221,6 +223,7 @@ def _generate_async_stubs(f: File, service: DescService, options: Options) -> No
                 f.print("read_max_bytes=read_max_bytes,")
                 f.print("compressions=compressions,")
                 f.print("codecs=codecs,")
+                f.print("websockets_allowed_origins=websockets_allowed_origins,")
             f.print(")")
         if options.protobuf == _ProtobufOption.GOOGLE:
             _generate_build_endpoints(f, service, options, is_sync=False)
@@ -439,7 +442,7 @@ def _print_google_compat_client_init(
         f.print("address: str,")
         f.print("*,")
         f.print("codec: ", _CODEC, " | None = _PROTO_BINARY_CODEC,")
-        f.print("protocol: ", _PROTOCOL_TYPE, " = ", _PROTOCOL_TYPE, ".CONNECT,")
+        f.print("protocol: ", _CLIENT_PROTOCOL_TYPE, " = ", _PROTOCOL_TYPE, ".CONNECT,")
         f.print(
             "accept_compression: ", _ITERABLE, "[", _COMPRESSION, "] | None = None,"
         )

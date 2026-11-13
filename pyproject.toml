@@ -58,13 +58,14 @@ dev = [
   "hypercorn==0.18.0",
   "poethepoet==0.49.0",
   "pytest-cov==7.1.0",
-  "pyvoy==1.4.0",
+  "pyvoy==1.5.0",
   "ruff==0.17.4",
   "tombi==1.11.1",
   "ty==0.0.99",
   "types-grpcio==1.85.0.20261028",
   "types-protobuf==7.35.1.20260906",
   "uvicorn==0.54.0",
+  "websockets==17.4",
 
   # dev dependencies only used in subprojects. Optimal structure would include these
   # in the subproject itself, but then `uv sync` does not install them from the
