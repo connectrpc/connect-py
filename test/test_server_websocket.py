@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING, Any, cast
 import anyio
 import pytest
 
+from connectrpc.errors import ConnectError
 from connectrpc.protocol import ProtocolType
 
 from .connectrpc.example.haberdasher_connect import (
@@ -14,6 +15,8 @@ from .connectrpc.example.haberdasher_connect import (
 from .connectrpc.example.haberdasher_pb import Hat, Size
 
 if TYPE_CHECKING:
+    from collections.abc import AsyncIterator
+
     from asgiref.typing import ASGIReceiveCallable, ASGISendCallable, WebSocketScope
 
     from connectrpc.request import RequestContext
@@ -145,7 +148,19 @@ async def test_websocket_origin_check(
         ]
 
 
-@pytest.mark.parametrize("pattern", ["foo.*.com", "*x.example.com", "example.*"])
+@pytest.mark.parametrize(
+    "pattern",
+    [
+        "foo.*.com",
+        "*x.example.com",
+        "example.*",
+        # A copied CORS origin with a scheme would never match the compared
+        # authority, so it is rejected rather than silently refusing every
+        # handshake.
+        "https://app.example.com",
+        "app.example.com/",
+    ],
+)
 def test_invalid_allowed_origin_pattern(pattern: str) -> None:
     with pytest.raises(ValueError, match="websockets_allowed_origins"):
         HaberdasherASGIApplication(
@@ -250,3 +265,126 @@ async def test_websocket_accepts_tab_in_metadata() -> None:
 
     assert sent == ["M{}", 'B{"size":10,"color":"blue"}', "S{}", 1000]
     assert service.protocols == [ProtocolType.CONNECT_WEBSOCKETS]
+
+
+@pytest.mark.anyio
+async def test_allowed_origins_accepts_generator() -> None:
+    # The patterns are validated and then matched against, so a one-shot
+    # iterable must not be exhausted by the validation.
+    service = _FixedHaberdasher()
+    app = HaberdasherASGIApplication(
+        service, websockets_allowed_origins=(p for p in ["app.example.org"])
+    )
+    connection = _Connection(_rpc_messages())
+
+    with anyio.fail_after(5):
+        await app(
+            cast("WebSocketScope", _scope("https://app.example.org")),
+            cast("ASGIReceiveCallable", connection.receive),
+            cast("ASGISendCallable", connection.send),
+        )
+
+    assert service.protocols == [ProtocolType.CONNECT_WEBSOCKETS]
+
+
+@pytest.mark.anyio
+async def test_trailer_headers_kept_on_success() -> None:
+    # Only an error response's trailer- headers move into the S message.
+    class TrailerHaberdasher(_FixedHaberdasher):
+        async def make_hat(
+            self, request: Size, ctx: RequestContext[Size, Hat], /
+        ) -> Hat:
+            ctx.response_headers["trailer-x-id"] = "1"
+            return await super().make_hat(request, ctx)
+
+    app = HaberdasherASGIApplication(TrailerHaberdasher())
+    connection = _Connection(_rpc_messages())
+
+    with anyio.fail_after(5):
+        await app(
+            cast("WebSocketScope", _scope()),
+            cast("ASGIReceiveCallable", connection.receive),
+            cast("ASGISendCallable", connection.send),
+        )
+
+    metadata = [
+        m["text"]
+        for m in connection.sent
+        if m["type"] == "websocket.send" and (m.get("text") or "").startswith("M")
+    ]
+    assert metadata == ['M{"trailer-x-id": ["1"]}']
+
+
+@pytest.mark.anyio
+async def test_unary_handler_cancelled_on_disconnect() -> None:
+    # A unary handler has nothing to poll for a disconnect, so the watch
+    # must cancel it on every event loop.
+    class SleepyHaberdasher(_FixedHaberdasher):
+        def __init__(self) -> None:
+            super().__init__()
+            self.completed = False
+
+        async def make_hat(
+            self, _request: Size, _ctx: RequestContext[Size, Hat], /
+        ) -> Hat:
+            await anyio.sleep(30)
+            self.completed = True
+            return Hat()
+
+    service = SleepyHaberdasher()
+    app = HaberdasherASGIApplication(service)
+    connection = _Connection(
+        [*_rpc_messages(), {"type": "websocket.disconnect", "code": 1001}]
+    )
+
+    with anyio.fail_after(5):
+        await app(
+            cast("WebSocketScope", _scope()),
+            cast("ASGIReceiveCallable", connection.receive),
+            cast("ASGISendCallable", connection.send),
+        )
+
+    assert not service.completed
+
+
+@pytest.mark.anyio
+async def test_normal_close_when_handler_catches_protocol_error() -> None:
+    # The 1009 close code applies only when the S message reports the
+    # oversized message. A handler that caught the error closed normally.
+    class CatchingHaberdasher(_FixedHaberdasher):
+        async def make_flexible_hat(
+            self, request: AsyncIterator[Size], _ctx: RequestContext[Size, Hat], /
+        ) -> Hat:
+            try:
+                async for _ in request:
+                    pass
+            except ConnectError:
+                pass
+            return Hat(size=1, color="blue")
+
+    app = HaberdasherASGIApplication(CatchingHaberdasher(), read_max_bytes=8)
+    scope = _scope()
+    scope["path"] = "/connectrpc.example.Haberdasher/MakeFlexibleHat"
+    scope["raw_path"] = scope["path"].encode()
+    connection = _Connection(
+        [
+            {"type": "websocket.connect"},
+            {"type": "websocket.receive", "text": "M{}"},
+            {"type": "websocket.receive", "text": 'B{"inches": 10}'},
+        ],
+        hang=True,
+    )
+
+    with anyio.fail_after(5):
+        await app(
+            cast("WebSocketScope", scope),
+            cast("ASGIReceiveCallable", connection.receive),
+            cast("ASGISendCallable", connection.send),
+        )
+
+    sent = [
+        m.get("text") if m["type"] == "websocket.send" else m["code"]
+        for m in connection.sent
+        if m["type"] in ("websocket.send", "websocket.close")
+    ]
+    assert sent == ["M{}", 'B{"size":1,"color":"blue"}', "S{}", 1000]

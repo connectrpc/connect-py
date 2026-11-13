@@ -360,19 +360,25 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
         self._compressions = resolve_compressions(compressions)
         codecs = codecs if codecs is not None else get_default_codecs()
         self._codecs = {codec.name(): codec for codec in codecs}
-        for pattern in websockets_allowed_origins:
-            if "*" in pattern[1:] or (
-                pattern.startswith("*")
-                and pattern != "*"
-                and not pattern.startswith("*.")
+        origin_patterns = tuple(websockets_allowed_origins)
+        for pattern in origin_patterns:
+            if (
+                "/" in pattern
+                or "*" in pattern[1:]
+                or (
+                    pattern.startswith("*")
+                    and pattern != "*"
+                    and not pattern.startswith("*.")
+                )
             ):
                 msg = (
                     f"websockets_allowed_origins pattern '{pattern}' must be a "
-                    "host, a '*.example.com' domain wildcard, or '*'"
+                    "host without a scheme, a '*.example.com' domain wildcard, "
+                    "or '*'"
                 )
                 raise ValueError(msg)
         self._websockets_allowed_origins = tuple(
-            pattern.lower() for pattern in websockets_allowed_origins
+            pattern.lower() for pattern in origin_patterns
         )
 
     @property
@@ -812,7 +818,9 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
         # Once the request has been fully read, watch receive() for a client
         # disconnect so a handler that is blocked or still streaming is stopped
         # promptly. The handler's generator is closed within the watch's scope.
-        async with loop.watch_for_disconnect(receive, scope) as disconnected:
+        async with loop.watch_for_disconnect(
+            receive, scope, cancel=isinstance(endpoint, EndpointUnary)
+        ) as disconnected:
             await self._stream_responses(
                 endpoint,
                 request_stream,

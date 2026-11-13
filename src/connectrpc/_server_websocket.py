@@ -623,7 +623,7 @@ class _WebSocketSendAdapter:
             value = value_bytes.decode()
             if name in ("content-type", CONNECT_STREAMING_HEADER_COMPRESSION):
                 continue
-            if name.startswith("trailer-"):
+            if self._error_status is not None and name.startswith("trailer-"):
                 self._state.error_trailers.setdefault(
                     name.removeprefix("trailer-"), []
                 ).append(value)
@@ -646,6 +646,8 @@ class _WebSocketSendAdapter:
                     payload = json.dumps(
                         {"error": ConnectWireError.from_exception(error).to_dict()}
                     ).encode()
+                elif "error" not in json.loads(payload or b"{}"):
+                    self._state.close_code = _CLOSE_NORMAL
                 await _send_text(self._send, _MARKER_SERVER_END + payload.decode())
             elif self._binary_bodies:
                 await self._send(
