@@ -4,7 +4,7 @@ This document outlines how to create a release of Connect.
 
 1. Clone the repo, ensuring you have the latest main.
 
-2. On a new branch, update version strings with the `bump` command, either to the next minor or patch version, based on the changes that are included in this new release. It bumps `connectrpc` and `protoc-gen-connectrpc` together, raises the `connectrpc` floor of `connectrpc-grpcreflect`, `connectrpc-grpchealth`, and `connectrpc-fastapi` to the new version, and regenerates the generated files, which record the plugin version, so it needs `buf` installed.
+2. On a new branch, update version strings with the `bump` command, either to the next minor or patch version, based on the changes that are included in this new release. It bumps `connectrpc` and `protoc-gen-connectrpc` together, raises the `connectrpc` floor of subprojects to the new version, and regenerates the generated files, which record the plugin version, so it needs `buf` installed.
 
 - If there are only bug fixes and no new features, run `uv run poe bump --version patch`.
 - If there are features being released (or breaking changes being made while we're pre-1.0 release), run `uv run poe bump --version minor`.
