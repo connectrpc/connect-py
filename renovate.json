@@ -46,6 +46,13 @@
       "separateMajorMinor": false,
       "groupName": "GitHub Actions"
     },
+    // Group the pinned `gh-actions-lock` extension, which regenerates
+    // `actions.lock`, with the GitHub Actions updates.
+    {
+      "matchPackageNames": ["github/gh-actions-lock"],
+      "separateMajorMinor": false,
+      "groupName": "GitHub Actions"
+    },
     {
       "matchManagers": ["pep621"],
       "matchDepTypes": [
