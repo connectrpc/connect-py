@@ -68,16 +68,16 @@ jobs:
       PYTHON_GIL: ${{ endsWith(matrix.python, 't') && '0' || '' }}
 
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
 
-      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+      - uses: astral-sh/setup-uv@v10.3.3
         with:
           python-version: ${{ matrix.python }}
 
       # For conformance runner
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      - uses: actions/setup-go@v7.0.0
         with:
           go-version: "^1.26"
           # The conformance runner is installed with `go run pkg@version`
@@ -119,7 +119,7 @@ jobs:
         if: ${{ !startsWith(matrix.os, 'windows-') }}
         run: uv run poe test-conformance ${{ matrix.coverage == 'cov' && '--cov=connectrpc --cov-report=xml' || '' }}
 
-      - uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
+      - uses: codecov/codecov-action@v7.1.1
         if: ${{ matrix.coverage == 'cov' }}
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
@@ -128,11 +128,11 @@ jobs:
     runs-on: ubuntu-26.04
     needs: ci
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
 
-      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+      - uses: astral-sh/setup-uv@v10.3.3
 
       - run: uv sync --frozen
 
@@ -157,3 +157,21 @@ jobs:
       - name: check wheels at dependency floors
         # The oldest supported Python, which allows the oldest dependencies.
         run: uv run --python 3.11 scripts/check_wheels.py dist/*.whl
+
+  actions-lock:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+
+      # Fails when actions.lock is out of sync with the workflows or a
+      # locked pin no longer verifies upstream.
+      - run: gh extension install github/gh-actions-lock --pin v0.4.1
+
+      - run: gh actions-lock --verify

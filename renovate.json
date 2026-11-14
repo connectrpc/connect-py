@@ -23,6 +23,14 @@
       "matchStrings": ["VERSION_CONFORMANCE = \"(?<currentValue>[^\"]+)\""],
       "depNameTemplate": "connectrpc.com/conformance",
       "datasourceTemplate": "go"
+    },
+    {
+      "customType": "regex",
+      "managerFilePatterns": ["/^\\.github/workflows/[^/]+\\.ya?ml$/"],
+      "matchStrings": [
+        "gh extension install (?<depName>github/gh-actions-lock) --pin (?<currentValue>\\S+)"
+      ],
+      "datasourceTemplate": "github-releases"
     }
   ],
   "packageRules": [
@@ -35,6 +43,13 @@
     // GitHub Actions updates.
     {
       "matchDatasources": ["github-runners"],
+      "separateMajorMinor": false,
+      "groupName": "GitHub Actions"
+    },
+    // Group the pinned `gh-actions-lock` extension, which regenerates
+    // `actions.lock`, with the GitHub Actions updates.
+    {
+      "matchPackageNames": ["github/gh-actions-lock"],
       "separateMajorMinor": false,
       "groupName": "GitHub Actions"
     },
