@@ -3,7 +3,7 @@ from __future__ import annotations
 import contextlib
 import functools
 import inspect
-from asyncio import CancelledError
+from asyncio import CancelledError, current_task
 from typing import TYPE_CHECKING, Any, Protocol, TypeVar
 from urllib.parse import urlencode
 
@@ -350,7 +350,8 @@ class ConnectClient:
         except ConnectError:
             raise
         except CancelledError as e:
-            # trio.Cancelled isn't caught here. It has to reach its cancel scope.
+            if _caller_cancelled():
+                raise
             raise ConnectError(Code.CANCELED, "Request was cancelled") from e
         except Exception as e:
             raise _client_shared.map_error(e) from e
@@ -445,6 +446,8 @@ class ConnectClient:
         except ConnectError:
             raise
         except CancelledError as e:
+            if _caller_cancelled():
+                raise
             raise ConnectError(Code.CANCELED, "Request was cancelled") from e
         except Exception as e:
             if rst_err := _client_shared.maybe_map_stream_reset(e, ctx):
@@ -478,6 +481,15 @@ async def _streaming_request_content(
         # channel, belong to the caller.
         if inspect.isasyncgen(msgs):
             await msgs.aclose()
+
+
+def _caller_cancelled() -> bool:
+    """Whether the calling task is being cancelled, e.g. by asyncio.timeout.
+
+    Such a cancellation propagates, as trio.Cancelled does.
+    """
+    task = current_task()
+    return task is not None and task.cancelling() > 0
 
 
 async def _consume_single_response(stream: AsyncIterator[RES]) -> RES:
