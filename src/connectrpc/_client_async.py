@@ -484,10 +484,7 @@ async def _streaming_request_content(
 
 
 def _caller_cancelled() -> bool:
-    """Whether the calling task is being cancelled, e.g. by asyncio.timeout.
-
-    Such a cancellation propagates, as trio.Cancelled does.
-    """
+    """Whether the calling task is being cancelled, e.g. by asyncio.timeout."""
     task = current_task()
     return task is not None and task.cancelling() > 0
 

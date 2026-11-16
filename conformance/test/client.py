@@ -263,11 +263,7 @@ class _Call(typing.Protocol):
 
 
 class _AsyncioCall:
-    """Runs a request in an asyncio task.
-
-    The client lets the task's cancellation propagate, so this reports a
-    cancelled request as CANCELED itself.
-    """
+    """Runs a request in an asyncio task."""
 
     def __init__(self, coro: Coroutine[object, object, object]) -> None:
         self._task = asyncio.create_task(coro)
