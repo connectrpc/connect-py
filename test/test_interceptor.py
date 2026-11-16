@@ -3,6 +3,7 @@ from __future__ import annotations
 import contextlib
 import itertools
 from collections.abc import Generator
+from contextvars import ContextVar, Token
 from typing import TYPE_CHECKING
 
 import anyio
@@ -925,6 +926,53 @@ def test_metadata_interceptor_closes_stream_sync(
         assert errors[0].message == "Client disconnected"
     else:
         assert errors[0] is None
+
+
+@pytest.mark.parametrize(
+    "protocol", [ProtocolType.CONNECT, ProtocolType.GRPC, ProtocolType.GRPC_WEB]
+)
+def test_server_stream_sees_middleware_context_sync(protocol: ProtocolType) -> None:
+    """A server stream and its on_end see context vars that WSGI middleware sets and
+    resets around the call, even though the server iterates the response later, and
+    on_end can reset a context var that on_start set."""
+    user = ContextVar[str]("user")
+    span = ContextVar[str]("span")
+    seen: list[str | None] = []
+
+    class UserInterceptorSync:
+        def on_start_sync(self, _ctx) -> Token[str]:
+            return span.set("rpc")
+
+        def on_end_sync(self, token: Token[str], _ctx, _error) -> None:
+            seen.append(user.get(None))
+            span.reset(token)
+
+    class UserHaberdasherSync(HaberdasherSync):
+        def make_similar_hats(self, request, _ctx):
+            for _ in range(2):
+                seen.append(user.get(None))
+                yield Hat(size=request.inches)
+
+    app = HaberdasherWSGIApplication(
+        UserHaberdasherSync(), interceptors=(UserInterceptorSync(),)
+    )
+
+    def middleware(environ, start_response):
+        token = user.set("alice")
+        try:
+            return app(environ, start_response)
+        finally:
+            user.reset(token)
+
+    with HaberdasherClientSync(
+        "http://localhost",
+        protocol=protocol,
+        http_client=SyncClient(WSGITransport(middleware)),
+    ) as client:
+        hats = list(client.make_similar_hats(Size(inches=10)))
+
+    assert len(hats) == 2
+    assert seen == ["alice", "alice", "alice"]
 
 
 class _ResponseMetadataInterceptor:
