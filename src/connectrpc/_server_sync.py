@@ -840,11 +840,6 @@ def _end_stream(stream: Iterator[object], error: Exception | None) -> None:
 def _iterate_in_context(
     context: contextvars.Context, stream: Generator[bytes]
 ) -> Generator[bytes]:
-    """Iterate stream, and close it, in context.
-
-    The app server iterates the response after the application returns, outside
-    any context middleware set up around the call.
-    """
     try:
         while True:
             try:
