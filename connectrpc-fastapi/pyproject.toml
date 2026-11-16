@@ -33,7 +33,7 @@ classifiers = [
   "Topic :: System :: Networking",
 ]
 dependencies = [
-  "connectrpc>=0.13.0",
+  "connectrpc>=0.14.0",
   "fastapi>=0.118.0",
   "protobuf-py>=0.7.0",
   "pydantic>=2.14.0",
