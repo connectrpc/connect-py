@@ -228,8 +228,8 @@ def test_request_content_sync(protocol: ProtocolType) -> None:
 
 @pytest.mark.anyio
 @pytest.mark.parametrize("method", ["unary", "server_stream"])
-async def test_cancelled_by_scope(anyio_backend: str, method: str) -> None:
-    """Cancellation propagates under trio and raises CANCELED under asyncio."""
+async def test_cancelled_by_scope(method: str) -> None:
+    """Cancelling the caller propagates to whatever cancelled it."""
 
     class BlockingHaberdasher(Haberdasher):
         async def make_hat(self, _request, _ctx):
@@ -260,18 +260,9 @@ async def test_cancelled_by_scope(anyio_backend: str, method: str) -> None:
                         async for _ in hats:
                             pass
 
-    if anyio_backend == "trio":
-        with anyio.move_on_after(0.1) as scope:
-            await call()
-        assert scope.cancelled_caught
-        return
-
-    task = asyncio.ensure_future(call())
-    await anyio.sleep(0.1)
-    task.cancel()
-    with pytest.raises(ConnectError) as exc_info:
-        await task
-    assert exc_info.value.code == Code.CANCELED
+    with anyio.move_on_after(0.1) as scope:
+        await call()
+    assert scope.cancelled_caught
 
 
 # Workaround pyqwest testing transports raising the response error instead of request.
