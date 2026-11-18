@@ -424,6 +424,7 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
         receiver = _RequestReceiver(receive, loop.event())
         sender = _ResponseSender(send)
         ctx: RequestContext | None = None
+        content_type = ""
         protocol: ServerProtocol | None = None
         metadata_run: MetadataInterceptorsRun | None = None
         unary: _UnaryResponse | None = None
@@ -616,7 +617,7 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
                             responded = await stream.end(sender, error, ctx)
                         elif error is not None:
                             responded = await self._handle_error(
-                                error, ctx, protocol, sender
+                                error, ctx, protocol, content_type, sender
                             )
                         else:
                             responded = True
@@ -826,6 +827,7 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
         exc: Exception,
         ctx: RequestContext | None,
         protocol: ServerProtocol | None,
+        content_type: str,
         send: _ResponseSender,
     ) -> bool:
         """Respond with the error, unless the response can no longer be replaced."""
@@ -837,7 +839,7 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
         if isinstance(protocol, GRPCServerProtocol) and not isinstance(exc, HTTPError):
             # gRPC clients read the status from trailers, so this is a trailers-only
             # response: HTTP 200 with the gRPC status in the headers.
-            grpc_headers = protocol.trailers_only_headers(ctx, exc)
+            grpc_headers = protocol.trailers_only_headers(content_type, ctx, exc)
             await send(
                 {
                     "type": "http.response.start",

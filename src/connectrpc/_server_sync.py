@@ -375,6 +375,7 @@ class ConnectWSGIApplication(ABC, Generic[_SVC]):
         self, environ: WSGIEnvironment, start_response: StartResponse
     ) -> Iterable[bytes]:
         ctx: RequestContext | None = None
+        content_type = ""
         protocol: ServerProtocol | None = None
         stream: _StreamResponse | None = None
         send_trailers: Callable[[list[tuple[str, str]]], None] | None = None
@@ -483,7 +484,7 @@ class ConnectWSGIApplication(ABC, Generic[_SVC]):
             # An HTTP error is always a plain HTTP response.
             if stream is not None and not isinstance(e, HTTPError):
                 return stream.end(start_response, send_trailers, ctx, e)
-            return self._handle_error(e, ctx, protocol, start_response)
+            return self._handle_error(e, ctx, protocol, content_type, start_response)
 
     def _handle_unary(
         self,
@@ -757,6 +758,7 @@ class ConnectWSGIApplication(ABC, Generic[_SVC]):
         exc: Exception,
         ctx: RequestContext | None,
         protocol: ServerProtocol | None,
+        content_type: str,
         start_response: StartResponse,
     ) -> Iterable[bytes]:
         """Handle and log errors with detailed information."""
@@ -766,7 +768,7 @@ class ConnectWSGIApplication(ABC, Generic[_SVC]):
         if isinstance(protocol, GRPCServerProtocol) and not isinstance(exc, HTTPError):
             # gRPC clients read the status from trailers, so this is a trailers-only
             # response: HTTP 200 with the gRPC status in the headers.
-            grpc_headers = protocol.trailers_only_headers(ctx, exc)
+            grpc_headers = protocol.trailers_only_headers(content_type, ctx, exc)
             start_response("200 OK", list(grpc_headers.allitems()))
             return []
         if isinstance(exc, HTTPError):

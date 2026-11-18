@@ -516,6 +516,34 @@ _client_errors = [
         None,
         id="grpc-web timeout header zero",
     ),
+    pytest.param(
+        "POST",
+        "/connectrpc.example.Haberdasher/MakeHat",
+        {"Content-Type": "application/grpc+json", "grpc-timeout": "-5m"},
+        b"",
+        HTTPStatus.OK,
+        {
+            "content-type": "application/grpc+json",
+            "grpc-status": "3",
+            "grpc-message": "protocol%20error%3A%20invalid%20timeout%20%27-5m%27",
+        },
+        None,
+        id="grpc json timeout header negative",
+    ),
+    pytest.param(
+        "POST",
+        "/connectrpc.example.Haberdasher/MakeHat",
+        {"Content-Type": "application/grpc-web+json", "grpc-timeout": "-5m"},
+        b"",
+        HTTPStatus.OK,
+        {
+            "content-type": "application/grpc-web+json",
+            "grpc-status": "3",
+            "grpc-message": "protocol%20error%3A%20invalid%20timeout%20%27-5m%27",
+        },
+        None,
+        id="grpc-web json timeout header negative",
+    ),
 ]
 
 
