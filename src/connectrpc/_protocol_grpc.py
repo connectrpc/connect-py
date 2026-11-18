@@ -108,12 +108,7 @@ class GRPCServerProtocol:
     def trailers_only_headers(
         self, content_type: str, ctx: RequestContext | None, exc: Exception
     ) -> Headers:
-        """Return the headers of a trailers-only response that reports exc.
-
-        content_type is the request's. The response repeats it, as grpc-go and
-        connect-go do, because clients check that the response uses the codec
-        they sent.
-        """
+        """Return the headers of a trailers-only response that reports exc."""
         headers = _status_trailers(
             ctx.response_trailers if ctx else Headers(),
             ConnectWireError.from_exception(exc),

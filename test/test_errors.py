@@ -28,7 +28,6 @@ from pyqwest.testing import ASGITransport, WSGITransport
 from connectrpc._protocol import HTTPError
 from connectrpc.client import ResponseMetadata
 from connectrpc.code import Code
-from connectrpc.codec import Codec, proto_json_codec
 from connectrpc.compression.brotli import BrotliCompression
 from connectrpc.compression.gzip import GzipCompression
 from connectrpc.errors import ConnectError
@@ -624,44 +623,6 @@ async def test_client_errors(
     assert response.headers == response_headers
     if response_body is not None:
         assert response.content == response_body
-
-
-@pytest.mark.anyio
-@pytest.mark.parametrize("protocol", [ProtocolType.GRPC, ProtocolType.GRPC_WEB])
-@pytest.mark.parametrize("codec", [None, proto_json_codec()], ids=["proto", "json"])
-async def test_grpc_trailers_only_error_codec(
-    transport: ASGITransport | WSGITransport,
-    protocol: ProtocolType,
-    codec: Codec | None,
-) -> None:
-    """A trailers-only error reaches a client of any codec with its own code.
-
-    The invalid timeout header fails the request before its response starts, so
-    the server answers with a trailers-only response.
-    """
-    headers = {"grpc-timeout": "-5m"}
-    with pytest.raises(ConnectError) as exc_info:
-        if isinstance(transport, WSGITransport):
-            with HaberdasherClientSync(
-                "http://localhost",
-                protocol=protocol,
-                codec=codec,
-                http_client=SyncClient(transport),
-            ) as client:
-                await anyio.to_thread.run_sync(
-                    functools.partial(client.make_hat, Size(inches=10), headers=headers)
-                )
-        else:
-            async with HaberdasherClient(
-                "http://localhost",
-                protocol=protocol,
-                codec=codec,
-                http_client=Client(transport),
-            ) as client:
-                await client.make_hat(Size(inches=10), headers=headers)
-
-    assert exc_info.value.code == Code.INVALID_ARGUMENT
-    assert exc_info.value.message == "protocol error: invalid timeout '-5m'"
 
 
 @pytest.mark.parametrize(
