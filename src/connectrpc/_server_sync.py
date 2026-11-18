@@ -247,6 +247,7 @@ class ConnectWSGIApplication(ABC, Generic[_SVC]):
         service: _SVC,
         desc: DescService,
         interceptors: Iterable[InterceptorSync] = (),
+        timeout: float | None = None,
         read_max_bytes: int | None = DEFAULT_READ_MAX_BYTES,
         compressions: Iterable[Compression] | None = None,
         codecs: Iterable[Codec] | None = None,
@@ -262,6 +263,7 @@ class ConnectWSGIApplication(ABC, Generic[_SVC]):
         *,
         endpoints: Mapping[str, EndpointSync],
         interceptors: Iterable[InterceptorSync] = (),
+        timeout: float | None = None,
         read_max_bytes: int | None = DEFAULT_READ_MAX_BYTES,
         compressions: Iterable[Compression] | None = None,
         codecs: Iterable[Codec] | None = None,
@@ -274,6 +276,7 @@ class ConnectWSGIApplication(ABC, Generic[_SVC]):
         desc: DescService | None = None,
         endpoints: Mapping[str, EndpointSync] | None = None,
         interceptors: Iterable[InterceptorSync] = (),
+        timeout: float | None = None,
         read_max_bytes: int | None = DEFAULT_READ_MAX_BYTES,
         compressions: Iterable[Compression] | None = None,
         codecs: Iterable[Codec] | None = None,
@@ -287,6 +290,9 @@ class ConnectWSGIApplication(ABC, Generic[_SVC]):
             endpoints: Deprecated, pass service and desc instead. A mapping of URL paths to
                 endpoints.
             interceptors: A sequence of interceptors to apply to the endpoints.
+            timeout: The maximum time to handle a request in seconds. A request from the
+                client with a shorter timeout uses the client's timeout. If unset,
+                requests are only limited by the client's timeout.
             read_max_bytes: Maximum size of request messages.
             compressions: Supported compression algorithms. If unset, defaults to gzip.
                           If set to empty, disables compression.
@@ -330,6 +336,7 @@ class ConnectWSGIApplication(ABC, Generic[_SVC]):
                 for path, endpoint in endpoints.items()
             }
         self._endpoints = endpoints
+        self._timeout = timeout
         self._read_max_bytes = read_max_bytes
         self._compressions = resolve_compressions(compressions)
         codecs = codecs if codecs is not None else get_default_codecs()
@@ -438,6 +445,7 @@ class ConnectWSGIApplication(ABC, Generic[_SVC]):
             ctx = protocol.create_request_context(
                 endpoint.method, http_method, http_scheme, headers, client_address
             )
+            ctx._apply_server_timeout(self._timeout)
             check_deadline(ctx)
 
             if isinstance(endpoint, EndpointUnarySync) and isinstance(

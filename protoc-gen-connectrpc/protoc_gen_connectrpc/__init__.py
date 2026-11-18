@@ -202,6 +202,7 @@ def _generate_async_stubs(f: File, service: DescService, options: Options) -> No
             )
             f.print("*,")
             f.print("interceptors: ", _ITERABLE, "[", _INTERCEPTOR, "] = (),")
+            f.print("timeout: float | None = None,")
             f.print("read_max_bytes: int | None = ", _DEFAULT_READ_MAX_BYTES, ",")
             f.print("compressions: ", _ITERABLE, "[", _COMPRESSION, "] | None = None,")
             f.print(
@@ -218,6 +219,7 @@ def _generate_async_stubs(f: File, service: DescService, options: Options) -> No
                 f.print("service=service,")
                 f.print("desc=", service_name, ".desc(),")
                 f.print("interceptors=interceptors,")
+                f.print("timeout=timeout,")
                 f.print("read_max_bytes=read_max_bytes,")
                 f.print("compressions=compressions,")
                 f.print("codecs=codecs,")
@@ -352,6 +354,7 @@ def _generate_sync_stubs(f: File, service: DescService, options: Options) -> Non
             f.print("self,")
             f.print("service: ", service_name, "Sync,")
             f.print("interceptors: ", _ITERABLE, "[", _INTERCEPTOR_SYNC, "] = (),")
+            f.print("timeout: float | None = None,")
             f.print("read_max_bytes: int | None = ", _DEFAULT_READ_MAX_BYTES, ",")
             f.print("compressions: ", _ITERABLE, "[", _COMPRESSION, "] | None = None,")
             f.print(
@@ -362,6 +365,7 @@ def _generate_sync_stubs(f: File, service: DescService, options: Options) -> Non
                 f.print("service=service,")
                 f.print("desc=", service_name, "Sync.desc(),")
                 f.print("interceptors=interceptors,")
+                f.print("timeout=timeout,")
                 f.print("read_max_bytes=read_max_bytes,")
                 f.print("compressions=compressions,")
                 f.print("codecs=codecs,")
