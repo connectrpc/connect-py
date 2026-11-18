@@ -81,8 +81,9 @@ def _scope(
 def _rpc_messages() -> list[dict[str, Any]]:
     return [
         {"type": "websocket.connect"},
-        {"type": "websocket.receive", "text": "M{}"},
-        {"type": "websocket.receive", "text": 'C{"inches": 10}'},
+        {"type": "websocket.receive", "text": "M[]"},
+        {"type": "websocket.receive", "text": 'B{"inches": 10}'},
+        {"type": "websocket.receive", "text": "C"},
     ]
 
 
@@ -117,7 +118,7 @@ async def test_websocket_origin_check(
     app = HaberdasherASGIApplication(
         service, websockets_allowed_origins=allowed_origins
     )
-    connection = _Connection(_rpc_messages())
+    connection = _Connection(_rpc_messages(), hang=True)
 
     await app(
         cast("WebSocketScope", _scope(origin)),
@@ -201,7 +202,7 @@ async def test_websocket_deadline_bounds_leading_metadata() -> None:
     )
 
     assert sent == [
-        "M{}",
+        "M[]",
         'S{"error": {"code": "deadline_exceeded", "message": "Request timed out"}}',
         1000,
     ]
@@ -226,7 +227,7 @@ async def test_websocket_sends_nothing_after_disconnect() -> None:
     # The client disconnects before ending its stream, so it can no longer
     # receive a response.
     connection = _Connection(
-        [{"type": "websocket.connect"}, {"type": "websocket.receive", "text": "M{}"}]
+        [{"type": "websocket.connect"}, {"type": "websocket.receive", "text": "M[]"}]
     )
 
     service, _ = await _run(_scope(), connection)
@@ -241,14 +242,14 @@ async def test_websocket_sends_nothing_after_disconnect() -> None:
 @pytest.mark.anyio
 async def test_websocket_rejects_control_characters_in_metadata(value: str) -> None:
     messages = _rpc_messages()
-    messages[1] = {"type": "websocket.receive", "text": f'M{{"x-custom": ["{value}"]}}'}
+    messages[1] = {"type": "websocket.receive", "text": f'M[["x-custom", "{value}"]]'}
 
-    service, sent = await _run(_scope(), _Connection(messages))
+    service, sent = await _run(_scope(), _Connection(messages, hang=True))
 
     assert sent == [
-        "M{}",
+        "M[]",
         (
-            'S{"error": {"code": "invalid_argument", "message": "metadata key '
+            'S{"error": {"code": "internal", "message": "metadata key '
             "'x-custom' has a value that is not a valid HTTP field value\"}}"
         ),
         1002,
@@ -259,11 +260,11 @@ async def test_websocket_rejects_control_characters_in_metadata(value: str) -> N
 @pytest.mark.anyio
 async def test_websocket_accepts_tab_in_metadata() -> None:
     messages = _rpc_messages()
-    messages[1] = {"type": "websocket.receive", "text": 'M{"x-custom": ["a\\tb c"]}'}
+    messages[1] = {"type": "websocket.receive", "text": 'M[["x-custom", "a\\tb c"]]'}
 
-    service, sent = await _run(_scope(), _Connection(messages))
+    service, sent = await _run(_scope(), _Connection(messages, hang=True))
 
-    assert sent == ["M{}", 'B{"size":10,"color":"blue"}', "S{}", 1000]
+    assert sent == ["M[]", 'B{"size":10,"color":"blue"}', "S{}", 1000]
     assert service.protocols == [ProtocolType.CONNECT_WEBSOCKETS]
 
 
@@ -275,7 +276,7 @@ async def test_allowed_origins_accepts_generator() -> None:
     app = HaberdasherASGIApplication(
         service, websockets_allowed_origins=(p for p in ["app.example.org"])
     )
-    connection = _Connection(_rpc_messages())
+    connection = _Connection(_rpc_messages(), hang=True)
 
     with anyio.fail_after(5):
         await app(
@@ -298,7 +299,7 @@ async def test_trailer_headers_kept_on_success() -> None:
             return await super().make_hat(request, ctx)
 
     app = HaberdasherASGIApplication(TrailerHaberdasher())
-    connection = _Connection(_rpc_messages())
+    connection = _Connection(_rpc_messages(), hang=True)
 
     with anyio.fail_after(5):
         await app(
@@ -312,7 +313,7 @@ async def test_trailer_headers_kept_on_success() -> None:
         for m in connection.sent
         if m["type"] == "websocket.send" and (m.get("text") or "").startswith("M")
     ]
-    assert metadata == ['M{"trailer-x-id": ["1"]}']
+    assert metadata == ['M[["trailer-x-id", "1"]]']
 
 
 @pytest.mark.anyio
@@ -369,7 +370,7 @@ async def test_normal_close_when_handler_catches_protocol_error() -> None:
     connection = _Connection(
         [
             {"type": "websocket.connect"},
-            {"type": "websocket.receive", "text": "M{}"},
+            {"type": "websocket.receive", "text": "M[]"},
             {"type": "websocket.receive", "text": 'B{"inches": 10}'},
         ],
         hang=True,
@@ -387,4 +388,80 @@ async def test_normal_close_when_handler_catches_protocol_error() -> None:
         for m in connection.sent
         if m["type"] in ("websocket.send", "websocket.close")
     ]
-    assert sent == ["M{}", 'B{"size":1,"color":"blue"}', "S{}", 1000]
+    assert sent == ["M[]", 'B{"size":1,"color":"blue"}', "S{}", 1000]
+
+
+@pytest.mark.parametrize(
+    ("metadata", "message"),
+    [
+        ('M{"x-custom": ["a"]}', "Leading-Metadata payload is not a JSON array"),
+        ('M[["x-custom"]]', "at least one value string"),
+        ('M[["X-Custom", "a"]]', "metadata key 'X-Custom' is not lower-case"),
+        (
+            'M[["x-custom", "a"], ["x-custom", "b"]]',
+            "metadata key 'x-custom' appears in more than one entry",
+        ),
+        ('M[["connect-custom", "a"]]', "metadata key 'connect-custom' is reserved"),
+    ],
+)
+@pytest.mark.anyio
+async def test_websocket_rejects_invalid_metadata(metadata: str, message: str) -> None:
+    messages = _rpc_messages()
+    messages[1] = {"type": "websocket.receive", "text": metadata}
+
+    service, sent = await _run(_scope(), _Connection(messages))
+
+    assert len(sent) == 3
+    assert sent[0] == "M[]"
+    assert '"code": "internal"' in sent[1]
+    assert message in sent[1]
+    assert sent[2] == 1002
+    assert service.protocols == []
+
+
+@pytest.mark.anyio
+async def test_websocket_trims_metadata_whitespace() -> None:
+    # Leading and trailing space and tab are not part of a value, and an
+    # empty value is valid.
+    class EchoingHaberdasher(_FixedHaberdasher):
+        async def make_hat(
+            self, request: Size, ctx: RequestContext[Size, Hat], /
+        ) -> Hat:
+            return Hat(size=request.inches, color=ctx.request_headers["x-custom"])
+
+    app = HaberdasherASGIApplication(EchoingHaberdasher())
+    messages = _rpc_messages()
+    messages[1] = {
+        "type": "websocket.receive",
+        "text": 'M[["x-custom", "\\t a b \\t"]]',
+    }
+    connection = _Connection(messages, hang=True)
+
+    with anyio.fail_after(5):
+        await app(
+            cast("WebSocketScope", _scope()),
+            cast("ASGIReceiveCallable", connection.receive),
+            cast("ASGISendCallable", connection.send),
+        )
+
+    bodies = [
+        m["text"]
+        for m in connection.sent
+        if m["type"] == "websocket.send" and (m.get("text") or "").startswith("B")
+    ]
+    assert bodies == ['B{"size":10,"color":"a b"}']
+
+
+@pytest.mark.anyio
+async def test_websocket_rejects_client_end_payload() -> None:
+    messages = _rpc_messages()
+    messages[3] = {"type": "websocket.receive", "text": 'C{"inches": 10}'}
+
+    service, sent = await _run(_scope(), _Connection(messages))
+
+    assert len(sent) == 3
+    assert sent[0] == "M[]"
+    assert '"code": "internal"' in sent[1]
+    assert "a Client-End-Stream message has no payload" in sent[1]
+    assert sent[2] == 1002
+    assert service.protocols == []

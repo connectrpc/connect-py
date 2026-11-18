@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import struct
-from base64 import b64decode
 from dataclasses import dataclass, field
 from http import HTTPStatus
 from re import compile as re_compile
@@ -14,10 +13,6 @@ from urllib.parse import parse_qs
 from ._codec import CODEC_NAME_JSON
 from ._loop import current_loop
 from ._protocol import ConnectWireError
-from ._protocol_connect import (
-    CONNECT_STREAMING_HEADER_ACCEPT_COMPRESSION,
-    CONNECT_STREAMING_HEADER_COMPRESSION,
-)
 from .code import Code
 from .errors import ConnectError
 
@@ -82,29 +77,20 @@ _RESERVED_METADATA_KEYS = frozenset(
         "x-method-override",
         "forwarded",
         "x-real-ip",
-        "connect-protocol-version",
-        "connect-timeout-ms",
         "content-type",
         "content-encoding",
-        "connect-content-encoding",
-        "connect-accept-encoding",
     }
 )
-_RESERVED_METADATA_PREFIXES = ("proxy-", "sec-", "x-forwarded-")
+_RESERVED_METADATA_PREFIXES = ("connect-", "proxy-", "sec-", "x-forwarded-")
 
-# These names never become effective headers. The deadline arrives as a
-# query parameter, and the protocol has no message-level compression.
-_STRIPPED_REQUEST_HEADERS = (
-    "connect-protocol-version",
-    "connect-timeout-ms",
-    CONNECT_STREAMING_HEADER_COMPRESSION,
-    CONNECT_STREAMING_HEADER_ACCEPT_COMPRESSION,
-)
+# The handshake's own headers never become effective headers.
+_STRIPPED_REQUEST_HEADERS = ("connection", "upgrade")
+_STRIPPED_REQUEST_HEADER_PREFIXES = ("sec-websocket-", "connect-")
 
 _FIELD_NAME_RE = re_compile(r"^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$")
-# A field value holds visible characters, spaces, and tabs. Every other
-# control character is invalid.
-_INVALID_FIELD_VALUE_RE = re_compile(r"[\x00-\x08\x0a-\x1f\x7f]")
+# A field value holds visible ASCII characters, spaces, and tabs. A value
+# that needs anything else travels base64-encoded under a -bin key.
+_INVALID_FIELD_VALUE_RE = re_compile(r"[^\t\x20-\x7e]")
 
 
 @dataclass
@@ -115,6 +101,9 @@ class _StreamState:
     # Set once the connection has ended. The client can no longer receive
     # anything, so the send adapter drops the rest of the response.
     disconnected: bool = False
+    # Set once the S message has been sent. Client messages that were
+    # already in flight are discarded rather than protocol errors.
+    server_done: bool = False
     # The send adapter puts this error in the S message in place of the
     # end-stream payload. The receive side sets it for a protocol error
     # that it can only report as a synthetic disconnect.
@@ -152,16 +141,18 @@ async def upgrade_websocket(
     if message["type"] != "websocket.connect":
         return None
 
+    # The server selects the first offered token whose codec it supports.
     subprotocol = next(
         (
             offered
             for offered in scope.get("subprotocols", ())
-            if offered in _SUBPROTOCOL_CODECS
+            if _SUBPROTOCOL_CODECS.get(offered) in codecs
         ),
         None,
     )
     if subprotocol is None:
-        # The client is not speaking Connect-over-WebSocket.
+        # The client is not speaking Connect-over-WebSocket, or offered no
+        # token whose codec this server supports.
         await _reject_handshake(scope, send, HTTPStatus.BAD_REQUEST)
         return None
 
@@ -184,14 +175,6 @@ async def upgrade_websocket(
         await _reject_handshake(scope, send, HTTPStatus.FORBIDDEN)
         return None
 
-    path = scope["path"]
-    if path not in endpoints:
-        if scope["root_path"] and path.removeprefix(scope["root_path"]) in endpoints:
-            path = path.removeprefix(scope["root_path"])
-        else:
-            await _reject_handshake(scope, send, HTTPStatus.NOT_FOUND)
-            return None
-
     await send({"type": "websocket.accept", "subprotocol": subprotocol, "headers": []})
     # The deadline bounds the whole RPC from here, including the wait for
     # the client's Leading-Metadata message.
@@ -199,33 +182,49 @@ async def upgrade_websocket(
     accepted_at = loop.time()
 
     codec_name = _SUBPROTOCOL_CODECS[subprotocol]
-    if codec_name not in codecs:
-        # The token is recognized but the codec is not served, so the error
-        # is in-band where a browser client can read it.
-        await _fail_rpc(
-            send,
-            ConnectError(
-                Code.UNIMPLEMENTED,
-                f"the '{codec_name}' codec is not supported; supported codecs are {', '.join(codecs)}",
-            ),
-            _CLOSE_NORMAL,
-        )
-        return None
+
+    path = scope["path"]
+    if path not in endpoints:
+        if scope["root_path"] and path.removeprefix(scope["root_path"]) in endpoints:
+            path = path.removeprefix(scope["root_path"])
+        else:
+            # Reported in-band, where a browser client can read it, since
+            # the routing reached the Connect handler.
+            await _fail_rpc(
+                send,
+                ConnectError(
+                    Code.UNIMPLEMENTED, f"no procedure at path {scope['path']}"
+                ),
+                _CLOSE_NORMAL,
+            )
+            return None
 
     query_params = parse_qs(
         scope.get("query_string", b"").decode(), keep_blank_values=True
     )
-    timeout = query_params.get("connect-timeout-ms", (None,))[0]
-    # The specification allows at most ten digits. int() also accepts other
-    # scripts' digits, so only ASCII ones are valid.
+    timeouts = query_params.get("connect-timeout-ms", ())
+    timeout = timeouts[0] if timeouts else None
+    # The value is zero or a positive integer of at most ten digits, sent at
+    # most once. int() also accepts other scripts' digits, so only ASCII
+    # ones are valid.
     if timeout is not None and (
-        not (timeout.isascii() and timeout.isdigit()) or len(timeout) > 10
+        len(timeouts) > 1
+        or not (timeout.isascii() and timeout.isdigit())
+        or len(timeout) > 10
     ):
         await _fail_rpc(
             send,
             ConnectError(
                 Code.INVALID_ARGUMENT, f"invalid connect-timeout-ms value '{timeout}'"
             ),
+            _CLOSE_NORMAL,
+        )
+        return None
+    if timeout is not None and int(timeout) == 0:
+        # A timeout of 0 means the RPC is not dispatched.
+        await _fail_rpc(
+            send,
+            ConnectError(Code.DEADLINE_EXCEEDED, "the deadline has already passed"),
             _CLOSE_NORMAL,
         )
         return None
@@ -246,12 +245,21 @@ async def upgrade_websocket(
     if message["type"] != "websocket.receive":
         return None
     metadata_text = message.get("text")
-    if metadata_text is None or not metadata_text.startswith(_MARKER_METADATA):
+    if metadata_text is None:
         await _fail_rpc(
             send,
             ConnectError(
-                Code.INVALID_ARGUMENT,
-                "the stream must open with a Leading-Metadata message",
+                Code.INTERNAL,
+                "the Leading-Metadata message must be sent in a text frame",
+            ),
+            _CLOSE_UNSUPPORTED_DATA,
+        )
+        return None
+    if not metadata_text.startswith(_MARKER_METADATA):
+        await _fail_rpc(
+            send,
+            ConnectError(
+                Code.INTERNAL, "the stream must open with a Leading-Metadata message"
             ),
             _CLOSE_PROTOCOL_ERROR,
         )
@@ -271,12 +279,19 @@ async def upgrade_websocket(
         metadata = _parse_leading_metadata(metadata_payload)
     except (TypeError, ValueError) as e:
         await _fail_rpc(
-            send, ConnectError(Code.INVALID_ARGUMENT, str(e)), _CLOSE_PROTOCOL_ERROR
+            send, ConnectError(Code.INTERNAL, str(e)), _CLOSE_PROTOCOL_ERROR
         )
         return None
 
+    # The effective headers start from the handshake request headers, minus
+    # the handshake's own, and each metadata key replaces any handshake
+    # header of the same name.
     for name in _STRIPPED_REQUEST_HEADERS:
         headers.pop(name, None)
+    for name in [
+        name for name in headers if name.startswith(_STRIPPED_REQUEST_HEADER_PREFIXES)
+    ]:
+        del headers[name]
     headers.update(metadata)
     headers["content-type"] = [f"application/{codec_name}"]
     if deadline is not None:
@@ -372,7 +387,7 @@ async def _fail_rpc(
     send: ASGISendCallable, error: ConnectError, close_code: int
 ) -> None:
     """Report an RPC failure in-band: M, then S with the error, then close."""
-    await _send_text(send, _MARKER_METADATA + "{}")
+    await _send_text(send, _MARKER_METADATA + "[]")
     end_stream = {"error": ConnectWireError.from_exception(error).to_dict()}
     await _send_text(send, _MARKER_SERVER_END + json.dumps(end_stream))
     await send({"type": "websocket.close", "code": close_code, "reason": None})
@@ -380,51 +395,47 @@ async def _fail_rpc(
 
 def _parse_leading_metadata(payload: str) -> dict[str, list[str]]:
     """Validate and fold a Leading-Metadata payload into effective headers."""
-    parsed = json.loads(payload, object_pairs_hook=_reject_duplicate_keys)
-    if not isinstance(parsed, dict):
-        msg = "Leading-Metadata payload is not a JSON object"
+    parsed = json.loads(payload)
+    if not isinstance(parsed, list):
+        msg = "Leading-Metadata payload is not a JSON array"
         raise TypeError(msg)
     metadata: dict[str, list[str]] = {}
-    for key, values in parsed.items():
+    for entry in parsed:
+        if (
+            not isinstance(entry, list)
+            or len(entry) < 2
+            or not all(isinstance(element, str) for element in entry)
+        ):
+            msg = (
+                "each Leading-Metadata entry is an array of a key string "
+                "and at least one value string"
+            )
+            raise ValueError(msg)
+        key, *values = entry
         if not _FIELD_NAME_RE.match(key):
             msg = f"metadata key '{key}' is not a valid HTTP field name"
             raise ValueError(msg)
-        folded = key.lower()
-        if folded in metadata:
-            msg = f"metadata key '{key}' appears more than once"
+        if key != key.lower():
+            msg = f"metadata key '{key}' is not lower-case"
             raise ValueError(msg)
-        if folded in _RESERVED_METADATA_KEYS or folded.startswith(
+        if key in metadata:
+            msg = f"metadata key '{key}' appears in more than one entry"
+            raise ValueError(msg)
+        if key in _RESERVED_METADATA_KEYS or key.startswith(
             _RESERVED_METADATA_PREFIXES
         ):
             msg = f"metadata key '{key}' is reserved"
             raise ValueError(msg)
-        if not isinstance(values, list) or not all(
-            isinstance(value, str) for value in values
-        ):
-            msg = f"metadata key '{key}' does not map to an array of strings"
-            raise ValueError(msg)
-        for value in values:
-            if folded.endswith("-bin"):
-                try:
-                    b64decode(value + "=" * (-len(value) % 4), validate=True)
-                except ValueError as e:
-                    msg = f"metadata key '{key}' has a value that is not valid base64"
-                    raise ValueError(msg) from e
-            elif _INVALID_FIELD_VALUE_RE.search(value):
-                msg = f"metadata key '{key}' has a value that is not a valid HTTP field value"
-                raise ValueError(msg)
-        metadata[folded] = values
+        if not key.endswith("-bin"):
+            # A -bin value's base64 is not validated here: the application
+            # reports it when it decodes the value.
+            for value in values:
+                if _INVALID_FIELD_VALUE_RE.search(value):
+                    msg = f"metadata key '{key}' has a value that is not a valid HTTP field value"
+                    raise ValueError(msg)
+        # Leading and trailing whitespace is not part of a value.
+        metadata[key] = [value.strip(" \t") for value in values]
     return metadata
-
-
-def _reject_duplicate_keys(pairs: list[tuple[str, object]]) -> dict[str, object]:
-    result: dict[str, object] = {}
-    for key, value in pairs:
-        if key in result:
-            msg = f"metadata key '{key}' appears more than once"
-            raise ValueError(msg)
-        result[key] = value
-    return result
 
 
 def _wrap_receive(
@@ -459,35 +470,33 @@ def _wrap_receive(
                 is_text = False
                 raw = bytes(message.get("bytes") or b"")
 
+            if client_done and state.server_done:
+                # A message that was in flight when the S message was sent
+                # is discarded, not a protocol error.
+                continue
+
+            # The size limit stops the message from being read at all, so it
+            # is checked before the stream state.
+            oversized = read_max_bytes is not None and len(raw) - 1 > read_max_bytes
             if client_done:
                 # After C the client may send nothing else. This can only be
                 # read by the disconnect watch, which swallows exceptions, so
                 # it surfaces as a synthetic disconnect whose end-stream
                 # payload the send adapter replaces.
-                state.close_code = _CLOSE_PROTOCOL_ERROR
-                state.error_override = ConnectError(
-                    Code.INVALID_ARGUMENT,
-                    "received a message after the end of the client stream",
-                )
+                if oversized:
+                    state.close_code = _CLOSE_MESSAGE_TOO_BIG
+                    state.error_override = ConnectError(
+                        Code.RESOURCE_EXHAUSTED,
+                        f"message exceeds the {read_max_bytes} byte limit",
+                    )
+                else:
+                    state.close_code = _CLOSE_PROTOCOL_ERROR
+                    state.error_override = ConnectError(
+                        Code.INTERNAL,
+                        "received a message after the end of the client stream",
+                    )
                 return {"type": "http.disconnect"}
-
-            if not raw:
-                raise _stream_error(
-                    state,
-                    _CLOSE_PROTOCOL_ERROR,
-                    Code.INVALID_ARGUMENT,
-                    "received an empty message with no marker",
-                )
-            marker = raw[0]
-            if marker >= 0x80:  # the marker high bit is reserved
-                raise _stream_error(
-                    state,
-                    _CLOSE_PROTOCOL_ERROR,
-                    Code.INVALID_ARGUMENT,
-                    "message marker has the reserved high bit set",
-                )
-            payload = raw[1:]
-            if read_max_bytes is not None and len(payload) > read_max_bytes:
+            if oversized:
                 raise _stream_error(
                     state,
                     _CLOSE_MESSAGE_TOO_BIG,
@@ -495,56 +504,67 @@ def _wrap_receive(
                     f"message exceeds the {read_max_bytes} byte limit",
                 )
 
-            match chr(marker):
-                case "B" | "C" as marker_char:
-                    if (
-                        payload or marker_char == _MARKER_BODY
-                    ) and is_text == binary_bodies:
-                        raise _stream_error(
-                            state,
-                            _CLOSE_UNSUPPORTED_DATA,
-                            Code.INVALID_ARGUMENT,
-                            f"message body was sent in a {'text' if is_text else 'binary'} frame but the negotiated codec is {codec_name}",
-                        )
-                    if marker_char == _MARKER_CLIENT_END:
-                        client_done = True
-                        return {
-                            "type": "http.request",
-                            "body": _envelope(payload) if payload else b"",
-                            "more_body": False,
-                        }
-                    if not payload and is_text:
-                        raise _stream_error(
-                            state,
-                            _CLOSE_PROTOCOL_ERROR,
-                            Code.INVALID_ARGUMENT,
-                            "an empty JSON message is '{}', never a bare B marker",
-                        )
+            if not raw:
+                raise _stream_error(
+                    state,
+                    _CLOSE_PROTOCOL_ERROR,
+                    Code.INTERNAL,
+                    "received an empty message with no marker",
+                )
+            marker_char = chr(raw[0])
+            payload = raw[1:]
+
+            if marker_char in (_MARKER_BODY, _MARKER_METADATA, _MARKER_CLIENT_END):
+                # The frame type is set by the marker and the codec: a body
+                # takes the codec's frame type and everything else is text.
+                expect_binary = marker_char == _MARKER_BODY and binary_bodies
+                if is_text == expect_binary:
+                    raise _stream_error(
+                        state,
+                        _CLOSE_UNSUPPORTED_DATA,
+                        Code.INTERNAL,
+                        f"a {marker_char} message under the {codec_name} codec must be sent in a {'binary' if expect_binary else 'text'} frame",
+                    )
+
+            match marker_char:
+                case "B":
+                    # An empty payload reaches the codec: the empty Protobuf
+                    # binary message, or a JSON decode error.
                     return {
                         "type": "http.request",
                         "body": _envelope(payload),
                         "more_body": True,
                     }
+                case "C":
+                    if payload:
+                        raise _stream_error(
+                            state,
+                            _CLOSE_PROTOCOL_ERROR,
+                            Code.INTERNAL,
+                            "a Client-End-Stream message has no payload",
+                        )
+                    client_done = True
+                    return {"type": "http.request", "body": b"", "more_body": False}
                 case "M":
                     raise _stream_error(
                         state,
                         _CLOSE_PROTOCOL_ERROR,
-                        Code.INVALID_ARGUMENT,
+                        Code.INTERNAL,
                         "received a second Leading-Metadata message",
                     )
                 case "S":
                     raise _stream_error(
                         state,
                         _CLOSE_PROTOCOL_ERROR,
-                        Code.INVALID_ARGUMENT,
+                        Code.INTERNAL,
                         "received a Server-End-Stream message from the client",
                     )
                 case _:
                     raise _stream_error(
                         state,
                         _CLOSE_PROTOCOL_ERROR,
-                        Code.INVALID_ARGUMENT,
-                        f"unknown message marker 0x{marker:02x}",
+                        Code.INTERNAL,
+                        f"unknown message marker 0x{raw[0]:02x}",
                     )
 
     return wrapped
@@ -606,27 +626,26 @@ class _WebSocketSendAdapter:
                         }
                     )
 
-    def _split_headers(
-        self, headers: Iterable[tuple[bytes, bytes]]
-    ) -> dict[str, list[str]]:
-        """Split response headers into M metadata, stashing error trailers.
+    def _split_headers(self, headers: Iterable[tuple[bytes, bytes]]) -> list[list[str]]:
+        """Split response headers into M entries, stashing error trailers.
 
-        The content type and compression are carried by the subprotocol and
-        the WebSocket layer, so their headers never reach the wire.
+        The content type is carried by the subprotocol, compression by the
+        WebSocket layer, and no connect- name may appear in an M message, so
+        none of those headers reach the wire.
         """
-        metadata: dict[str, list[str]] = {}
+        fields: dict[str, list[str]] = {}
         for name_bytes, value_bytes in headers:
             name = name_bytes.decode().lower()
             value = value_bytes.decode()
-            if name in ("content-type", CONNECT_STREAMING_HEADER_COMPRESSION):
+            if name == "content-type" or name.startswith("connect-"):
                 continue
             if self._error_status is not None and name.startswith("trailer-"):
                 self._state.error_trailers.setdefault(
                     name.removeprefix("trailer-"), []
                 ).append(value)
                 continue
-            metadata.setdefault(name, []).append(value)
-        return metadata
+            fields.setdefault(name, []).append(value)
+        return [[name, *values] for name, values in fields.items()]
 
     async def _send_messages(self) -> None:
         while len(self._buffer) >= _ENVELOPE_PREFIX_LENGTH:
@@ -646,6 +665,7 @@ class _WebSocketSendAdapter:
                 elif "error" not in json.loads(payload or b"{}"):
                     self._state.close_code = _CLOSE_NORMAL
                 await _send_text(self._send, _MARKER_SERVER_END + payload.decode())
+                self._state.server_done = True
             elif self._binary_bodies:
                 await self._send(
                     {
@@ -670,6 +690,7 @@ class _WebSocketSendAdapter:
         if self._state.error_trailers:
             end_stream["metadata"] = self._state.error_trailers
         await _send_text(self._send, _MARKER_SERVER_END + json.dumps(end_stream))
+        self._state.server_done = True
 
 
 async def _send_text(send: ASGISendCallable, text: str) -> None:
