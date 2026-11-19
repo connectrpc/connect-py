@@ -351,6 +351,7 @@ def _generate_sync_stubs(f: File, service: DescService, options: Options) -> Non
         with f.scope("def __init__("):
             f.print("self,")
             f.print("service: ", service_name, "Sync,")
+            f.print("*,")
             f.print("interceptors: ", _ITERABLE, "[", _INTERCEPTOR_SYNC, "] = (),")
             f.print("read_max_bytes: int | None = ", _DEFAULT_READ_MAX_BYTES, ",")
             f.print("compressions: ", _ITERABLE, "[", _COMPRESSION, "] | None = None,")

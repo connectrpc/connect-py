@@ -278,6 +278,7 @@ class HealthWSGIApplication(ConnectWSGIApplication[HealthSync]):
     def __init__(
         self,
         service: HealthSync,
+        *,
         interceptors: Iterable[InterceptorSync] = (),
         read_max_bytes: int | None = DEFAULT_READ_MAX_BYTES,
         compressions: Iterable[Compression] | None = None,

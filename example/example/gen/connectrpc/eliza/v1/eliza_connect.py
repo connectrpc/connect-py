@@ -208,6 +208,7 @@ class ElizaServiceWSGIApplication(ConnectWSGIApplication[ElizaServiceSync]):
     def __init__(
         self,
         service: ElizaServiceSync,
+        *,
         interceptors: Iterable[InterceptorSync] = (),
         read_max_bytes: int | None = DEFAULT_READ_MAX_BYTES,
         compressions: Iterable[Compression] | None = None,

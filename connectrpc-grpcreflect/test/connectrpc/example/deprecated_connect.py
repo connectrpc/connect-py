@@ -111,6 +111,7 @@ class DeprecatedServiceWSGIApplication(ConnectWSGIApplication[DeprecatedServiceS
     def __init__(
         self,
         service: DeprecatedServiceSync,
+        *,
         interceptors: Iterable[InterceptorSync] = (),
         read_max_bytes: int | None = DEFAULT_READ_MAX_BYTES,
         compressions: Iterable[Compression] | None = None,
@@ -329,6 +330,7 @@ class ServiceWithDeprecatedMethodsWSGIApplication(ConnectWSGIApplication[Service
     def __init__(
         self,
         service: ServiceWithDeprecatedMethodsSync,
+        *,
         interceptors: Iterable[InterceptorSync] = (),
         read_max_bytes: int | None = DEFAULT_READ_MAX_BYTES,
         compressions: Iterable[Compression] | None = None,
