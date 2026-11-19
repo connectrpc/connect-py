@@ -183,19 +183,19 @@ class ConformanceServiceASGIApplication(ConnectASGIApplication[ConformanceServic
         service: ConformanceService | AsyncGenerator[ConformanceService],
         *,
         interceptors: Iterable[Interceptor] = (),
-        timeout: float | None = None,
         read_max_bytes: int | None = DEFAULT_READ_MAX_BYTES,
         compressions: Iterable[Compression] | None = None,
         codecs: Iterable[Codec] | None = None,
+        timeout: float | None = None,
     ) -> None:
         super().__init__(
             service=service,
             desc=ConformanceService.desc(),
             interceptors=interceptors,
-            timeout=timeout,
             read_max_bytes=read_max_bytes,
             compressions=compressions,
             codecs=codecs,
+            timeout=timeout,
         )
 
 
@@ -598,19 +598,19 @@ class ConformanceServiceWSGIApplication(ConnectWSGIApplication[ConformanceServic
         self,
         service: ConformanceServiceSync,
         interceptors: Iterable[InterceptorSync] = (),
-        timeout: float | None = None,
         read_max_bytes: int | None = DEFAULT_READ_MAX_BYTES,
         compressions: Iterable[Compression] | None = None,
         codecs: Iterable[Codec] | None = None,
+        timeout: float | None = None,
     ) -> None:
         super().__init__(
             service=service,
             desc=ConformanceServiceSync.desc(),
             interceptors=interceptors,
-            timeout=timeout,
             read_max_bytes=read_max_bytes,
             compressions=compressions,
             codecs=codecs,
+            timeout=timeout,
         )
 
 

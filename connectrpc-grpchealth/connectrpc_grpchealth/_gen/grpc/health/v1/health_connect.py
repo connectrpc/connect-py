@@ -95,19 +95,19 @@ class HealthASGIApplication(ConnectASGIApplication[Health]):
         service: Health | AsyncGenerator[Health],
         *,
         interceptors: Iterable[Interceptor] = (),
-        timeout: float | None = None,
         read_max_bytes: int | None = DEFAULT_READ_MAX_BYTES,
         compressions: Iterable[Compression] | None = None,
         codecs: Iterable[Codec] | None = None,
+        timeout: float | None = None,
     ) -> None:
         super().__init__(
             service=service,
             desc=Health.desc(),
             interceptors=interceptors,
-            timeout=timeout,
             read_max_bytes=read_max_bytes,
             compressions=compressions,
             codecs=codecs,
+            timeout=timeout,
         )
 
 
@@ -281,19 +281,19 @@ class HealthWSGIApplication(ConnectWSGIApplication[HealthSync]):
         self,
         service: HealthSync,
         interceptors: Iterable[InterceptorSync] = (),
-        timeout: float | None = None,
         read_max_bytes: int | None = DEFAULT_READ_MAX_BYTES,
         compressions: Iterable[Compression] | None = None,
         codecs: Iterable[Codec] | None = None,
+        timeout: float | None = None,
     ) -> None:
         super().__init__(
             service=service,
             desc=HealthSync.desc(),
             interceptors=interceptors,
-            timeout=timeout,
             read_max_bytes=read_max_bytes,
             compressions=compressions,
             codecs=codecs,
+            timeout=timeout,
         )
 
 

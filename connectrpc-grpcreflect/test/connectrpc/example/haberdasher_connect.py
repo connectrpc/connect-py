@@ -79,19 +79,19 @@ class HaberdasherASGIApplication(ConnectASGIApplication[Haberdasher]):
         service: Haberdasher | AsyncGenerator[Haberdasher],
         *,
         interceptors: Iterable[Interceptor] = (),
-        timeout: float | None = None,
         read_max_bytes: int | None = DEFAULT_READ_MAX_BYTES,
         compressions: Iterable[Compression] | None = None,
         codecs: Iterable[Codec] | None = None,
+        timeout: float | None = None,
     ) -> None:
         super().__init__(
             service=service,
             desc=Haberdasher.desc(),
             interceptors=interceptors,
-            timeout=timeout,
             read_max_bytes=read_max_bytes,
             compressions=compressions,
             codecs=codecs,
+            timeout=timeout,
         )
 
 
@@ -284,19 +284,19 @@ class HaberdasherWSGIApplication(ConnectWSGIApplication[HaberdasherSync]):
         self,
         service: HaberdasherSync,
         interceptors: Iterable[InterceptorSync] = (),
-        timeout: float | None = None,
         read_max_bytes: int | None = DEFAULT_READ_MAX_BYTES,
         compressions: Iterable[Compression] | None = None,
         codecs: Iterable[Codec] | None = None,
+        timeout: float | None = None,
     ) -> None:
         super().__init__(
             service=service,
             desc=HaberdasherSync.desc(),
             interceptors=interceptors,
-            timeout=timeout,
             read_max_bytes=read_max_bytes,
             compressions=compressions,
             codecs=codecs,
+            timeout=timeout,
         )
 
 

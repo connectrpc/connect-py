@@ -53,19 +53,19 @@ class DeprecatedServiceASGIApplication(ConnectASGIApplication[DeprecatedService]
         service: DeprecatedService | AsyncGenerator[DeprecatedService],
         *,
         interceptors: Iterable[Interceptor] = (),
-        timeout: float | None = None,
         read_max_bytes: int | None = DEFAULT_READ_MAX_BYTES,
         compressions: Iterable[Compression] | None = None,
         codecs: Iterable[Codec] | None = None,
+        timeout: float | None = None,
     ) -> None:
         super().__init__(
             service=service,
             desc=DeprecatedService.desc(),
             interceptors=interceptors,
-            timeout=timeout,
             read_max_bytes=read_max_bytes,
             compressions=compressions,
             codecs=codecs,
+            timeout=timeout,
         )
 
 
@@ -114,19 +114,19 @@ class DeprecatedServiceWSGIApplication(ConnectWSGIApplication[DeprecatedServiceS
         self,
         service: DeprecatedServiceSync,
         interceptors: Iterable[InterceptorSync] = (),
-        timeout: float | None = None,
         read_max_bytes: int | None = DEFAULT_READ_MAX_BYTES,
         compressions: Iterable[Compression] | None = None,
         codecs: Iterable[Codec] | None = None,
+        timeout: float | None = None,
     ) -> None:
         super().__init__(
             service=service,
             desc=DeprecatedServiceSync.desc(),
             interceptors=interceptors,
-            timeout=timeout,
             read_max_bytes=read_max_bytes,
             compressions=compressions,
             codecs=codecs,
+            timeout=timeout,
         )
 
 
@@ -191,19 +191,19 @@ class ServiceWithDeprecatedMethodsASGIApplication(ConnectASGIApplication[Service
         service: ServiceWithDeprecatedMethods | AsyncGenerator[ServiceWithDeprecatedMethods],
         *,
         interceptors: Iterable[Interceptor] = (),
-        timeout: float | None = None,
         read_max_bytes: int | None = DEFAULT_READ_MAX_BYTES,
         compressions: Iterable[Compression] | None = None,
         codecs: Iterable[Codec] | None = None,
+        timeout: float | None = None,
     ) -> None:
         super().__init__(
             service=service,
             desc=ServiceWithDeprecatedMethods.desc(),
             interceptors=interceptors,
-            timeout=timeout,
             read_max_bytes=read_max_bytes,
             compressions=compressions,
             codecs=codecs,
+            timeout=timeout,
         )
 
 
@@ -336,19 +336,19 @@ class ServiceWithDeprecatedMethodsWSGIApplication(ConnectWSGIApplication[Service
         self,
         service: ServiceWithDeprecatedMethodsSync,
         interceptors: Iterable[InterceptorSync] = (),
-        timeout: float | None = None,
         read_max_bytes: int | None = DEFAULT_READ_MAX_BYTES,
         compressions: Iterable[Compression] | None = None,
         codecs: Iterable[Codec] | None = None,
+        timeout: float | None = None,
     ) -> None:
         super().__init__(
             service=service,
             desc=ServiceWithDeprecatedMethodsSync.desc(),
             interceptors=interceptors,
-            timeout=timeout,
             read_max_bytes=read_max_bytes,
             compressions=compressions,
             codecs=codecs,
+            timeout=timeout,
         )
 
 

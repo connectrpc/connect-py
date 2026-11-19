@@ -71,19 +71,19 @@ class ElizaServiceASGIApplication(ConnectASGIApplication[ElizaService]):
         service: ElizaService | AsyncGenerator[ElizaService],
         *,
         interceptors: Iterable[Interceptor] = (),
-        timeout: float | None = None,
         read_max_bytes: int | None = DEFAULT_READ_MAX_BYTES,
         compressions: Iterable[Compression] | None = None,
         codecs: Iterable[Codec] | None = None,
+        timeout: float | None = None,
     ) -> None:
         super().__init__(
             service=service,
             desc=ElizaService.desc(),
             interceptors=interceptors,
-            timeout=timeout,
             read_max_bytes=read_max_bytes,
             compressions=compressions,
             codecs=codecs,
+            timeout=timeout,
         )
 
 
@@ -211,19 +211,19 @@ class ElizaServiceWSGIApplication(ConnectWSGIApplication[ElizaServiceSync]):
         self,
         service: ElizaServiceSync,
         interceptors: Iterable[InterceptorSync] = (),
-        timeout: float | None = None,
         read_max_bytes: int | None = DEFAULT_READ_MAX_BYTES,
         compressions: Iterable[Compression] | None = None,
         codecs: Iterable[Codec] | None = None,
+        timeout: float | None = None,
     ) -> None:
         super().__init__(
             service=service,
             desc=ElizaServiceSync.desc(),
             interceptors=interceptors,
-            timeout=timeout,
             read_max_bytes=read_max_bytes,
             compressions=compressions,
             codecs=codecs,
+            timeout=timeout,
         )
 
 
