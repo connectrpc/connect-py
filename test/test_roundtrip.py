@@ -5,6 +5,7 @@ import base64
 import json
 import random
 import struct
+import sys
 from typing import TYPE_CHECKING, Any
 
 import anyio
@@ -138,8 +139,12 @@ async def test_server_timeout_is_minimum(
         assert timeout_ms is None
     else:
         assert timeout_ms is not None
+        assert timeout_ms > expected_ms - 500
+        if sys.platform == "win32" and sys.version_info < (3, 13):
+            # Work around low timer resolution on old Python.
+            return
         # Less than the longer of the two, so the shorter one is in effect.
-        assert expected_ms - 500 < timeout_ms <= expected_ms
+        assert timeout_ms <= expected_ms
 
 
 # A request and a response containing a field the receiver's schema doesn't have,
