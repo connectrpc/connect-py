@@ -54,6 +54,7 @@ class NoMethodsASGIApplication(ConnectASGIApplication[NoMethods]):
         read_max_bytes: int | None = DEFAULT_READ_MAX_BYTES,
         compressions: Iterable[Compression] | None = None,
         codecs: Iterable[Codec] | None = _DEFAULT_CODECS,
+        timeout: float | None = None,
     ) -> None:
         super().__init__(
             service=service,
@@ -62,6 +63,7 @@ class NoMethodsASGIApplication(ConnectASGIApplication[NoMethods]):
             read_max_bytes=read_max_bytes,
             compressions=compressions,
             codecs=codecs,
+            timeout=timeout,
         )
 
     def _build_endpoints(self, service: NoMethods) -> Mapping[str, Endpoint]:
@@ -116,6 +118,7 @@ class NoMethodsWSGIApplication(ConnectWSGIApplication[NoMethodsSync]):
         read_max_bytes: int | None = DEFAULT_READ_MAX_BYTES,
         compressions: Iterable[Compression] | None = None,
         codecs: Iterable[Codec] | None = _DEFAULT_CODECS,
+        timeout: float | None = None,
     ) -> None:
         super().__init__(
             service=service,
@@ -124,6 +127,7 @@ class NoMethodsWSGIApplication(ConnectWSGIApplication[NoMethodsSync]):
             read_max_bytes=read_max_bytes,
             compressions=compressions,
             codecs=codecs,
+            timeout=timeout,
         )
 
     def _build_endpoints(self, service: NoMethodsSync) -> Mapping[str, EndpointSync]:

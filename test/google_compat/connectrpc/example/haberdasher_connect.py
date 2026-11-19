@@ -91,6 +91,7 @@ class HaberdasherASGIApplication(ConnectASGIApplication[Haberdasher]):
         read_max_bytes: int | None = DEFAULT_READ_MAX_BYTES,
         compressions: Iterable[Compression] | None = None,
         codecs: Iterable[Codec] | None = _DEFAULT_CODECS,
+        timeout: float | None = None,
     ) -> None:
         super().__init__(
             service=service,
@@ -99,6 +100,7 @@ class HaberdasherASGIApplication(ConnectASGIApplication[Haberdasher]):
             read_max_bytes=read_max_bytes,
             compressions=compressions,
             codecs=codecs,
+            timeout=timeout,
         )
 
     def _build_endpoints(self, service: Haberdasher) -> Mapping[str, Endpoint]:
@@ -388,6 +390,7 @@ class HaberdasherWSGIApplication(ConnectWSGIApplication[HaberdasherSync]):
         read_max_bytes: int | None = DEFAULT_READ_MAX_BYTES,
         compressions: Iterable[Compression] | None = None,
         codecs: Iterable[Codec] | None = _DEFAULT_CODECS,
+        timeout: float | None = None,
     ) -> None:
         super().__init__(
             service=service,
@@ -396,6 +399,7 @@ class HaberdasherWSGIApplication(ConnectWSGIApplication[HaberdasherSync]):
             read_max_bytes=read_max_bytes,
             compressions=compressions,
             codecs=codecs,
+            timeout=timeout,
         )
 
     def _build_endpoints(self, service: HaberdasherSync) -> Mapping[str, EndpointSync]:

@@ -4,6 +4,7 @@ import base64
 import contextlib
 import functools
 import inspect
+import math
 from abc import ABC
 from dataclasses import dataclass, replace
 from http import HTTPStatus
@@ -277,6 +278,7 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
         read_max_bytes: int | None = DEFAULT_READ_MAX_BYTES,
         compressions: Iterable[Compression] | None = None,
         codecs: Iterable[Codec] | None = None,
+        timeout: float | None = None,
     ) -> None: ...
 
     @overload
@@ -293,6 +295,7 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
         read_max_bytes: int | None = DEFAULT_READ_MAX_BYTES,
         compressions: Iterable[Compression] | None = None,
         codecs: Iterable[Codec] | None = None,
+        timeout: float | None = None,
     ) -> None: ...
 
     def __init__(
@@ -305,6 +308,7 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
         read_max_bytes: int | None = DEFAULT_READ_MAX_BYTES,
         compressions: Iterable[Compression] | None = None,
         codecs: Iterable[Codec] | None = None,
+        timeout: float | None = None,
     ) -> None:
         """Initialize the ASGI application.
 
@@ -320,9 +324,15 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
                           If set to empty, disables compression.
             codecs: The codecs supported by the server. If unset, defaults to Protocol Buffers
                     binary and JSON codecs.
+            timeout: The maximum time to handle a request in seconds. A request from the
+                client with a shorter timeout uses the client's timeout. If unset,
+                requests are only limited by the client's timeout.
 
         """
         super().__init__()
+        if timeout is not None and not (timeout > 0 and math.isfinite(timeout)):
+            msg = f"timeout must be a positive, finite number of seconds, got {timeout}"
+            raise ValueError(msg)
         self._service = service
         self._desc: DescService | None
         self._endpoints: Callable[[_SVC], Mapping[str, Endpoint]] | None
@@ -345,6 +355,7 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
             split_leading_metadata_interceptors(interceptors)
         )
         self._resolved_endpoints = None
+        self._timeout = timeout
         self._read_max_bytes = read_max_bytes
         self._compressions = resolve_compressions(compressions)
         codecs = codecs if codecs is not None else get_default_codecs()
@@ -509,6 +520,7 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
                         headers,
                         client_address,
                     )
+                    ctx._apply_server_timeout(self._timeout)
                     check_deadline(ctx)
                     if (timeout_ms := ctx.timeout_ms) is not None:
                         deadline = loop.time() + timeout_ms / 1000

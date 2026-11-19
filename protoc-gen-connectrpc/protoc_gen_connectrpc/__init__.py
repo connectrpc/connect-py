@@ -213,6 +213,7 @@ def _generate_async_stubs(f: File, service: DescService, options: Options) -> No
                 default_server_codecs,
                 ",",
             )
+            f.print("timeout: float | None = None,")
         with f.scope(") -> None:"):
             with f.scope("super().__init__("):
                 f.print("service=service,")
@@ -221,6 +222,7 @@ def _generate_async_stubs(f: File, service: DescService, options: Options) -> No
                 f.print("read_max_bytes=read_max_bytes,")
                 f.print("compressions=compressions,")
                 f.print("codecs=codecs,")
+                f.print("timeout=timeout,")
             f.print(")")
         if options.protobuf == _ProtobufOption.GOOGLE:
             _generate_build_endpoints(f, service, options, is_sync=False)
@@ -357,6 +359,7 @@ def _generate_sync_stubs(f: File, service: DescService, options: Options) -> Non
             f.print(
                 "codecs: ", _ITERABLE, "[", _CODEC, "] | None = ", default_codecs, ","
             )
+            f.print("timeout: float | None = None,")
         with f.scope(") -> None:"):
             with f.scope("super().__init__("):
                 f.print("service=service,")
@@ -365,6 +368,7 @@ def _generate_sync_stubs(f: File, service: DescService, options: Options) -> Non
                 f.print("read_max_bytes=read_max_bytes,")
                 f.print("compressions=compressions,")
                 f.print("codecs=codecs,")
+                f.print("timeout=timeout,")
             f.print(")")
         if options.protobuf == _ProtobufOption.GOOGLE:
             _generate_build_endpoints(f, service, options, is_sync=True)

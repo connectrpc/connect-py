@@ -65,6 +65,7 @@ class DeprecatedServiceASGIApplication(ConnectASGIApplication[DeprecatedService]
         read_max_bytes: int | None = DEFAULT_READ_MAX_BYTES,
         compressions: Iterable[Compression] | None = None,
         codecs: Iterable[Codec] | None = _DEFAULT_CODECS,
+        timeout: float | None = None,
     ) -> None:
         super().__init__(
             service=service,
@@ -73,6 +74,7 @@ class DeprecatedServiceASGIApplication(ConnectASGIApplication[DeprecatedService]
             read_max_bytes=read_max_bytes,
             compressions=compressions,
             codecs=codecs,
+            timeout=timeout,
         )
 
     def _build_endpoints(self, service: DeprecatedService) -> Mapping[str, Endpoint]:
@@ -163,6 +165,7 @@ class DeprecatedServiceWSGIApplication(ConnectWSGIApplication[DeprecatedServiceS
         read_max_bytes: int | None = DEFAULT_READ_MAX_BYTES,
         compressions: Iterable[Compression] | None = None,
         codecs: Iterable[Codec] | None = _DEFAULT_CODECS,
+        timeout: float | None = None,
     ) -> None:
         super().__init__(
             service=service,
@@ -171,6 +174,7 @@ class DeprecatedServiceWSGIApplication(ConnectWSGIApplication[DeprecatedServiceS
             read_max_bytes=read_max_bytes,
             compressions=compressions,
             codecs=codecs,
+            timeout=timeout,
         )
 
     def _build_endpoints(self, service: DeprecatedServiceSync) -> Mapping[str, EndpointSync]:
@@ -277,6 +281,7 @@ class ServiceWithDeprecatedMethodsASGIApplication(ConnectASGIApplication[Service
         read_max_bytes: int | None = DEFAULT_READ_MAX_BYTES,
         compressions: Iterable[Compression] | None = None,
         codecs: Iterable[Codec] | None = _DEFAULT_CODECS,
+        timeout: float | None = None,
     ) -> None:
         super().__init__(
             service=service,
@@ -285,6 +290,7 @@ class ServiceWithDeprecatedMethodsASGIApplication(ConnectASGIApplication[Service
             read_max_bytes=read_max_bytes,
             compressions=compressions,
             codecs=codecs,
+            timeout=timeout,
         )
 
     def _build_endpoints(self, service: ServiceWithDeprecatedMethods) -> Mapping[str, Endpoint]:
@@ -492,6 +498,7 @@ class ServiceWithDeprecatedMethodsWSGIApplication(ConnectWSGIApplication[Service
         read_max_bytes: int | None = DEFAULT_READ_MAX_BYTES,
         compressions: Iterable[Compression] | None = None,
         codecs: Iterable[Codec] | None = _DEFAULT_CODECS,
+        timeout: float | None = None,
     ) -> None:
         super().__init__(
             service=service,
@@ -500,6 +507,7 @@ class ServiceWithDeprecatedMethodsWSGIApplication(ConnectWSGIApplication[Service
             read_max_bytes=read_max_bytes,
             compressions=compressions,
             codecs=codecs,
+            timeout=timeout,
         )
 
     def _build_endpoints(self, service: ServiceWithDeprecatedMethodsSync) -> Mapping[str, EndpointSync]:
