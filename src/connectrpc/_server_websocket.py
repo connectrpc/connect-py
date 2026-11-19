@@ -347,6 +347,16 @@ def _same_origin(origin: str, host: str | None) -> bool:
     return origin_host.lower() == host.lower()
 
 
+async def reject_websocket(
+    scope: WebSocketScope, receive: ASGIReceiveCallable, send: ASGISendCallable
+) -> None:
+    """Reject the handshake of an endpoint that does not serve WebSockets."""
+    message = await receive()
+    if message["type"] != "websocket.connect":
+        return
+    await _reject_handshake(scope, send, HTTPStatus.BAD_REQUEST)
+
+
 async def _reject_handshake(
     scope: WebSocketScope, send: ASGISendCallable, status: HTTPStatus
 ) -> None:

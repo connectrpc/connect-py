@@ -47,10 +47,11 @@ from ._server_shared import (
     method_info,
     method_url,
 )
-from ._server_websocket import upgrade_websocket
+from ._server_websocket import reject_websocket, upgrade_websocket
 from ._shared import decode_message, decompress
 from .code import Code
 from .errors import ConnectError
+from .protocol import ProtocolType
 from .request import Headers, RequestContext
 
 if TYPE_CHECKING:
@@ -278,6 +279,7 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
         read_max_bytes: int | None = DEFAULT_READ_MAX_BYTES,
         compressions: Iterable[Compression] | None = None,
         codecs: Iterable[Codec] | None = None,
+        protocols: Iterable[ProtocolType] | None = None,
         websockets_allowed_origins: Iterable[str] = (),
     ) -> None: ...
 
@@ -295,6 +297,7 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
         read_max_bytes: int | None = DEFAULT_READ_MAX_BYTES,
         compressions: Iterable[Compression] | None = None,
         codecs: Iterable[Codec] | None = None,
+        protocols: Iterable[ProtocolType] | None = None,
         websockets_allowed_origins: Iterable[str] = (),
     ) -> None: ...
 
@@ -308,6 +311,7 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
         read_max_bytes: int | None = DEFAULT_READ_MAX_BYTES,
         compressions: Iterable[Compression] | None = None,
         codecs: Iterable[Codec] | None = None,
+        protocols: Iterable[ProtocolType] | None = None,
         websockets_allowed_origins: Iterable[str] = (),
     ) -> None:
         """Initialize the ASGI application.
@@ -324,6 +328,8 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
                           If set to empty, disables compression.
             codecs: The codecs supported by the server. If unset, defaults to Protocol Buffers
                     binary and JSON codecs.
+            protocols: The protocols the server serves. If unset, all supported
+                protocols are served.
             websockets_allowed_origins: Host patterns permitted to open cross-origin
                 Connect-over-WebSocket streams, matched case-insensitively against
                 the host and port of the handshake's Origin header exactly as
@@ -360,6 +366,13 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
         self._compressions = resolve_compressions(compressions)
         codecs = codecs if codecs is not None else get_default_codecs()
         self._codecs = {codec.name(): codec for codec in codecs}
+        if protocols is None:
+            self._protocols = frozenset(ProtocolType)
+        else:
+            self._protocols = frozenset(protocols)
+            if not self._protocols:
+                msg = "protocols must not be empty"
+                raise ValueError(msg)
         origin_patterns = tuple(websockets_allowed_origins)
         for pattern in origin_patterns:
             if (
@@ -407,6 +420,9 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
 
         is_websocket = scope["type"] == "websocket"
         if is_websocket:
+            if ProtocolType.CONNECT_WEBSOCKETS not in self._protocols:
+                await reject_websocket(scope, receive, send)
+                return
             upgraded = await upgrade_websocket(
                 scope,
                 receive,
@@ -487,6 +503,13 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
             # to the server as it is too late for us to be able to do anything.
             async with (timeout := loop.timeout_at(None)):
                 try:
+                    if not is_websocket and self._protocols == {
+                        ProtocolType.CONNECT_WEBSOCKETS
+                    }:
+                        raise HTTPError(
+                            HTTPStatus.UPGRADE_REQUIRED, [("upgrade", "websocket")]
+                        )
+
                     path = scope["path"]
                     endpoint = endpoints.get(path)
                     if not endpoint and scope["root_path"]:
@@ -507,6 +530,8 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
                     protocol = negotiate_server_protocol(
                         content_type, websocket=is_websocket
                     )
+                    if protocol._protocol_type not in self._protocols:
+                        raise HTTPError(HTTPStatus.UNSUPPORTED_MEDIA_TYPE, [])
                     if (
                         protocol.uses_trailers()
                         and "http.response.trailers"

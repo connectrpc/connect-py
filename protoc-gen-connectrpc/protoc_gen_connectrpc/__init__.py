@@ -214,6 +214,7 @@ def _generate_async_stubs(f: File, service: DescService, options: Options) -> No
                 default_server_codecs,
                 ",",
             )
+            f.print("protocols: ", _ITERABLE, "[", _PROTOCOL_TYPE, "] | None = None,")
             f.print("websockets_allowed_origins: ", _ITERABLE, "[str] = (),")
         with f.scope(") -> None:"):
             with f.scope("super().__init__("):
@@ -223,6 +224,7 @@ def _generate_async_stubs(f: File, service: DescService, options: Options) -> No
                 f.print("read_max_bytes=read_max_bytes,")
                 f.print("compressions=compressions,")
                 f.print("codecs=codecs,")
+                f.print("protocols=protocols,")
                 f.print("websockets_allowed_origins=websockets_allowed_origins,")
             f.print(")")
         if options.protobuf == _ProtobufOption.GOOGLE:

@@ -55,6 +55,7 @@ class NoMethodsASGIApplication(ConnectASGIApplication[NoMethods]):
         read_max_bytes: int | None = DEFAULT_READ_MAX_BYTES,
         compressions: Iterable[Compression] | None = None,
         codecs: Iterable[Codec] | None = _DEFAULT_CODECS,
+        protocols: Iterable[ProtocolType] | None = None,
         websockets_allowed_origins: Iterable[str] = (),
     ) -> None:
         super().__init__(
@@ -64,6 +65,7 @@ class NoMethodsASGIApplication(ConnectASGIApplication[NoMethods]):
             read_max_bytes=read_max_bytes,
             compressions=compressions,
             codecs=codecs,
+            protocols=protocols,
             websockets_allowed_origins=websockets_allowed_origins,
         )
 
