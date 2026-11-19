@@ -23,6 +23,7 @@ if TYPE_CHECKING:
     from ._compression import Compression
     from ._envelope import EnvelopeWriter
     from .method import MethodInfo
+    from .protocol import ProtocolType
     from .request import Headers, RequestContext
 
 REQ = TypeVar("REQ")
@@ -185,6 +186,8 @@ class ConnectWireError:
 
 
 class ServerProtocol(Protocol):
+    _protocol_type: ProtocolType
+
     def create_request_context(
         self,
         method: MethodInfo[REQ, RES],

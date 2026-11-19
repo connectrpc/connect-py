@@ -12,6 +12,7 @@ from __future__ import annotations
 from typing import Protocol, TYPE_CHECKING
 
 from connectrpc.client import ConnectClient, ConnectClientSync
+from connectrpc.protocol import ProtocolType
 from connectrpc.server import ConnectASGIApplication, ConnectWSGIApplication, DEFAULT_READ_MAX_BYTES
 from protobuf import DescService
 
@@ -43,6 +44,7 @@ class NoMethodsASGIApplication(ConnectASGIApplication[NoMethods]):
         read_max_bytes: int | None = DEFAULT_READ_MAX_BYTES,
         compressions: Iterable[Compression] | None = None,
         codecs: Iterable[Codec] | None = None,
+        protocols: Iterable[ProtocolType] | None = None,
         timeout: float | None = None,
     ) -> None:
         super().__init__(
@@ -52,6 +54,7 @@ class NoMethodsASGIApplication(ConnectASGIApplication[NoMethods]):
             read_max_bytes=read_max_bytes,
             compressions=compressions,
             codecs=codecs,
+            protocols=protocols,
             timeout=timeout,
         )
 
@@ -79,6 +82,7 @@ class NoMethodsWSGIApplication(ConnectWSGIApplication[NoMethodsSync]):
         read_max_bytes: int | None = DEFAULT_READ_MAX_BYTES,
         compressions: Iterable[Compression] | None = None,
         codecs: Iterable[Codec] | None = None,
+        protocols: Iterable[ProtocolType] | None = None,
         timeout: float | None = None,
     ) -> None:
         super().__init__(
@@ -88,6 +92,7 @@ class NoMethodsWSGIApplication(ConnectWSGIApplication[NoMethodsSync]):
             read_max_bytes=read_max_bytes,
             compressions=compressions,
             codecs=codecs,
+            protocols=protocols,
             timeout=timeout,
         )
 

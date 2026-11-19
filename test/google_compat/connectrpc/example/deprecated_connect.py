@@ -65,6 +65,7 @@ class DeprecatedServiceASGIApplication(ConnectASGIApplication[DeprecatedService]
         read_max_bytes: int | None = DEFAULT_READ_MAX_BYTES,
         compressions: Iterable[Compression] | None = None,
         codecs: Iterable[Codec] | None = _DEFAULT_CODECS,
+        protocols: Iterable[ProtocolType] | None = None,
         timeout: float | None = None,
     ) -> None:
         super().__init__(
@@ -74,6 +75,7 @@ class DeprecatedServiceASGIApplication(ConnectASGIApplication[DeprecatedService]
             read_max_bytes=read_max_bytes,
             compressions=compressions,
             codecs=codecs,
+            protocols=protocols,
             timeout=timeout,
         )
 
@@ -165,6 +167,7 @@ class DeprecatedServiceWSGIApplication(ConnectWSGIApplication[DeprecatedServiceS
         read_max_bytes: int | None = DEFAULT_READ_MAX_BYTES,
         compressions: Iterable[Compression] | None = None,
         codecs: Iterable[Codec] | None = _DEFAULT_CODECS,
+        protocols: Iterable[ProtocolType] | None = None,
         timeout: float | None = None,
     ) -> None:
         super().__init__(
@@ -174,6 +177,7 @@ class DeprecatedServiceWSGIApplication(ConnectWSGIApplication[DeprecatedServiceS
             read_max_bytes=read_max_bytes,
             compressions=compressions,
             codecs=codecs,
+            protocols=protocols,
             timeout=timeout,
         )
 
@@ -281,6 +285,7 @@ class ServiceWithDeprecatedMethodsASGIApplication(ConnectASGIApplication[Service
         read_max_bytes: int | None = DEFAULT_READ_MAX_BYTES,
         compressions: Iterable[Compression] | None = None,
         codecs: Iterable[Codec] | None = _DEFAULT_CODECS,
+        protocols: Iterable[ProtocolType] | None = None,
         timeout: float | None = None,
     ) -> None:
         super().__init__(
@@ -290,6 +295,7 @@ class ServiceWithDeprecatedMethodsASGIApplication(ConnectASGIApplication[Service
             read_max_bytes=read_max_bytes,
             compressions=compressions,
             codecs=codecs,
+            protocols=protocols,
             timeout=timeout,
         )
 
@@ -498,6 +504,7 @@ class ServiceWithDeprecatedMethodsWSGIApplication(ConnectWSGIApplication[Service
         read_max_bytes: int | None = DEFAULT_READ_MAX_BYTES,
         compressions: Iterable[Compression] | None = None,
         codecs: Iterable[Codec] | None = _DEFAULT_CODECS,
+        protocols: Iterable[ProtocolType] | None = None,
         timeout: float | None = None,
     ) -> None:
         super().__init__(
@@ -507,6 +514,7 @@ class ServiceWithDeprecatedMethodsWSGIApplication(ConnectWSGIApplication[Service
             read_max_bytes=read_max_bytes,
             compressions=compressions,
             codecs=codecs,
+            protocols=protocols,
             timeout=timeout,
         )
 

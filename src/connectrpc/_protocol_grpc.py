@@ -21,6 +21,7 @@ from ._response_metadata import handle_response_trailers
 from ._version import __version__
 from .code import Code
 from .errors import ConnectError
+from .protocol import ProtocolType
 from .request import Headers, RequestContext
 
 if TYPE_CHECKING:
@@ -48,6 +49,8 @@ _DEFAULT_GRPC_USER_AGENT = f"grpc-python-connect/{__version__} ({sys.version})"
 
 
 class GRPCServerProtocol:
+    _protocol_type: ProtocolType = ProtocolType.GRPC
+
     def create_request_context(
         self,
         method: MethodInfo[REQ, RES],
@@ -121,6 +124,8 @@ class GRPCServerProtocol:
 
 
 class GRPCWebServerProtocol(GRPCServerProtocol):
+    _protocol_type: ProtocolType = ProtocolType.GRPC_WEB
+
     def uses_trailers(self) -> bool:
         return False
 

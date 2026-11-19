@@ -54,6 +54,7 @@ from ._server_shared import (
 from ._shared import decode_message, decompress
 from .code import Code
 from .errors import ConnectError
+from .protocol import ProtocolType
 from .request import Headers, RequestContext
 
 if TYPE_CHECKING:
@@ -251,6 +252,7 @@ class ConnectWSGIApplication(ABC, Generic[_SVC]):
         read_max_bytes: int | None = DEFAULT_READ_MAX_BYTES,
         compressions: Iterable[Compression] | None = None,
         codecs: Iterable[Codec] | None = None,
+        protocols: Iterable[ProtocolType] | None = None,
         timeout: float | None = None,
     ) -> None: ...
 
@@ -267,6 +269,7 @@ class ConnectWSGIApplication(ABC, Generic[_SVC]):
         read_max_bytes: int | None = DEFAULT_READ_MAX_BYTES,
         compressions: Iterable[Compression] | None = None,
         codecs: Iterable[Codec] | None = None,
+        protocols: Iterable[ProtocolType] | None = None,
         timeout: float | None = None,
     ) -> None: ...
 
@@ -280,6 +283,7 @@ class ConnectWSGIApplication(ABC, Generic[_SVC]):
         read_max_bytes: int | None = DEFAULT_READ_MAX_BYTES,
         compressions: Iterable[Compression] | None = None,
         codecs: Iterable[Codec] | None = None,
+        protocols: Iterable[ProtocolType] | None = None,
         timeout: float | None = None,
     ) -> None:
         """Initialize the WSGI application.
@@ -296,6 +300,8 @@ class ConnectWSGIApplication(ABC, Generic[_SVC]):
                           If set to empty, disables compression.
             codecs: The codecs supported by the server. If unset, defaults to Protocol Buffers
                     binary and JSON codecs.
+            protocols: The protocols the server serves. If unset, all supported
+                protocols are served.
             timeout: The maximum time to handle a request in seconds. A request from the
                 client with a shorter timeout uses the client's timeout. If unset,
                 requests are only limited by the client's timeout.
@@ -349,6 +355,13 @@ class ConnectWSGIApplication(ABC, Generic[_SVC]):
         self._compressions = resolve_compressions(compressions)
         codecs = codecs if codecs is not None else get_default_codecs()
         self._codecs = {codec.name(): codec for codec in codecs}
+        if protocols is None:
+            self._protocols = frozenset(ProtocolType)
+        else:
+            self._protocols = frozenset(protocols)
+            if not self._protocols:
+                msg = "protocols must not be empty"
+                raise ValueError(msg)
 
     @property
     def path(self) -> str:
@@ -419,6 +432,8 @@ class ConnectWSGIApplication(ABC, Generic[_SVC]):
 
             content_type = headers.get("content-type", "")
             protocol = negotiate_server_protocol(content_type)
+            if protocol._protocol_type not in self._protocols:
+                raise HTTPError(HTTPStatus.UNSUPPORTED_MEDIA_TYPE, [])
 
             if protocol.uses_trailers():
                 send_trailers = environ.get("wsgi.ext.http.send_trailers")

@@ -19,6 +19,7 @@ from ._version import __version__
 from .code import Code
 from .errors import ConnectError
 from .method import IdempotencyLevel, MethodInfo
+from .protocol import ProtocolType
 from .request import Headers, RequestContext
 
 if TYPE_CHECKING:
@@ -85,6 +86,8 @@ def codec_name_from_content_type(content_type: str, *, stream: bool) -> str:
 
 
 class ConnectServerProtocol:
+    _protocol_type: ProtocolType = ProtocolType.CONNECT
+
     def create_request_context(
         self,
         method: MethodInfo[REQ, RES],

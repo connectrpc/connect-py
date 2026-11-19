@@ -15,6 +15,7 @@ from connectrpc.client import ConnectClient, ConnectClientSync
 from connectrpc.code import Code
 from connectrpc.errors import ConnectError
 from connectrpc.method import IdempotencyLevel, MethodInfo, StreamType
+from connectrpc.protocol import ProtocolType
 from connectrpc.server import ConnectASGIApplication, ConnectWSGIApplication, DEFAULT_READ_MAX_BYTES
 from protobuf import DescService
 
@@ -52,6 +53,7 @@ class ServerReflectionASGIApplication(ConnectASGIApplication[ServerReflection]):
         read_max_bytes: int | None = DEFAULT_READ_MAX_BYTES,
         compressions: Iterable[Compression] | None = None,
         codecs: Iterable[Codec] | None = None,
+        protocols: Iterable[ProtocolType] | None = None,
         timeout: float | None = None,
     ) -> None:
         super().__init__(
@@ -61,6 +63,7 @@ class ServerReflectionASGIApplication(ConnectASGIApplication[ServerReflection]):
             read_max_bytes=read_max_bytes,
             compressions=compressions,
             codecs=codecs,
+            protocols=protocols,
             timeout=timeout,
         )
 
@@ -112,6 +115,7 @@ class ServerReflectionWSGIApplication(ConnectWSGIApplication[ServerReflectionSyn
         read_max_bytes: int | None = DEFAULT_READ_MAX_BYTES,
         compressions: Iterable[Compression] | None = None,
         codecs: Iterable[Codec] | None = None,
+        protocols: Iterable[ProtocolType] | None = None,
         timeout: float | None = None,
     ) -> None:
         super().__init__(
@@ -121,6 +125,7 @@ class ServerReflectionWSGIApplication(ConnectWSGIApplication[ServerReflectionSyn
             read_max_bytes=read_max_bytes,
             compressions=compressions,
             codecs=codecs,
+            protocols=protocols,
             timeout=timeout,
         )
 

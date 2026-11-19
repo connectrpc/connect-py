@@ -213,6 +213,7 @@ def _generate_async_stubs(f: File, service: DescService, options: Options) -> No
                 default_server_codecs,
                 ",",
             )
+            f.print("protocols: ", _ITERABLE, "[", _PROTOCOL_TYPE, "] | None = None,")
             f.print("timeout: float | None = None,")
         with f.scope(") -> None:"):
             with f.scope("super().__init__("):
@@ -222,6 +223,7 @@ def _generate_async_stubs(f: File, service: DescService, options: Options) -> No
                 f.print("read_max_bytes=read_max_bytes,")
                 f.print("compressions=compressions,")
                 f.print("codecs=codecs,")
+                f.print("protocols=protocols,")
                 f.print("timeout=timeout,")
             f.print(")")
         if options.protobuf == _ProtobufOption.GOOGLE:
@@ -359,6 +361,7 @@ def _generate_sync_stubs(f: File, service: DescService, options: Options) -> Non
             f.print(
                 "codecs: ", _ITERABLE, "[", _CODEC, "] | None = ", default_codecs, ","
             )
+            f.print("protocols: ", _ITERABLE, "[", _PROTOCOL_TYPE, "] | None = None,")
             f.print("timeout: float | None = None,")
         with f.scope(") -> None:"):
             with f.scope("super().__init__("):
@@ -368,6 +371,7 @@ def _generate_sync_stubs(f: File, service: DescService, options: Options) -> Non
                 f.print("read_max_bytes=read_max_bytes,")
                 f.print("compressions=compressions,")
                 f.print("codecs=codecs,")
+                f.print("protocols=protocols,")
                 f.print("timeout=timeout,")
             f.print(")")
         if options.protobuf == _ProtobufOption.GOOGLE:
