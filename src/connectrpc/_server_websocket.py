@@ -88,8 +88,7 @@ _STRIPPED_REQUEST_HEADERS = ("connection", "upgrade")
 _STRIPPED_REQUEST_HEADER_PREFIXES = ("sec-websocket-", "connect-")
 
 _FIELD_NAME_RE = re_compile(r"^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$")
-# A field value holds visible ASCII characters, spaces, and tabs. A value
-# that needs anything else travels base64-encoded under a -bin key.
+# A field value holds visible ASCII characters, spaces, and tabs.
 _INVALID_FIELD_VALUE_RE = re_compile(r"[^\t\x20-\x7e]")
 
 
@@ -141,7 +140,6 @@ async def upgrade_websocket(
     if message["type"] != "websocket.connect":
         return None
 
-    # The server selects the first offered token whose codec it supports.
     subprotocol = next(
         (
             offered
@@ -188,8 +186,6 @@ async def upgrade_websocket(
         if scope["root_path"] and path.removeprefix(scope["root_path"]) in endpoints:
             path = path.removeprefix(scope["root_path"])
         else:
-            # Reported in-band, where a browser client can read it, since
-            # the routing reached the Connect handler.
             await _fail_rpc(
                 send,
                 ConnectError(
@@ -204,11 +200,9 @@ async def upgrade_websocket(
     )
     timeouts = query_params.get("connect-timeout-ms", ())
     timeout = timeouts[0] if timeouts else None
-    # The value is zero or a positive integer of at most ten digits, sent at
-    # most once. int() also accepts other scripts' digits, so only ASCII
-    # ones are valid.
     if timeout is not None and (
         len(timeouts) > 1
+        # Check isascii explicitly since int() can accept non-ASCII digits.
         or not (timeout.isascii() and timeout.isdigit())
         or len(timeout) > 10
     ):
@@ -221,7 +215,6 @@ async def upgrade_websocket(
         )
         return None
     if timeout is not None and int(timeout) == 0:
-        # A timeout of 0 means the RPC is not dispatched.
         await _fail_rpc(
             send,
             ConnectError(Code.DEADLINE_EXCEEDED, "the deadline has already passed"),
@@ -283,9 +276,6 @@ async def upgrade_websocket(
         )
         return None
 
-    # The effective headers start from the handshake request headers, minus
-    # the handshake's own, and each metadata key replaces any handshake
-    # header of the same name.
     for name in _STRIPPED_REQUEST_HEADERS:
         headers.pop(name, None)
     for name in [
@@ -427,13 +417,10 @@ def _parse_leading_metadata(payload: str) -> dict[str, list[str]]:
             msg = f"metadata key '{key}' is reserved"
             raise ValueError(msg)
         if not key.endswith("-bin"):
-            # A -bin value's base64 is not validated here: the application
-            # reports it when it decodes the value.
             for value in values:
                 if _INVALID_FIELD_VALUE_RE.search(value):
                     msg = f"metadata key '{key}' has a value that is not a valid HTTP field value"
                     raise ValueError(msg)
-        # Leading and trailing whitespace is not part of a value.
         metadata[key] = [value.strip(" \t") for value in values]
     return metadata
 
@@ -471,8 +458,6 @@ def _wrap_receive(
                 raw = bytes(message.get("bytes") or b"")
 
             if client_done and state.server_done:
-                # A message that was in flight when the S message was sent
-                # is discarded, not a protocol error.
                 continue
 
             # The size limit stops the message from being read at all, so it
@@ -515,8 +500,6 @@ def _wrap_receive(
             payload = raw[1:]
 
             if marker_char in (_MARKER_BODY, _MARKER_METADATA, _MARKER_CLIENT_END):
-                # The frame type is set by the marker and the codec: a body
-                # takes the codec's frame type and everything else is text.
                 expect_binary = marker_char == _MARKER_BODY and binary_bodies
                 if is_text == expect_binary:
                     raise _stream_error(
@@ -528,8 +511,6 @@ def _wrap_receive(
 
             match marker_char:
                 case "B":
-                    # An empty payload reaches the codec: the empty Protobuf
-                    # binary message, or a JSON decode error.
                     return {
                         "type": "http.request",
                         "body": _envelope(payload),
