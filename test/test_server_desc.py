@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from typing import TYPE_CHECKING
 
 import pytest
@@ -9,7 +10,13 @@ from pyqwest.testing import ASGITransport
 from connectrpc.method import IdempotencyLevel, MethodInfo, StreamType
 from connectrpc.server import ConnectASGIApplication, ConnectWSGIApplication, Endpoint
 
-from .connectrpc.example.haberdasher_connect import Haberdasher, HaberdasherClient
+from .connectrpc.example.haberdasher_connect import (
+    Haberdasher,
+    HaberdasherASGIApplication,
+    HaberdasherClient,
+    HaberdasherSync,
+    HaberdasherWSGIApplication,
+)
 from .connectrpc.example.haberdasher_pb import Hat, Size
 
 if TYPE_CHECKING:
@@ -78,3 +85,16 @@ def test_requires_exactly_one_of_desc_or_endpoints() -> None:
         )
     with pytest.raises(ValueError, match="service must be provided with desc"):
         ConnectWSGIApplication(desc=Haberdasher.desc())  # ty: ignore[no-matching-overload]
+
+
+class SimpleHaberdasherSync(HaberdasherSync):
+    def make_hat(self, request: Size, _ctx: RequestContext[Size, Hat], /) -> Hat:
+        return Hat(size=request.inches, color="blue")
+
+
+@pytest.mark.parametrize("timeout", [0, -1.0, math.nan, math.inf])
+def test_rejects_invalid_timeout(timeout: float) -> None:
+    with pytest.raises(ValueError, match="timeout must be a positive, finite number"):
+        HaberdasherASGIApplication(SimpleHaberdasher(), timeout=timeout)
+    with pytest.raises(ValueError, match="timeout must be a positive, finite number"):
+        HaberdasherWSGIApplication(SimpleHaberdasherSync(), timeout=timeout)
