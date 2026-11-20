@@ -516,6 +516,34 @@ _client_errors = [
         None,
         id="grpc-web timeout header zero",
     ),
+    pytest.param(
+        "POST",
+        "/connectrpc.example.Haberdasher/MakeHat",
+        {"Content-Type": "application/grpc+json", "grpc-timeout": "-5m"},
+        b"",
+        HTTPStatus.OK,
+        {
+            "content-type": "application/grpc+json",
+            "grpc-status": "3",
+            "grpc-message": "protocol%20error%3A%20invalid%20timeout%20%27-5m%27",
+        },
+        None,
+        id="grpc json timeout header negative",
+    ),
+    pytest.param(
+        "POST",
+        "/connectrpc.example.Haberdasher/MakeHat",
+        {"Content-Type": "application/grpc-web+json", "grpc-timeout": "-5m"},
+        b"",
+        HTTPStatus.OK,
+        {
+            "content-type": "application/grpc-web+json",
+            "grpc-status": "3",
+            "grpc-message": "protocol%20error%3A%20invalid%20timeout%20%27-5m%27",
+        },
+        None,
+        id="grpc-web json timeout header negative",
+    ),
 ]
 
 
@@ -903,6 +931,32 @@ async def test_async_server_timeout(protocol: ClientProtocolType, method: str) -
         "http://localhost",
         protocol=protocol,
         http_client=Client(_ServerTimeoutTransport(transport, protocol)),
+    ) as client:
+        with pytest.raises(ConnectError) as exc_info:
+            await _call_blocking(client, method)
+
+    assert exc_info.value.code == Code.DEADLINE_EXCEEDED
+    assert exc_info.value.message == "Request timed out"
+    assert len(interceptor.errors) == 1
+    assert isinstance(interceptor.errors[0], ConnectError)
+    assert interceptor.errors[0].code == Code.DEADLINE_EXCEEDED
+    assert transport.app_exception is None
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("protocol", _protocols)
+@pytest.mark.parametrize("method", _blocking_methods)
+async def test_async_server_configured_timeout(
+    protocol: ClientProtocolType, method: str
+) -> None:
+    interceptor = _ErrorRecordingInterceptor()
+    app = HaberdasherASGIApplication(
+        _BlockingHaberdasher(), interceptors=(interceptor,), timeout=0.05
+    )
+    transport = ASGITransport(app)
+
+    async with HaberdasherClient(
+        "http://localhost", protocol=protocol, http_client=Client(transport)
     ) as client:
         with pytest.raises(ConnectError) as exc_info:
             await _call_blocking(client, method)

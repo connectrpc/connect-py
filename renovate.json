@@ -2,6 +2,12 @@
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": ["helpers:pinGitHubActionDigests", "schedule:earlyMondays"],
   "prHourlyLimit": 0,
+  // Renovate regenerates `actions.lock` with this version of the
+  // `gh-actions-lock` extension. Keep it in step with the `--pin` in
+  // the `actions-lock` CI job, which verifies the result.
+  "constraints": {
+    "ghActionsLock": "v0.4.1"
+  },
   "lockFileMaintenance": {
     "enabled": true
   },
@@ -23,6 +29,21 @@
       "matchStrings": ["VERSION_CONFORMANCE = \"(?<currentValue>[^\"]+)\""],
       "depNameTemplate": "connectrpc.com/conformance",
       "datasourceTemplate": "go"
+    },
+    {
+      "customType": "regex",
+      "managerFilePatterns": ["/^\\.github/workflows/[^/]+\\.ya?ml$/"],
+      "matchStrings": [
+        "gh extension install (?<depName>github/gh-actions-lock) --pin (?<currentValue>\\S+)"
+      ],
+      "datasourceTemplate": "github-releases"
+    },
+    {
+      "customType": "regex",
+      "managerFilePatterns": ["/^renovate\\.json$/"],
+      "matchStrings": ["\"ghActionsLock\": \"(?<currentValue>[^\"]+)\""],
+      "depNameTemplate": "github/gh-actions-lock",
+      "datasourceTemplate": "github-releases"
     }
   ],
   "packageRules": [
@@ -35,6 +56,13 @@
     // GitHub Actions updates.
     {
       "matchDatasources": ["github-runners"],
+      "separateMajorMinor": false,
+      "groupName": "GitHub Actions"
+    },
+    // Group the pinned `gh-actions-lock` extension, which regenerates
+    // `actions.lock`, with the GitHub Actions updates.
+    {
+      "matchPackageNames": ["github/gh-actions-lock"],
       "separateMajorMinor": false,
       "groupName": "GitHub Actions"
     },

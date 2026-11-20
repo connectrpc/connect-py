@@ -103,6 +103,18 @@ class RequestContext(Generic[REQ, RES]):
             return None
         return (self._end_time - time.monotonic()) * 1000.0
 
+    def _apply_server_timeout(self, timeout: float | None) -> None:
+        """Limit the request's deadline to the server's timeout in seconds.
+
+        The effective deadline is the earlier of the client's and the server's,
+        and either being unset leaves the other in effect.
+        """
+        if timeout is None:
+            return
+        end_time = time.monotonic() + timeout
+        if self._end_time is None or end_time < self._end_time:
+            self._end_time = end_time
+
     @property
     def server_address(self) -> str | None:
         """Returns the server address for this request, if available, as a "address:port" string.

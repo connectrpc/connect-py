@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import base64
+import contextvars
 import functools
+import math
 import traceback
 from abc import ABC
 from dataclasses import dataclass, replace
@@ -48,6 +50,8 @@ from ._server_shared import (
     check_deadline,
     method_info,
     method_url,
+    resolve_protocols,
+    unserved_protocol_error,
 )
 from ._shared import decode_message, decompress
 from .code import Code
@@ -55,13 +59,21 @@ from .errors import ConnectError
 from .request import Headers, RequestContext
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
+    from collections.abc import (
+        Callable,
+        Generator,
+        Iterable,
+        Iterator,
+        Mapping,
+        Sequence,
+    )
     from io import BytesIO
     from wsgiref.types import ErrorStream, StartResponse, WSGIEnvironment
 
     from protobuf import DescService
 
     from .compression import Compression
+    from .protocol import ProtocolType
 else:
     StartResponse = "wsgiref.types.StartResponse"
     WSGIEnvironment = "wsgiref.types.WSGIEnvironment"
@@ -242,6 +254,8 @@ class ConnectWSGIApplication(ABC, Generic[_SVC]):
         read_max_bytes: int | None = DEFAULT_READ_MAX_BYTES,
         compressions: Iterable[Compression] | None = None,
         codecs: Iterable[Codec] | None = None,
+        protocols: Iterable[ProtocolType] | None = None,
+        timeout: float | None = None,
     ) -> None: ...
 
     @overload
@@ -257,6 +271,8 @@ class ConnectWSGIApplication(ABC, Generic[_SVC]):
         read_max_bytes: int | None = DEFAULT_READ_MAX_BYTES,
         compressions: Iterable[Compression] | None = None,
         codecs: Iterable[Codec] | None = None,
+        protocols: Iterable[ProtocolType] | None = None,
+        timeout: float | None = None,
     ) -> None: ...
 
     def __init__(
@@ -269,6 +285,8 @@ class ConnectWSGIApplication(ABC, Generic[_SVC]):
         read_max_bytes: int | None = DEFAULT_READ_MAX_BYTES,
         compressions: Iterable[Compression] | None = None,
         codecs: Iterable[Codec] | None = None,
+        protocols: Iterable[ProtocolType] | None = None,
+        timeout: float | None = None,
     ) -> None:
         """Initialize the WSGI application.
 
@@ -284,9 +302,21 @@ class ConnectWSGIApplication(ABC, Generic[_SVC]):
                           If set to empty, disables compression.
             codecs: The codecs supported by the server. If unset, defaults to Protocol Buffers
                     binary and JSON codecs.
+            protocols: The protocols the server serves. If unset, all supported
+                protocols are served.
+            timeout: The maximum time to handle a request in seconds. A request from the
+                client with a shorter timeout uses the client's timeout. If unset,
+                requests are only limited by the client's timeout.
+                Because WSGI doesn't have a general timeout mechanism, this doesn't
+                stop a running handler. It only determines what
+                RequestContext.timeout_ms returns, which handlers can use to set
+                timeouts with other libraries.
 
         """
         super().__init__()
+        if timeout is not None and not (timeout > 0 and math.isfinite(timeout)):
+            msg = f"timeout must be a positive, finite number of seconds, got {timeout}"
+            raise ValueError(msg)
         self._desc: DescService | None
         self._path: str | None
         if desc is not None:
@@ -322,10 +352,12 @@ class ConnectWSGIApplication(ABC, Generic[_SVC]):
                 for path, endpoint in endpoints.items()
             }
         self._endpoints = endpoints
+        self._timeout = timeout
         self._read_max_bytes = read_max_bytes
         self._compressions = resolve_compressions(compressions)
         codecs = codecs if codecs is not None else get_default_codecs()
         self._codecs = {codec.name(): codec for codec in codecs}
+        self._protocols = resolve_protocols(protocols)
 
     @property
     def path(self) -> str:
@@ -367,6 +399,7 @@ class ConnectWSGIApplication(ABC, Generic[_SVC]):
         self, environ: WSGIEnvironment, start_response: StartResponse
     ) -> Iterable[bytes]:
         ctx: RequestContext | None = None
+        content_type = ""
         protocol: ServerProtocol | None = None
         stream: _StreamResponse | None = None
         send_trailers: Callable[[list[tuple[str, str]]], None] | None = None
@@ -395,6 +428,10 @@ class ConnectWSGIApplication(ABC, Generic[_SVC]):
 
             content_type = headers.get("content-type", "")
             protocol = negotiate_server_protocol(content_type)
+            if protocol._protocol_type not in self._protocols:
+                raise unserved_protocol_error(
+                    self._protocols, unary=isinstance(endpoint, EndpointUnarySync)
+                )
 
             if protocol.uses_trailers():
                 send_trailers = environ.get("wsgi.ext.http.send_trailers")
@@ -430,6 +467,7 @@ class ConnectWSGIApplication(ABC, Generic[_SVC]):
             ctx = protocol.create_request_context(
                 endpoint.method, http_method, http_scheme, headers, client_address
             )
+            ctx._apply_server_timeout(self._timeout)
             check_deadline(ctx)
 
             if isinstance(endpoint, EndpointUnarySync) and isinstance(
@@ -454,7 +492,9 @@ class ConnectWSGIApplication(ABC, Generic[_SVC]):
                         )
                     ],
                 )
-            return self._handle_stream(
+            context = contextvars.copy_context()
+            return context.run(
+                self._handle_stream,
                 environ,
                 request_body,
                 start_response,
@@ -464,6 +504,7 @@ class ConnectWSGIApplication(ABC, Generic[_SVC]):
                 headers,
                 endpoint,
                 ctx,
+                context,
             )
 
         except Exception as e:  # noqa: BLE001 # invoking user callback
@@ -472,7 +513,7 @@ class ConnectWSGIApplication(ABC, Generic[_SVC]):
             # An HTTP error is always a plain HTTP response.
             if stream is not None and not isinstance(e, HTTPError):
                 return stream.end(start_response, send_trailers, ctx, e)
-            return self._handle_error(e, ctx, protocol, start_response)
+            return self._handle_error(e, ctx, protocol, content_type, start_response)
 
     def _handle_unary(
         self,
@@ -659,6 +700,7 @@ class ConnectWSGIApplication(ABC, Generic[_SVC]):
         headers: Headers,
         endpoint: EndpointSync[_REQ, _RES],
         ctx: RequestContext[_REQ, _RES],
+        context: contextvars.Context,
     ) -> Iterable[bytes]:
         metadata_run = MetadataInterceptorsRunSync(self._metadata_interceptors, ctx)
         try:
@@ -711,15 +753,18 @@ class ConnectWSGIApplication(ABC, Generic[_SVC]):
             # run at all until the iterator is consumed, meaning start_response wouldn't have
             # been called in time. So we return the response stream as a separate generator
             # function. This means some duplication of error handling.
-            return _response_stream(
-                first_response,
-                environ,
-                request_body,
-                response_stream,
-                stream.writer,
-                send_trailers,
-                ctx,
-                metadata_run,
+            return _iterate_in_context(
+                context,
+                _response_stream(
+                    first_response,
+                    environ,
+                    request_body,
+                    response_stream,
+                    stream.writer,
+                    send_trailers,
+                    ctx,
+                    metadata_run,
+                ),
             )
         except Exception as e:  # noqa: BLE001 # invoking user callback
             # Exception before any response message was returned. An error after the first
@@ -742,6 +787,7 @@ class ConnectWSGIApplication(ABC, Generic[_SVC]):
         exc: Exception,
         ctx: RequestContext | None,
         protocol: ServerProtocol | None,
+        content_type: str,
         start_response: StartResponse,
     ) -> Iterable[bytes]:
         """Handle and log errors with detailed information."""
@@ -751,7 +797,7 @@ class ConnectWSGIApplication(ABC, Generic[_SVC]):
         if isinstance(protocol, GRPCServerProtocol) and not isinstance(exc, HTTPError):
             # gRPC clients read the status from trailers, so this is a trailers-only
             # response: HTTP 200 with the gRPC status in the headers.
-            grpc_headers = protocol.trailers_only_headers(ctx, exc)
+            grpc_headers = protocol.trailers_only_headers(content_type, ctx, exc)
             start_response("200 OK", list(grpc_headers.allitems()))
             return []
         if isinstance(exc, HTTPError):
@@ -822,6 +868,20 @@ def _end_stream(stream: Iterator[object], error: Exception | None) -> None:
         close()
 
 
+def _iterate_in_context(
+    context: contextvars.Context, stream: Generator[bytes]
+) -> Generator[bytes]:
+    try:
+        while True:
+            try:
+                chunk = context.run(stream.__next__)
+            except StopIteration:
+                return
+            yield chunk
+    finally:
+        context.run(stream.close)
+
+
 def _response_stream(
     first_response: _RES,
     environ: WSGIEnvironment,
@@ -831,7 +891,7 @@ def _response_stream(
     send_trailers: Callable[[list[tuple[str, str]]], None] | None,
     ctx: RequestContext,
     metadata_run: MetadataInterceptorsRunSync,
-) -> Iterable[bytes]:
+) -> Generator[bytes]:
     error: Exception | None = None
     try:
         body = writer.write(first_response)

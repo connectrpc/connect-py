@@ -50,7 +50,7 @@ _DEFAULT_GRPC_USER_AGENT = f"grpc-python-connect/{__version__} ({sys.version})"
 
 class GRPCServerProtocol:
     _content_type = GRPC_CONTENT_TYPE_DEFAULT
-    _protocol_type = ProtocolType.GRPC
+    _protocol_type: ProtocolType = ProtocolType.GRPC
 
     def create_request_context(
         self,
@@ -111,14 +111,14 @@ class GRPCServerProtocol:
         return req_compression, resp_compression
 
     def trailers_only_headers(
-        self, ctx: RequestContext | None, exc: Exception
+        self, content_type: str, ctx: RequestContext | None, exc: Exception
     ) -> Headers:
         """Return the headers of a trailers-only response that reports exc."""
         headers = _status_trailers(
             ctx.response_trailers if ctx else Headers(),
             ConnectWireError.from_exception(exc),
         )
-        headers["content-type"] = self._content_type
+        headers["content-type"] = content_type
         if ctx:
             for key, value in ctx.response_headers.allitems():
                 headers.add(key, value)
@@ -127,7 +127,7 @@ class GRPCServerProtocol:
 
 class GRPCWebServerProtocol(GRPCServerProtocol):
     _content_type = GRPC_WEB_CONTENT_TYPE_DEFAULT
-    _protocol_type = ProtocolType.GRPC_WEB
+    _protocol_type: ProtocolType = ProtocolType.GRPC_WEB
 
     def uses_trailers(self) -> bool:
         return False

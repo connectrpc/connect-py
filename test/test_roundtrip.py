@@ -5,6 +5,7 @@ import base64
 import json
 import random
 import struct
+import sys
 from typing import TYPE_CHECKING, Any
 
 import anyio
@@ -80,6 +81,70 @@ async def test_roundtrip(mode: str, proto_json: bool, compression_name: str) -> 
         )
     response = await call(client.make_hat, Size(inches=10))
     assert response == Hat(size=10, color="green")
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    "mode", ["async", pytest.param("sync", marks=pytest.mark.asyncio_only)]
+)
+@pytest.mark.parametrize(
+    ("server_timeout", "client_timeout_ms", "expected_ms"),
+    [
+        pytest.param(None, None, None, id="unset"),
+        pytest.param(1.0, None, 1000, id="server"),
+        pytest.param(None, 1000, 1000, id="client"),
+        pytest.param(1.0, 2000, 1000, id="server_shorter"),
+        pytest.param(2.0, 1000, 1000, id="client_shorter"),
+    ],
+)
+async def test_server_timeout_is_minimum(
+    mode: str,
+    server_timeout: float | None,
+    client_timeout_ms: int | None,
+    expected_ms: int | None,
+) -> None:
+    handler_timeout_ms: list[float | None] = []
+    if mode == "async":
+
+        class TimeoutHaberdasher(Haberdasher):
+            async def make_hat(self, request, ctx):
+                handler_timeout_ms.append(ctx.timeout_ms)
+                return Hat(size=request.inches)
+
+        app = HaberdasherASGIApplication(TimeoutHaberdasher(), timeout=server_timeout)
+        client = HaberdasherClient(
+            "http://localhost",
+            http_client=Client(ASGITransport(app)),
+            timeout_ms=client_timeout_ms,
+        )
+    else:
+
+        class TimeoutHaberdasherSync(HaberdasherSync):
+            def make_hat(self, request, ctx):
+                handler_timeout_ms.append(ctx.timeout_ms)
+                return Hat(size=request.inches)
+
+        app = HaberdasherWSGIApplication(
+            TimeoutHaberdasherSync(), timeout=server_timeout
+        )
+        client = HaberdasherClientSync(
+            "http://localhost",
+            http_client=SyncClient(WSGITransport(app)),
+            timeout_ms=client_timeout_ms,
+        )
+    await call(client.make_hat, Size(inches=10))
+
+    [timeout_ms] = handler_timeout_ms
+    if expected_ms is None:
+        assert timeout_ms is None
+    else:
+        assert timeout_ms is not None
+        assert timeout_ms > expected_ms - 500
+        if sys.platform == "win32" and sys.version_info < (3, 13):
+            # Work around low timer resolution on old Python.
+            return
+        # Less than the longer of the two, so the shorter one is in effect.
+        assert timeout_ms <= expected_ms
 
 
 # A request and a response containing a field the receiver's schema doesn't have,

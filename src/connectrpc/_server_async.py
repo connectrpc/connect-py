@@ -4,6 +4,7 @@ import base64
 import contextlib
 import functools
 import inspect
+import math
 from abc import ABC
 from dataclasses import dataclass, replace
 from http import HTTPStatus
@@ -46,6 +47,8 @@ from ._server_shared import (
     check_deadline,
     method_info,
     method_url,
+    resolve_protocols,
+    unserved_protocol_error,
 )
 from ._server_websocket import reject_websocket, upgrade_websocket
 from ._shared import decode_message, decompress
@@ -280,6 +283,7 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
         compressions: Iterable[Compression] | None = None,
         codecs: Iterable[Codec] | None = None,
         protocols: Iterable[ProtocolType] | None = None,
+        timeout: float | None = None,
         websockets_allowed_origins: Iterable[str] = (),
     ) -> None: ...
 
@@ -298,6 +302,7 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
         compressions: Iterable[Compression] | None = None,
         codecs: Iterable[Codec] | None = None,
         protocols: Iterable[ProtocolType] | None = None,
+        timeout: float | None = None,
         websockets_allowed_origins: Iterable[str] = (),
     ) -> None: ...
 
@@ -312,6 +317,7 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
         compressions: Iterable[Compression] | None = None,
         codecs: Iterable[Codec] | None = None,
         protocols: Iterable[ProtocolType] | None = None,
+        timeout: float | None = None,
         websockets_allowed_origins: Iterable[str] = (),
     ) -> None:
         """Initialize the ASGI application.
@@ -330,6 +336,9 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
                     binary and JSON codecs.
             protocols: The protocols the server serves. If unset, all supported
                 protocols are served.
+            timeout: The maximum time to handle a request in seconds. A request from the
+                client with a shorter timeout uses the client's timeout. If unset,
+                requests are only limited by the client's timeout.
             websockets_allowed_origins: Host patterns permitted to open cross-origin
                 Connect-over-WebSocket streams, matched case-insensitively against
                 the host and port of the handshake's Origin header exactly as
@@ -340,6 +349,9 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
 
         """
         super().__init__()
+        if timeout is not None and not (timeout > 0 and math.isfinite(timeout)):
+            msg = f"timeout must be a positive, finite number of seconds, got {timeout}"
+            raise ValueError(msg)
         self._service = service
         self._desc: DescService | None
         self._endpoints: Callable[[_SVC], Mapping[str, Endpoint]] | None
@@ -362,17 +374,12 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
             split_leading_metadata_interceptors(interceptors)
         )
         self._resolved_endpoints = None
+        self._timeout = timeout
         self._read_max_bytes = read_max_bytes
         self._compressions = resolve_compressions(compressions)
         codecs = codecs if codecs is not None else get_default_codecs()
         self._codecs = {codec.name(): codec for codec in codecs}
-        if protocols is None:
-            self._protocols = frozenset(ProtocolType)
-        else:
-            self._protocols = frozenset(protocols)
-            if not self._protocols:
-                msg = "protocols must not be empty"
-                raise ValueError(msg)
+        self._protocols = resolve_protocols(protocols)
         origin_patterns = tuple(websockets_allowed_origins)
         for pattern in origin_patterns:
             if (
@@ -487,6 +494,7 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
         receiver = _RequestReceiver(receive, loop.event())
         sender = _ResponseSender(send)
         ctx: RequestContext | None = None
+        content_type = ""
         protocol: ServerProtocol | None = None
         metadata_run: MetadataInterceptorsRun | None = None
         unary: _UnaryResponse | None = None
@@ -531,7 +539,9 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
                         content_type, websocket=is_websocket
                     )
                     if protocol._protocol_type not in self._protocols:
-                        raise HTTPError(HTTPStatus.UNSUPPORTED_MEDIA_TYPE, [])
+                        raise unserved_protocol_error(
+                            self._protocols, unary=isinstance(endpoint, EndpointUnary)
+                        )
                     if (
                         protocol.uses_trailers()
                         and "http.response.trailers"
@@ -586,6 +596,7 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
                         headers,
                         client_address,
                     )
+                    ctx._apply_server_timeout(self._timeout)
                     check_deadline(ctx)
                     if (timeout_ms := ctx.timeout_ms) is not None:
                         deadline = loop.time() + timeout_ms / 1000
@@ -702,7 +713,7 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
                             responded = await stream.end(sender, error, ctx)
                         elif error is not None:
                             responded = await self._handle_error(
-                                error, ctx, protocol, sender
+                                error, ctx, protocol, content_type, sender
                             )
                         else:
                             responded = True
@@ -914,6 +925,7 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
         exc: Exception,
         ctx: RequestContext | None,
         protocol: ServerProtocol | None,
+        content_type: str,
         send: _ResponseSender,
     ) -> bool:
         """Respond with the error, unless the response can no longer be replaced."""
@@ -925,7 +937,7 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
         if isinstance(protocol, GRPCServerProtocol) and not isinstance(exc, HTTPError):
             # gRPC clients read the status from trailers, so this is a trailers-only
             # response: HTTP 200 with the gRPC status in the headers.
-            grpc_headers = protocol.trailers_only_headers(ctx, exc)
+            grpc_headers = protocol.trailers_only_headers(content_type, ctx, exc)
             await send(
                 {
                     "type": "http.response.start",

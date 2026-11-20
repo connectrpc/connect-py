@@ -215,6 +215,7 @@ def _generate_async_stubs(f: File, service: DescService, options: Options) -> No
                 ",",
             )
             f.print("protocols: ", _ITERABLE, "[", _PROTOCOL_TYPE, "] | None = None,")
+            f.print("timeout: float | None = None,")
             f.print("websockets_allowed_origins: ", _ITERABLE, "[str] = (),")
         with f.scope(") -> None:"):
             with f.scope("super().__init__("):
@@ -225,6 +226,7 @@ def _generate_async_stubs(f: File, service: DescService, options: Options) -> No
                 f.print("compressions=compressions,")
                 f.print("codecs=codecs,")
                 f.print("protocols=protocols,")
+                f.print("timeout=timeout,")
                 f.print("websockets_allowed_origins=websockets_allowed_origins,")
             f.print(")")
         if options.protobuf == _ProtobufOption.GOOGLE:
@@ -356,12 +358,15 @@ def _generate_sync_stubs(f: File, service: DescService, options: Options) -> Non
         with f.scope("def __init__("):
             f.print("self,")
             f.print("service: ", service_name, "Sync,")
+            f.print("*,")
             f.print("interceptors: ", _ITERABLE, "[", _INTERCEPTOR_SYNC, "] = (),")
             f.print("read_max_bytes: int | None = ", _DEFAULT_READ_MAX_BYTES, ",")
             f.print("compressions: ", _ITERABLE, "[", _COMPRESSION, "] | None = None,")
             f.print(
                 "codecs: ", _ITERABLE, "[", _CODEC, "] | None = ", default_codecs, ","
             )
+            f.print("protocols: ", _ITERABLE, "[", _PROTOCOL_TYPE, "] | None = None,")
+            f.print("timeout: float | None = None,")
         with f.scope(") -> None:"):
             with f.scope("super().__init__("):
                 f.print("service=service,")
@@ -370,6 +375,8 @@ def _generate_sync_stubs(f: File, service: DescService, options: Options) -> Non
                 f.print("read_max_bytes=read_max_bytes,")
                 f.print("compressions=compressions,")
                 f.print("codecs=codecs,")
+                f.print("protocols=protocols,")
+                f.print("timeout=timeout,")
             f.print(")")
         if options.protobuf == _ProtobufOption.GOOGLE:
             _generate_build_endpoints(f, service, options, is_sync=True)

@@ -86,7 +86,7 @@ def codec_name_from_content_type(content_type: str, *, stream: bool) -> str:
 
 
 class ConnectServerProtocol:
-    _protocol_type = ProtocolType.CONNECT
+    _protocol_type: ProtocolType = ProtocolType.CONNECT
 
     def create_request_context(
         self,
