@@ -47,11 +47,12 @@ from ._server_shared import (
     check_deadline,
     method_info,
     method_url,
+    resolve_protocols,
+    unserved_protocol_error,
 )
 from ._shared import decode_message, decompress
 from .code import Code
 from .errors import ConnectError
-from .protocol import ProtocolType
 from .request import Headers, RequestContext
 
 if TYPE_CHECKING:
@@ -81,6 +82,7 @@ if TYPE_CHECKING:
     from . import _server_shared
     from ._loop_trio import TrioLoop, TrioTimeout
     from .compression import Compression
+    from .protocol import ProtocolType
 else:
     ASGIReceiveCallable = "asgiref.typing.ASGIReceiveCallable"
     ASGISendCallable = "asgiref.typing.ASGISendCallable"
@@ -367,13 +369,7 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
         self._compressions = resolve_compressions(compressions)
         codecs = codecs if codecs is not None else get_default_codecs()
         self._codecs = {codec.name(): codec for codec in codecs}
-        if protocols is None:
-            self._protocols = frozenset(ProtocolType)
-        else:
-            self._protocols = frozenset(protocols)
-            if not self._protocols:
-                msg = "protocols must not be empty"
-                raise ValueError(msg)
+        self._protocols = resolve_protocols(protocols)
 
     @property
     def path(self) -> str:
@@ -485,7 +481,9 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
                     content_type = headers.get("content-type", "")
                     protocol = negotiate_server_protocol(content_type)
                     if protocol._protocol_type not in self._protocols:
-                        raise HTTPError(HTTPStatus.UNSUPPORTED_MEDIA_TYPE, [])
+                        raise unserved_protocol_error(
+                            self._protocols, unary=isinstance(endpoint, EndpointUnary)
+                        )
                     if (
                         protocol.uses_trailers()
                         and "http.response.trailers"
