@@ -47,6 +47,8 @@ from ._server_shared import (
     check_deadline,
     method_info,
     method_url,
+    resolve_protocols,
+    unserved_protocol_error,
 )
 from ._shared import decode_message, decompress
 from .code import Code
@@ -73,12 +75,14 @@ if TYPE_CHECKING:
         ASGISendEvent,
         HTTPScope,
         Scope,
+        WebSocketScope,
     )
     from protobuf import DescService
 
     from . import _server_shared
     from ._loop_trio import TrioLoop, TrioTimeout
     from .compression import Compression
+    from .protocol import ProtocolType
 else:
     ASGIReceiveCallable = "asgiref.typing.ASGIReceiveCallable"
     ASGISendCallable = "asgiref.typing.ASGISendCallable"
@@ -278,6 +282,7 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
         read_max_bytes: int | None = DEFAULT_READ_MAX_BYTES,
         compressions: Iterable[Compression] | None = None,
         codecs: Iterable[Codec] | None = None,
+        protocols: Iterable[ProtocolType] | None = None,
         timeout: float | None = None,
     ) -> None: ...
 
@@ -295,6 +300,7 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
         read_max_bytes: int | None = DEFAULT_READ_MAX_BYTES,
         compressions: Iterable[Compression] | None = None,
         codecs: Iterable[Codec] | None = None,
+        protocols: Iterable[ProtocolType] | None = None,
         timeout: float | None = None,
     ) -> None: ...
 
@@ -308,6 +314,7 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
         read_max_bytes: int | None = DEFAULT_READ_MAX_BYTES,
         compressions: Iterable[Compression] | None = None,
         codecs: Iterable[Codec] | None = None,
+        protocols: Iterable[ProtocolType] | None = None,
         timeout: float | None = None,
     ) -> None:
         """Initialize the ASGI application.
@@ -324,6 +331,8 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
                           If set to empty, disables compression.
             codecs: The codecs supported by the server. If unset, defaults to Protocol Buffers
                     binary and JSON codecs.
+            protocols: The protocols the server serves. If unset, all supported
+                protocols are served.
             timeout: The maximum time to handle a request in seconds. A request from the
                 client with a shorter timeout uses the client's timeout. If unset,
                 requests are only limited by the client's timeout.
@@ -360,6 +369,7 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
         self._compressions = resolve_compressions(compressions)
         codecs = codecs if codecs is not None else get_default_codecs()
         self._codecs = {codec.name(): codec for codec in codecs}
+        self._protocols = resolve_protocols(protocols)
 
     @property
     def path(self) -> str:
@@ -373,8 +383,8 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
         self, scope: Scope, receive: ASGIReceiveCallable, send: ASGISendCallable
     ) -> None:
         if scope["type"] == "websocket":
-            msg = "connect does not support websockets"
-            raise RuntimeError(msg)
+            await _reject_websocket(scope, receive, send)
+            return
 
         if scope["type"] == "lifespan":
             await self._handle_lifespan(receive, send)
@@ -470,6 +480,10 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
 
                     content_type = headers.get("content-type", "")
                     protocol = negotiate_server_protocol(content_type)
+                    if protocol._protocol_type not in self._protocols:
+                        raise unserved_protocol_error(
+                            self._protocols, unary=isinstance(endpoint, EndpointUnary)
+                        )
                     if (
                         protocol.uses_trailers()
                         and "http.response.trailers"
@@ -928,6 +942,33 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
                 for path, endpoint in resolved_endpoints.items()
             }
         return resolved_endpoints
+
+
+async def _reject_websocket(
+    scope: WebSocketScope, receive: ASGIReceiveCallable, send: ASGISendCallable
+) -> None:
+    """Reject a WebSocket handshake with 400 Bad Request, before the upgrade."""
+    message = await receive()
+    if message["type"] != "websocket.connect":
+        return
+    if "websocket.http.response" in (scope.get("extensions") or {}):
+        await send(
+            cast(
+                "ASGISendEvent",
+                {
+                    "type": "websocket.http.response.start",
+                    "status": HTTPStatus.BAD_REQUEST.value,
+                    "headers": [],
+                },
+            )
+        )
+        await send(
+            cast("ASGISendEvent", {"type": "websocket.http.response.body", "body": b""})
+        )
+    else:
+        # Without the extension, a close before accept makes the server
+        # reject the handshake with its own status code.
+        await send({"type": "websocket.close", "code": 1002, "reason": None})
 
 
 def _timeout_error(

@@ -1,16 +1,19 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from http import HTTPStatus
 from typing import TYPE_CHECKING, Any, Generic, TypeVar
 
 from protobuf.wkt.google.protobuf.descriptor_pb import MethodOptions
 
+from ._protocol import HTTPError
 from .code import Code
 from .errors import ConnectError
 from .method import IdempotencyLevel, MethodInfo, StreamType
+from .protocol import ProtocolType
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
+    from collections.abc import AsyncIterator, Awaitable, Callable, Iterable, Iterator
 
     from protobuf import DescMethod
 
@@ -146,6 +149,51 @@ class EndpointServerStreamSync(EndpointSync[REQ, RES]):
 @dataclass(kw_only=True, frozen=True, slots=True)
 class EndpointBidiStreamSync(EndpointSync[REQ, RES]):
     function: Callable[[Iterator[REQ], RequestContext[REQ, RES]], Iterator[RES]]
+
+
+def resolve_protocols(
+    protocols: Iterable[ProtocolType] | None,
+) -> frozenset[ProtocolType]:
+    """Return the protocols to serve, which default to all of them."""
+    if protocols is None:
+        return frozenset(ProtocolType)
+    resolved = frozenset(protocols)
+    if not resolved:
+        msg = "protocols must not be empty"
+        raise ValueError(msg)
+    return resolved
+
+
+def unserved_protocol_error(
+    protocols: frozenset[ProtocolType], *, unary: bool
+) -> HTTPError:
+    """Return the error for a request in a protocol that is not served.
+
+    Its Accept-Post header lists the content types of the protocols that
+    are, as a hint to a client using the wrong one.
+    """
+    content_types: list[str] = []
+    if ProtocolType.CONNECT in protocols:
+        content_types += (
+            ("application/json", "application/proto")
+            if unary
+            else ("application/connect+json", "application/connect+proto")
+        )
+    if ProtocolType.GRPC in protocols:
+        content_types += (
+            "application/grpc",
+            "application/grpc+proto",
+            "application/grpc+json",
+        )
+    if ProtocolType.GRPC_WEB in protocols:
+        content_types += (
+            "application/grpc-web",
+            "application/grpc-web+proto",
+            "application/grpc-web+json",
+        )
+    return HTTPError(
+        HTTPStatus.UNSUPPORTED_MEDIA_TYPE, [("Accept-Post", ", ".join(content_types))]
+    )
 
 
 def check_deadline(ctx: RequestContext) -> None:

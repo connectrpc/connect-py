@@ -15,6 +15,7 @@ from connectrpc.client import ConnectClient, ConnectClientSync
 from connectrpc.code import Code
 from connectrpc.errors import ConnectError
 from connectrpc.method import IdempotencyLevel, MethodInfo, StreamType
+from connectrpc.protocol import ProtocolType
 from connectrpc.server import ConnectASGIApplication, ConnectWSGIApplication, DEFAULT_READ_MAX_BYTES
 from protobuf import DescService
 
@@ -74,6 +75,7 @@ class ElizaServiceASGIApplication(ConnectASGIApplication[ElizaService]):
         read_max_bytes: int | None = DEFAULT_READ_MAX_BYTES,
         compressions: Iterable[Compression] | None = None,
         codecs: Iterable[Codec] | None = None,
+        protocols: Iterable[ProtocolType] | None = None,
         timeout: float | None = None,
     ) -> None:
         super().__init__(
@@ -83,6 +85,7 @@ class ElizaServiceASGIApplication(ConnectASGIApplication[ElizaService]):
             read_max_bytes=read_max_bytes,
             compressions=compressions,
             codecs=codecs,
+            protocols=protocols,
             timeout=timeout,
         )
 
@@ -214,6 +217,7 @@ class ElizaServiceWSGIApplication(ConnectWSGIApplication[ElizaServiceSync]):
         read_max_bytes: int | None = DEFAULT_READ_MAX_BYTES,
         compressions: Iterable[Compression] | None = None,
         codecs: Iterable[Codec] | None = None,
+        protocols: Iterable[ProtocolType] | None = None,
         timeout: float | None = None,
     ) -> None:
         super().__init__(
@@ -223,6 +227,7 @@ class ElizaServiceWSGIApplication(ConnectWSGIApplication[ElizaServiceSync]):
             read_max_bytes=read_max_bytes,
             compressions=compressions,
             codecs=codecs,
+            protocols=protocols,
             timeout=timeout,
         )
 
