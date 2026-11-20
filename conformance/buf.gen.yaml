@@ -1,6 +1,6 @@
 version: v2
 inputs:
-  - module: buf.build/connectrpc/conformance:v1.0.4
+  - module: buf.build/connectrpc/conformance:v1.0.7
 clean: true
 plugins:
   - local: protoc-gen-py

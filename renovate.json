@@ -25,8 +25,14 @@
     },
     {
       "customType": "regex",
-      "managerFilePatterns": ["/^conformance/test/_util\\.py$/"],
-      "matchStrings": ["VERSION_CONFORMANCE = \"(?<currentValue>[^\"]+)\""],
+      "managerFilePatterns": [
+        "/^conformance/test/_util\\.py$/",
+        "/^conformance/buf\\.gen\\.yaml$/"
+      ],
+      "matchStrings": [
+        "VERSION_CONFORMANCE = \"(?<currentValue>[^\"]+)\"",
+        "buf\\.build/connectrpc/conformance:(?<currentValue>\\S+)"
+      ],
       "depNameTemplate": "connectrpc.com/conformance",
       "datasourceTemplate": "go"
     },
