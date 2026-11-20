@@ -388,6 +388,7 @@ class HaberdasherWSGIApplication(ConnectWSGIApplication[HaberdasherSync]):
     def __init__(
         self,
         service: HaberdasherSync,
+        *,
         interceptors: Iterable[InterceptorSync] = (),
         read_max_bytes: int | None = DEFAULT_READ_MAX_BYTES,
         compressions: Iterable[Compression] | None = None,
