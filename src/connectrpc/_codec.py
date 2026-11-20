@@ -20,7 +20,6 @@ from protobuf.wkt.google.protobuf import (
 )
 from typing_extensions import TypeVar
 
-CODEC_NAME_PROTO = "proto"
 CODEC_NAME_JSON = "json"
 
 
