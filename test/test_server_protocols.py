@@ -177,7 +177,7 @@ async def test_websocket_handshake_rejected_when_not_served() -> None:
 @pytest.mark.anyio
 async def test_http_rejected_when_websockets_only() -> None:
     app = HaberdasherASGIApplication(
-        _FixedHaberdasher(), protocols=(ProtocolType.CONNECT_WEBSOCKETS,)
+        _FixedHaberdasher(), protocols=(ProtocolType.CONNECT_WEBSOCKET,)
     )
     connection = _Connection(
         [{"type": "http.request", "body": b"", "more_body": False}]
@@ -245,7 +245,7 @@ async def test_http_protocol_rejected_when_not_served(
 @pytest.mark.anyio
 async def test_websocket_served_when_websockets_only() -> None:
     app = HaberdasherASGIApplication(
-        _FixedHaberdasher(), protocols=(ProtocolType.CONNECT_WEBSOCKETS,)
+        _FixedHaberdasher(), protocols=(ProtocolType.CONNECT_WEBSOCKET,)
     )
     connection = _Connection(
         [

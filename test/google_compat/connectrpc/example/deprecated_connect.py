@@ -68,7 +68,7 @@ class DeprecatedServiceASGIApplication(ConnectASGIApplication[DeprecatedService]
         codecs: Iterable[Codec] | None = _DEFAULT_CODECS,
         protocols: Iterable[ProtocolType] | None = None,
         timeout: float | None = None,
-        websockets_allowed_origins: Iterable[str] = (),
+        websocket_allowed_origins: Iterable[str] = (),
     ) -> None:
         super().__init__(
             service=service,
@@ -79,7 +79,7 @@ class DeprecatedServiceASGIApplication(ConnectASGIApplication[DeprecatedService]
             codecs=codecs,
             protocols=protocols,
             timeout=timeout,
-            websockets_allowed_origins=websockets_allowed_origins,
+            websocket_allowed_origins=websocket_allowed_origins,
         )
 
     def _build_endpoints(self, service: DeprecatedService) -> Mapping[str, Endpoint]:
@@ -291,7 +291,7 @@ class ServiceWithDeprecatedMethodsASGIApplication(ConnectASGIApplication[Service
         codecs: Iterable[Codec] | None = _DEFAULT_CODECS,
         protocols: Iterable[ProtocolType] | None = None,
         timeout: float | None = None,
-        websockets_allowed_origins: Iterable[str] = (),
+        websocket_allowed_origins: Iterable[str] = (),
     ) -> None:
         super().__init__(
             service=service,
@@ -302,7 +302,7 @@ class ServiceWithDeprecatedMethodsASGIApplication(ConnectASGIApplication[Service
             codecs=codecs,
             protocols=protocols,
             timeout=timeout,
-            websockets_allowed_origins=websockets_allowed_origins,
+            websocket_allowed_origins=websocket_allowed_origins,
         )
 
     def _build_endpoints(self, service: ServiceWithDeprecatedMethods) -> Mapping[str, Endpoint]:

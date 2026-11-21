@@ -78,7 +78,7 @@ class ElizaServiceASGIApplication(ConnectASGIApplication[ElizaService]):
         codecs: Iterable[Codec] | None = None,
         protocols: Iterable[ProtocolType] | None = None,
         timeout: float | None = None,
-        websockets_allowed_origins: Iterable[str] = (),
+        websocket_allowed_origins: Iterable[str] = (),
     ) -> None:
         super().__init__(
             service=service,
@@ -89,7 +89,7 @@ class ElizaServiceASGIApplication(ConnectASGIApplication[ElizaService]):
             codecs=codecs,
             protocols=protocols,
             timeout=timeout,
-            websockets_allowed_origins=websockets_allowed_origins,
+            websocket_allowed_origins=websocket_allowed_origins,
         )
 
 

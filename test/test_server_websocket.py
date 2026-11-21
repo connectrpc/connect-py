@@ -23,7 +23,7 @@ if TYPE_CHECKING:
 
 
 # Connect-over-WebSocket is only served when asked for.
-_PROTOCOLS = (ProtocolType.CONNECT_WEBSOCKETS,)
+_PROTOCOLS = (ProtocolType.CONNECT_WEBSOCKET,)
 
 
 class _FixedHaberdasher(Haberdasher):
@@ -120,7 +120,7 @@ async def test_websocket_origin_check(
 ) -> None:
     service = _FixedHaberdasher()
     app = HaberdasherASGIApplication(
-        service, protocols=_PROTOCOLS, websockets_allowed_origins=allowed_origins
+        service, protocols=_PROTOCOLS, websocket_allowed_origins=allowed_origins
     )
     connection = _Connection(_rpc_messages(), hang=True)
 
@@ -145,7 +145,7 @@ async def test_websocket_origin_check(
             if m["type"] == "websocket.send" and (m.get("text") or "").startswith("B")
         ]
         assert bodies == ['B{"size":10,"color":"blue"}']
-        assert service.protocols == [ProtocolType.CONNECT_WEBSOCKETS]
+        assert service.protocols == [ProtocolType.CONNECT_WEBSOCKET]
     else:
         assert connection.sent == [
             {"type": "websocket.http.response.start", "status": 403, "headers": []},
@@ -167,11 +167,11 @@ async def test_websocket_origin_check(
     ],
 )
 def test_invalid_allowed_origin_pattern(pattern: str) -> None:
-    with pytest.raises(ValueError, match="websockets_allowed_origins"):
+    with pytest.raises(ValueError, match="websocket_allowed_origins"):
         HaberdasherASGIApplication(
             _FixedHaberdasher(),
             protocols=_PROTOCOLS,
-            websockets_allowed_origins=(pattern,),
+            websocket_allowed_origins=(pattern,),
         )
 
 
@@ -274,7 +274,7 @@ async def test_websocket_accepts_tab_in_metadata() -> None:
     service, sent = await _run(_scope(), _Connection(messages, hang=True))
 
     assert sent == ["M[]", 'B{"size":10,"color":"blue"}', "S{}", 1000]
-    assert service.protocols == [ProtocolType.CONNECT_WEBSOCKETS]
+    assert service.protocols == [ProtocolType.CONNECT_WEBSOCKET]
 
 
 @pytest.mark.anyio
@@ -285,7 +285,7 @@ async def test_allowed_origins_accepts_generator() -> None:
     app = HaberdasherASGIApplication(
         service,
         protocols=_PROTOCOLS,
-        websockets_allowed_origins=(p for p in ["app.example.org"]),
+        websocket_allowed_origins=(p for p in ["app.example.org"]),
     )
     connection = _Connection(_rpc_messages(), hang=True)
 
@@ -296,7 +296,7 @@ async def test_allowed_origins_accepts_generator() -> None:
             cast("ASGISendCallable", connection.send),
         )
 
-    assert service.protocols == [ProtocolType.CONNECT_WEBSOCKETS]
+    assert service.protocols == [ProtocolType.CONNECT_WEBSOCKET]
 
 
 @pytest.mark.anyio

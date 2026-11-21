@@ -156,7 +156,7 @@ def resolve_protocols(
 ) -> frozenset[ProtocolType]:
     """Return the protocols to serve."""
     if protocols is None:
-        return frozenset(ProtocolType) - {ProtocolType.CONNECT_WEBSOCKETS}
+        return frozenset(ProtocolType) - {ProtocolType.CONNECT_WEBSOCKET}
     resolved = frozenset(protocols)
     if not resolved:
         msg = "protocols must not be empty"

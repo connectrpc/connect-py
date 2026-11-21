@@ -510,10 +510,10 @@ def test_websockets_protocol_rejected() -> None:
     with pytest.raises(ValueError, match="clients do not support protocol"):
         HaberdasherClient(
             "http://localhost",
-            protocol=cast("ProtocolType", ProtocolType.CONNECT_WEBSOCKETS),  # ty: ignore[invalid-argument-type]
+            protocol=cast("ProtocolType", ProtocolType.CONNECT_WEBSOCKET),  # ty: ignore[invalid-argument-type]
         )
     with pytest.raises(ValueError, match="clients do not support protocol"):
         HaberdasherClientSync(
             "http://localhost",
-            protocol=cast("ProtocolType", ProtocolType.CONNECT_WEBSOCKETS),  # ty: ignore[invalid-argument-type]
+            protocol=cast("ProtocolType", ProtocolType.CONNECT_WEBSOCKET),  # ty: ignore[invalid-argument-type]
         )

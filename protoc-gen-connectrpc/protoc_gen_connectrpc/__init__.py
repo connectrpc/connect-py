@@ -216,7 +216,7 @@ def _generate_async_stubs(f: File, service: DescService, options: Options) -> No
             )
             f.print("protocols: ", _ITERABLE, "[", _PROTOCOL_TYPE, "] | None = None,")
             f.print("timeout: float | None = None,")
-            f.print("websockets_allowed_origins: ", _ITERABLE, "[str] = (),")
+            f.print("websocket_allowed_origins: ", _ITERABLE, "[str] = (),")
         with f.scope(") -> None:"):
             with f.scope("super().__init__("):
                 f.print("service=service,")
@@ -227,7 +227,7 @@ def _generate_async_stubs(f: File, service: DescService, options: Options) -> No
                 f.print("codecs=codecs,")
                 f.print("protocols=protocols,")
                 f.print("timeout=timeout,")
-                f.print("websockets_allowed_origins=websockets_allowed_origins,")
+                f.print("websocket_allowed_origins=websocket_allowed_origins,")
             f.print(")")
         if options.protobuf == _ProtobufOption.GOOGLE:
             _generate_build_endpoints(f, service, options, is_sync=False)

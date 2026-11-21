@@ -192,7 +192,7 @@ class ConnectEnvelopeWriter(EnvelopeWriter):
 class ConnectWebSocketServerProtocol(ConnectServerProtocol):
     """The Connect protocol as adapted to a WebSocket upgrade request."""
 
-    _protocol_type = ProtocolType.CONNECT_WEBSOCKETS
+    _protocol_type = ProtocolType.CONNECT_WEBSOCKET
 
 
 class ConnectClientProtocol:

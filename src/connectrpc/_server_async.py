@@ -301,7 +301,7 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
         codecs: Iterable[Codec] | None = None,
         protocols: Iterable[ProtocolType] | None = None,
         timeout: float | None = None,
-        websockets_allowed_origins: Iterable[str] = (),
+        websocket_allowed_origins: Iterable[str] = (),
     ) -> None: ...
 
     @overload
@@ -320,7 +320,7 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
         codecs: Iterable[Codec] | None = None,
         protocols: Iterable[ProtocolType] | None = None,
         timeout: float | None = None,
-        websockets_allowed_origins: Iterable[str] = (),
+        websocket_allowed_origins: Iterable[str] = (),
     ) -> None: ...
 
     def __init__(
@@ -335,7 +335,7 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
         codecs: Iterable[Codec] | None = None,
         protocols: Iterable[ProtocolType] | None = None,
         timeout: float | None = None,
-        websockets_allowed_origins: Iterable[str] = (),
+        websocket_allowed_origins: Iterable[str] = (),
     ) -> None:
         """Initialize the ASGI application.
 
@@ -356,7 +356,7 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
             timeout: The maximum time to handle a request in seconds. A request from the
                 client with a shorter timeout uses the client's timeout. If unset,
                 requests are only limited by the client's timeout.
-            websockets_allowed_origins: Host patterns permitted to open cross-origin
+            websocket_allowed_origins: Host patterns permitted to open cross-origin
                 Connect-over-WebSocket streams, matched case-insensitively against
                 the host and port of the handshake's Origin header exactly as
                 written, ignoring only the scheme: an exact value such as
@@ -397,7 +397,7 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
         codecs = codecs if codecs is not None else get_default_codecs()
         self._codecs = {codec.name(): codec for codec in codecs}
         self._protocols = resolve_protocols(protocols)
-        origin_patterns = tuple(websockets_allowed_origins)
+        origin_patterns = tuple(websocket_allowed_origins)
         for pattern in origin_patterns:
             if (
                 "/" in pattern
@@ -409,12 +409,12 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
                 )
             ):
                 msg = (
-                    f"websockets_allowed_origins pattern '{pattern}' must be a "
+                    f"websocket_allowed_origins pattern '{pattern}' must be a "
                     "host without a scheme, a '*.example.com' domain wildcard, "
                     "or '*'"
                 )
                 raise ValueError(msg)
-        self._websockets_allowed_origins = tuple(
+        self._websocket_allowed_origins = tuple(
             pattern.lower() for pattern in origin_patterns
         )
 
@@ -444,7 +444,7 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
 
         websocket: WebSocketStream | None = None
         if scope["type"] == "websocket":
-            if ProtocolType.CONNECT_WEBSOCKETS not in self._protocols:
+            if ProtocolType.CONNECT_WEBSOCKET not in self._protocols:
                 await reject_websocket(scope, receive, send)
                 return
             websocket = await upgrade_websocket(
@@ -454,7 +454,7 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
                 endpoints=self._resolved_endpoints,
                 codecs=self._codecs,
                 read_max_bytes=self._read_max_bytes,
-                allowed_origins=self._websockets_allowed_origins,
+                allowed_origins=self._websocket_allowed_origins,
                 server_timeout=self._timeout,
             )
             if websocket is None:
@@ -531,7 +531,7 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
             async with (timeout := loop.timeout_at(None)):
                 try:
                     if not is_websocket and self._protocols == {
-                        ProtocolType.CONNECT_WEBSOCKETS
+                        ProtocolType.CONNECT_WEBSOCKET
                     }:
                         raise HTTPError(
                             HTTPStatus.UPGRADE_REQUIRED, [("upgrade", "websocket")]

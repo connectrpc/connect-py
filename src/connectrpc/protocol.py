@@ -18,7 +18,7 @@ class ProtocolType(Enum):
     GRPC_WEB = 3
     """The gRPC-Web protocol."""
 
-    CONNECT_WEBSOCKETS = 4
+    CONNECT_WEBSOCKET = 4
     """The Connect-over-WebSocket protocol."""
 
 

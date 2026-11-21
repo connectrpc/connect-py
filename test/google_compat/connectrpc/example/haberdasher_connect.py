@@ -94,7 +94,7 @@ class HaberdasherASGIApplication(ConnectASGIApplication[Haberdasher]):
         codecs: Iterable[Codec] | None = _DEFAULT_CODECS,
         protocols: Iterable[ProtocolType] | None = None,
         timeout: float | None = None,
-        websockets_allowed_origins: Iterable[str] = (),
+        websocket_allowed_origins: Iterable[str] = (),
     ) -> None:
         super().__init__(
             service=service,
@@ -105,7 +105,7 @@ class HaberdasherASGIApplication(ConnectASGIApplication[Haberdasher]):
             codecs=codecs,
             protocols=protocols,
             timeout=timeout,
-            websockets_allowed_origins=websockets_allowed_origins,
+            websocket_allowed_origins=websocket_allowed_origins,
         )
 
     def _build_endpoints(self, service: Haberdasher) -> Mapping[str, Endpoint]:
