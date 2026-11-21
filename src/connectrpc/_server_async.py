@@ -259,9 +259,6 @@ class _StreamResponse:
             if not send.started:
                 error = remove_reserved_response_metadata(ctx.response_headers) or error
             error = remove_reserved_response_metadata(ctx.response_trailers) or error
-        if self.websocket is not None and isinstance(error, DecodeError):
-            # A B payload that fails to decode is a protocol error.
-            self.websocket.set_protocol_error()
         if not send.started:
             # Exception before any response message is returned
             await self.send_headers(send, ctx)
@@ -458,6 +455,7 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
                 codecs=self._codecs,
                 read_max_bytes=self._read_max_bytes,
                 allowed_origins=self._websockets_allowed_origins,
+                server_timeout=self._timeout,
             )
             if websocket is None:
                 return
@@ -870,6 +868,7 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
             req_compression,
             self._read_max_bytes,
             loop,
+            stream.websocket,
         )
         # Closed by the request's end, since the handler may not consume it.
         stream.request_stream = request_stream
@@ -1090,6 +1089,7 @@ async def _request_stream(
     compression: Compression,
     read_max_bytes: int | None,
     loop: AsyncioLoop | TrioLoop,
+    websocket: WebSocketStream | None,
 ) -> AsyncGenerator[_REQ]:
     body = _read_body(receive)
     try:
@@ -1102,6 +1102,11 @@ async def _request_stream(
                     # Check for cancellation each message. While this seems heavyweight,
                     # conformance tests require it.
                     await loop.checkpoint()
+    except DecodeError as e:
+        if websocket is not None:
+            # A B payload that fails to decode is a protocol error.
+            websocket.fail_with_protocol_error(e)
+        raise
     finally:
         await _aclose(body)
 

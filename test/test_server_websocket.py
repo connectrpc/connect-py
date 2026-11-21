@@ -352,9 +352,9 @@ async def test_unary_handler_cancelled_on_disconnect() -> None:
 
 
 @pytest.mark.anyio
-async def test_normal_close_when_handler_catches_protocol_error() -> None:
-    # The 1009 close code applies only when the S message reports the
-    # oversized message. A handler that caught the error closed normally.
+async def test_oversized_message_ends_stream_when_handler_catches_error() -> None:
+    # An oversized message ends the stream, whatever the handler does with
+    # the error it is given.
     class CatchingHaberdasher(_FixedHaberdasher):
         async def make_flexible_hat(
             self, request: AsyncIterator[Size], _ctx: RequestContext[Size, Hat], /
@@ -391,7 +391,14 @@ async def test_normal_close_when_handler_catches_protocol_error() -> None:
         for m in connection.sent
         if m["type"] in ("websocket.send", "websocket.close")
     ]
-    assert sent == ["M[]", 'B{"size":1,"color":"blue"}', "S{}", 1000]
+    assert sent == [
+        "M[]",
+        (
+            'S{"error": {"code": "resource_exhausted", "message": "message '
+            'exceeds the 8 byte limit"}}'
+        ),
+        1009,
+    ]
 
 
 @pytest.mark.parametrize(
@@ -583,6 +590,144 @@ async def test_websocket_rejects_metadata_matching_handshake_header() -> None:
         (
             'S{"error": {"code": "internal", "message": "metadata key '
             "'x-custom' matches a header of the handshake request\"}}"
+        ),
+        1002,
+    ]
+    assert service.protocols == []
+
+
+class _CatchingHaberdasher(_FixedHaberdasher):
+    """Catches the request stream's error and responds as if it succeeded."""
+
+    async def make_flexible_hat(
+        self, request: AsyncIterator[Size], _ctx: RequestContext[Size, Hat], /
+    ) -> Hat:
+        try:
+            async for _ in request:
+                pass
+        except ConnectError:
+            pass
+        return Hat(size=1, color="blue")
+
+
+@pytest.mark.parametrize(
+    ("message", "code", "error"),
+    [
+        pytest.param("X?", "internal", "unknown message marker 0x58", id="marker"),
+        pytest.param("B{", "invalid_argument", "unmarshal message", id="decode"),
+    ],
+)
+@pytest.mark.anyio
+async def test_protocol_error_ends_stream_when_handler_catches_error(
+    message: str, code: str, error: str
+) -> None:
+    # A protocol error ends the stream. The handler must not be able to
+    # skip the offending message and complete the RPC.
+    scope = _scope()
+    scope["path"] = "/connectrpc.example.Haberdasher/MakeFlexibleHat"
+    scope["raw_path"] = scope["path"].encode()
+    connection = _Connection(
+        [
+            {"type": "websocket.connect"},
+            {"type": "websocket.receive", "text": "M[]"},
+            {"type": "websocket.receive", "text": 'B{"inches": 10}'},
+            {"type": "websocket.receive", "text": message},
+        ],
+        hang=True,
+    )
+
+    _, sent = await _run(scope, connection, _CatchingHaberdasher())
+
+    assert len(sent) == 3
+    assert sent[0] == "M[]"
+    assert f'"code": "{code}"' in sent[1]
+    assert error in sent[1]
+    assert sent[2] == 1002
+
+
+@pytest.mark.anyio
+async def test_websocket_server_timeout_bounds_leading_metadata() -> None:
+    # The server's timeout protects it from a client that upgrades, sends no
+    # deadline, and never sends its Leading-Metadata message.
+    service = _FixedHaberdasher()
+    app = HaberdasherASGIApplication(service, timeout=0.05)
+    connection = _Connection([{"type": "websocket.connect"}], hang=True)
+
+    with anyio.fail_after(5):
+        await app(
+            cast("WebSocketScope", _scope()),
+            cast("ASGIReceiveCallable", connection.receive),
+            cast("ASGISendCallable", connection.send),
+        )
+
+    sent = [
+        m.get("text") if m["type"] == "websocket.send" else m["code"]
+        for m in connection.sent
+        if m["type"] in ("websocket.send", "websocket.close")
+    ]
+    assert sent == [
+        "M[]",
+        'S{"error": {"code": "deadline_exceeded", "message": "Request timed out"}}',
+        1000,
+    ]
+    assert service.protocols == []
+
+
+@pytest.mark.anyio
+async def test_websocket_server_timeout_starts_at_handshake() -> None:
+    # The client takes most of the server's timeout to send its
+    # Leading-Metadata message, which leaves the handler the rest of it.
+    class SlowConnection(_Connection):
+        async def receive(self) -> dict[str, Any]:
+            message = await super().receive()
+            if message.get("text") == "M[]":
+                await anyio.sleep(0.2)
+            return message
+
+    class SlowHaberdasher(_FixedHaberdasher):
+        async def make_hat(
+            self, request: Size, ctx: RequestContext[Size, Hat], /
+        ) -> Hat:
+            await anyio.sleep(0.2)
+            return await super().make_hat(request, ctx)
+
+    app = HaberdasherASGIApplication(SlowHaberdasher(), timeout=0.3)
+    connection = SlowConnection(_rpc_messages(), hang=True)
+
+    with anyio.fail_after(5):
+        await app(
+            cast("WebSocketScope", _scope()),
+            cast("ASGIReceiveCallable", connection.receive),
+            cast("ASGISendCallable", connection.send),
+        )
+
+    sent = [
+        m.get("text") if m["type"] == "websocket.send" else m["code"]
+        for m in connection.sent
+        if m["type"] in ("websocket.send", "websocket.close")
+    ]
+    assert sent == [
+        "M[]",
+        'S{"error": {"code": "deadline_exceeded", "message": "Request timed out"}}',
+        1000,
+    ]
+
+
+@pytest.mark.anyio
+async def test_websocket_rejects_deeply_nested_metadata() -> None:
+    messages = _rpc_messages()
+    messages[1] = {
+        "type": "websocket.receive",
+        "text": "M" + "[" * 200_000 + "]" * 200_000,
+    }
+
+    service, sent = await _run(_scope(), _Connection(messages))
+
+    assert sent == [
+        "M[]",
+        (
+            'S{"error": {"code": "internal", "message": "Leading-Metadata '
+            'payload is nested too deeply"}}'
         ),
         1002,
     ]

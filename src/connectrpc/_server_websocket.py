@@ -39,6 +39,8 @@ _CLOSE_NORMAL = 1000
 _CLOSE_PROTOCOL_ERROR = 1002
 _CLOSE_MESSAGE_TOO_BIG = 1009
 
+_MAX_TIMEOUT_MS = 9_999_999_999
+
 _ENVELOPE_PREFIX_LENGTH = 5
 _END_STREAM_FLAG = 0b10
 
@@ -104,9 +106,8 @@ class _StreamState:
     # Set once the S message has been sent. Client messages that were
     # already in flight are discarded rather than protocol errors.
     server_done: bool = False
-    # The send adapter puts this error in the S message in place of the
-    # end-stream payload. The receive side sets it for a protocol error
-    # that it can only report as a synthetic disconnect.
+    # Set for an error in what the client sent. It ends the stream, so the
+    # send adapter drops later B messages and reports this error.
     error_override: ConnectError | None = None
     # The S message carries these headers, taken from an error response's
     # trailer-prefixed headers, as its metadata.
@@ -126,9 +127,10 @@ class WebSocketStream:
     send: ASGISendCallable
     _state: _StreamState
 
-    def set_protocol_error(self) -> None:
-        """Close the connection as for a protocol error once S is sent."""
+    def fail_with_protocol_error(self, error: ConnectError) -> None:
+        """End the stream with the protocol error."""
         self._state.close_code = _CLOSE_PROTOCOL_ERROR
+        self._state.error_override = error
 
 
 def remove_reserved_response_metadata(metadata: Headers) -> ConnectError | None:
@@ -152,6 +154,7 @@ async def upgrade_websocket(
     codecs: Iterable[str],
     read_max_bytes: int | None,
     allowed_origins: Collection[str] = (),
+    server_timeout: float | None = None,
 ) -> WebSocketStream | None:
     """Establish a Connect-over-WebSocket stream and adapt it to HTTP.
 
@@ -245,7 +248,13 @@ async def upgrade_websocket(
         )
         return None
 
+    # The effective deadline is the earlier of the client's and the server's.
     deadline = None if timeout is None else accepted_at + int(timeout) / 1000
+    if server_timeout is not None:
+        server_deadline = accepted_at + server_timeout
+        deadline = (
+            server_deadline if deadline is None else min(deadline, server_deadline)
+        )
 
     # The first message in each direction is the Leading-Metadata message.
     try:
@@ -313,6 +322,8 @@ async def upgrade_websocket(
         # header is removed from the effective headers after the request
         # context is created.
         remaining_ms = max(0, int((deadline - loop.time()) * 1000))
+        # The header holds at most ten digits.
+        remaining_ms = min(remaining_ms, _MAX_TIMEOUT_MS)
         headers["connect-timeout-ms"] = [str(remaining_ms)]
 
     http_scope = dict(scope)
@@ -421,7 +432,11 @@ def _parse_leading_metadata(
     payload: str, handshake_headers: Container[str]
 ) -> dict[str, list[str]]:
     """Validate a Leading-Metadata payload, returning its headers."""
-    parsed = json.loads(payload)
+    try:
+        parsed = json.loads(payload)
+    except RecursionError:
+        msg = "Leading-Metadata payload is nested too deeply"
+        raise ValueError(msg) from None
     if not isinstance(parsed, list):
         msg = "Leading-Metadata payload is not a JSON array"
         raise TypeError(msg)
@@ -593,8 +608,10 @@ def _wrap_receive(
 def _stream_error(
     state: _StreamState, close_code: int, code: Code, message: str
 ) -> ConnectError:
+    error = ConnectError(code, message)
     state.close_code = close_code
-    return ConnectError(code, message)
+    state.error_override = error
+    return error
 
 
 def _envelope(payload: bytes) -> bytes:
@@ -679,13 +696,16 @@ class _WebSocketSendAdapter:
             del self._buffer[: _ENVELOPE_PREFIX_LENGTH + length]
             if flags & _END_STREAM_FLAG:
                 if (error := self._state.error_override) is not None:
-                    payload = json.dumps(
-                        {"error": ConnectWireError.from_exception(error).to_dict()}
-                    ).encode()
-                elif "error" not in json.loads(payload or b"{}"):
-                    self._state.close_code = _CLOSE_NORMAL
+                    end_stream = json.loads(payload or b"{}")
+                    end_stream["error"] = ConnectWireError.from_exception(
+                        error
+                    ).to_dict()
+                    payload = json.dumps(end_stream).encode()
                 await _send_text(self._send, _MARKER_SERVER_END + payload.decode())
                 self._state.server_done = True
+            elif self._state.error_override is not None:
+                # The stream has ended, so nothing more of it is delivered.
+                continue
             elif self._binary_bodies:
                 await self._send(
                     {
