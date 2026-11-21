@@ -31,6 +31,10 @@ def decompress(
         raise ConnectError(Code.INVALID_ARGUMENT, f"decompress: {e}") from e
 
 
+class DecodeError(ConnectError):
+    """A message from the peer that the codec failed to decode."""
+
+
 def decode_message(
     codec: Codec, data: bytes | bytearray, message_class: type[_T]
 ) -> _T:
@@ -40,4 +44,4 @@ def decode_message(
     except ConnectError:
         raise
     except Exception as e:
-        raise ConnectError(Code.INVALID_ARGUMENT, f"unmarshal message: {e}") from e
+        raise DecodeError(Code.INVALID_ARGUMENT, f"unmarshal message: {e}") from e

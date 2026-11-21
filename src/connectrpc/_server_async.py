@@ -56,7 +56,7 @@ from ._server_websocket import (
     remove_reserved_response_metadata,
     upgrade_websocket,
 )
-from ._shared import decode_message, decompress
+from ._shared import DecodeError, decode_message, decompress
 from .code import Code
 from .errors import ConnectError
 from .protocol import ProtocolType
@@ -212,14 +212,14 @@ class _StreamResponse:
     codec: Codec
     compression: Compression
     writer: EnvelopeWriter
-    websocket: bool = False
+    websocket: WebSocketStream | None = None
     request_stream: AsyncGenerator[Any] | None = None
 
     async def send_headers(
         self, send: _ResponseSender, ctx: RequestContext | None
     ) -> None:
         if (
-            self.websocket
+            self.websocket is not None
             and ctx is not None
             and (error := remove_reserved_response_metadata(ctx.response_headers))
         ):
@@ -254,11 +254,14 @@ class _StreamResponse:
         """
         if send.failed:
             return False
-        if self.websocket and ctx is not None:
+        if self.websocket is not None and ctx is not None:
             # Headers set after the response started are never sent.
             if not send.started:
                 error = remove_reserved_response_metadata(ctx.response_headers) or error
             error = remove_reserved_response_metadata(ctx.response_trailers) or error
+        if self.websocket is not None and isinstance(error, DecodeError):
+            # A B payload that fails to decode is a protocol error.
+            self.websocket.set_protocol_error()
         if not send.started:
             # Exception before any response message is returned
             await self.send_headers(send, ctx)
@@ -600,7 +603,7 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
                             codec,
                             resp_compression,
                             protocol.create_envelope_writer(codec, resp_compression),
-                            websocket=is_websocket,
+                            websocket=websocket,
                         )
                         if isinstance(protocol, ConnectServerProtocol):
                             # Connect reports a stream's errors in its end-stream
@@ -675,20 +678,10 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
                                 headers.get(protocol.compression_header_name(), ""),
                                 self._compressions,
                             )
-                        reader = (
-                            websocket.create_envelope_reader
-                            if websocket is not None
-                            else EnvelopeReader
-                        )(
-                            endpoint.method.input,
-                            codec,
-                            req_compression,
-                            self._read_max_bytes,
-                        )
                         await self._call_stream(
                             endpoint,
                             stream,
-                            reader,
+                            req_compression,
                             metadata_run,
                             receiver,
                             sender,
@@ -861,7 +854,7 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
         self,
         endpoint: Endpoint[_REQ, _RES],
         stream: _StreamResponse,
-        reader: EnvelopeReader[_REQ],
+        req_compression: Compression,
         metadata_run: MetadataInterceptorsRun,
         receive: _RequestReceiver,
         send: _ResponseSender,
@@ -870,7 +863,14 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
         ctx: RequestContext,
     ) -> None:
         """Invoke the handler on the request stream and send its response messages."""
-        request_stream = _request_stream(receive, reader, loop)
+        request_stream = _request_stream(
+            receive,
+            endpoint.method.input,
+            stream.codec,
+            req_compression,
+            self._read_max_bytes,
+            loop,
+        )
         # Closed by the request's end, since the handler may not consume it.
         stream.request_stream = request_stream
         # Once the request has been fully read, watch receive() for a client
@@ -1085,12 +1085,17 @@ async def _close_response_stream(
 
 async def _request_stream(
     receive: _RequestReceiver,
-    reader: EnvelopeReader[_REQ],
+    request_class: type[_REQ],
+    codec: Codec,
+    compression: Compression,
+    read_max_bytes: int | None,
     loop: AsyncioLoop | TrioLoop,
 ) -> AsyncGenerator[_REQ]:
     body = _read_body(receive)
     try:
-        with reader:
+        with EnvelopeReader(
+            request_class, codec, compression, read_max_bytes
+        ) as reader:
             async for chunk in body:
                 for message in reader.feed(chunk):
                     yield message

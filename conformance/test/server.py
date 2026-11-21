@@ -466,6 +466,19 @@ def _server_env(request: ServerCompatRequest) -> dict[str, str]:
     return env
 
 
+def _websocket_max_message_size(request: ServerCompatRequest) -> int | None:
+    """Return the server's cap on a WebSocket message for the receive limit.
+
+    The application's limit only applies once the server has read the whole
+    message, so is effecitvely not a limit and we configure the servers with
+    it.
+    """
+    if not request.message_receive_limit:
+        return None
+    # Conformance requires the marker byte in the limit.
+    return request.message_receive_limit + 1
+
+
 _port_regex = re.compile(r".*://[^:]+:(\d+).*")
 
 
@@ -664,6 +677,7 @@ async def serve_pyvoy(
             tls_ca_cert=tls_ca_cert,
             loop=loop,
             websockets=websockets,
+            websockets_max_message_size=_websocket_max_message_size(request),
             websockets_compression_no_context_takeover=True,
         ) as server:
             if (
@@ -701,6 +715,8 @@ async def serve_uvicorn(
         "--ws=websockets-sansio",
         "--ws-per-message-deflate=false",
     ]
+    if (max_message_size := _websocket_max_message_size(request)) is not None:
+        args.append(f"--ws-max-size={max_message_size}")
     if certfile:
         args.append(f"--ssl-certfile={certfile}")
     if keyfile:

@@ -7,11 +7,10 @@ import struct
 from dataclasses import dataclass, field
 from http import HTTPStatus
 from re import compile as re_compile
-from typing import TYPE_CHECKING, TypeVar, cast
+from typing import TYPE_CHECKING, cast
 from urllib.parse import parse_qs
 
 from ._codec import CODEC_NAME_JSON
-from ._envelope import EnvelopeReader
 from ._loop import current_loop
 from ._protocol import ConnectWireError
 from .code import Code
@@ -29,11 +28,7 @@ if TYPE_CHECKING:
         WebSocketScope,
     )
 
-    from ._codec import Codec
-    from ._compression import Compression
     from ._headers import Headers
-
-_T = TypeVar("_T")
 
 _MARKER_BODY = "B"
 _MARKER_METADATA = "M"
@@ -131,40 +126,9 @@ class WebSocketStream:
     send: ASGISendCallable
     _state: _StreamState
 
-    def create_envelope_reader(
-        self,
-        message_class: type[_T],
-        codec: Codec,
-        compression: Compression,
-        read_max_bytes: int | None,
-    ) -> EnvelopeReader[_T]:
-        """Create the EnvelopeReader to read the request's messages."""
-        return _RequestReader(
-            self._state, message_class, codec, compression, read_max_bytes
-        )
-
-
-class _RequestReader(EnvelopeReader[_T]):
-    """Reads the messages that the receive adapter enveloped."""
-
-    def __init__(
-        self,
-        state: _StreamState,
-        message_class: type[_T],
-        codec: Codec,
-        compression: Compression,
-        read_max_bytes: int | None,
-    ) -> None:
-        super().__init__(message_class, codec, compression, read_max_bytes)
-        self._state = state
-
-    def _decode(self, data: bytes | bytearray) -> _T:
-        try:
-            return super()._decode(data)
-        except ConnectError:
-            # A B payload that fails to decode is a protocol error.
-            self._state.close_code = _CLOSE_PROTOCOL_ERROR
-            raise
+    def set_protocol_error(self) -> None:
+        """Close the connection as for a protocol error once S is sent."""
+        self._state.close_code = _CLOSE_PROTOCOL_ERROR
 
 
 def remove_reserved_response_metadata(metadata: Headers) -> ConnectError | None:

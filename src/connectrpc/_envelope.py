@@ -80,7 +80,8 @@ class EnvelopeReader(Generic[_RES]):
                     self._ended = True
                     return
 
-                yield self._decode(message_data)
+                res = decode_message(self._codec, message_data, self._message_class)
+                yield res
 
             if len(self._buffer) < 5:
                 return
@@ -95,9 +96,6 @@ class EnvelopeReader(Generic[_RES]):
                 and self._next_message_length > self._read_max_bytes
             ):
                 raise message_too_large_error(self._read_max_bytes)
-
-    def _decode(self, data: bytes | bytearray) -> _RES:
-        return decode_message(self._codec, data, self._message_class)
 
     def __enter__(self) -> Self:
         return self
