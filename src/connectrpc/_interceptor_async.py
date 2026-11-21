@@ -163,7 +163,14 @@ class MetadataInterceptor(Protocol[T]):
         error: Exception | None,  # noqa: ARG002 # keep name clean for public API
         /,
     ) -> None:
-        """Handle the end of the RPC."""
+        """Handle the end of the RPC.
+
+        On servers, on_end runs before the response ends, so that it can still
+        modify metadata that hasn't been sent: the headers and trailers of a
+        unary response, or the trailers of a streaming one. A failure writing
+        the response after on_end has run, such as the deadline passing while
+        the client is slow to read it, isn't reported to it.
+        """
         return
 
 
