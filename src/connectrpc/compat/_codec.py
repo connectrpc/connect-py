@@ -7,10 +7,6 @@ from google.protobuf.message import Message
 
 from connectrpc.codec import Codec
 
-CODEC_NAME_PROTO = "proto"
-CODEC_NAME_JSON = "json"
-
-
 T_contra = TypeVar("T_contra", contravariant=True)
 U = TypeVar("U")
 V = TypeVar("V", bound=Message)

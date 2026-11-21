@@ -105,13 +105,29 @@ def test_server_sync(server: str, cov: Coverage) -> None:
     )
 
 
-@pytest.mark.parametrize("server", ["pyvoy", "pyvoy-trio", "uvicorn"])
+@pytest.mark.parametrize("server", ["granian", "pyvoy", "pyvoy-trio", "uvicorn"])
 def test_server_async(server: str, cov: Coverage) -> None:
     args = maybe_patch_args_with_debug(
         [sys.executable, _server_py_path, "--mode", "async", "--server", server]
     )
     opts = []
     match server:
+        case "granian":
+            # granian intermittently drops HTTP/1.1 connections around error
+            # responses, and doesn't support HTTP/3 or the ASGI trailers
+            # extension that the gRPC protocol needs
+            opts = [
+                "--skip",
+                "**/HTTPVersion:1/**",
+                "--skip",
+                "**/HTTPVersion:3/**",
+                "--skip",
+                "**/Protocol:PROTOCOL_GRPC/**",
+                "--skip",
+                "gRPC Proto Sub-Format Requests/**",
+                "--skip",
+                "gRPC Unexpected Requests/**",
+            ]
         case "uvicorn":
             # uvicorn doesn't support HTTP/2 or 3
             opts = ["--skip", "**/HTTPVersion:2/**", "--skip", "**/HTTPVersion:3/**"]

@@ -496,7 +496,10 @@ async def serve_granian(
     # we can set max-servers=1 in the runner.
     # ref: https://github.com/emmett-framework/granian/issues/711
     port = _find_free_port()
-    args = [f"--port={port}", "--workers=8"]
+    workers = 8
+    # Without a kill timeout, granian can wait indefinitely on SIGTERM for
+    # workers to stop.
+    args = [f"--port={port}", f"--workers={workers}", "--workers-kill-timeout=1"]
     if certfile:
         args.append(f"--ssl-certificate={certfile}")
     if keyfile:
@@ -523,10 +526,14 @@ async def serve_granian(
     assert stdout is not None
     stdout = _tee_to_stderr(stdout)
     try:
+        # Workers start in any order, so wait until every one has.
+        started = 0
         async for line in stdout:
-            if b"Started worker-8 runtime-1" in line:
-                break
-        port_future.set_result(port)
+            if b"Started worker-" in line:
+                started += 1
+                if started == workers:
+                    port_future.set_result(port)
+                    break
         await _consume_log(stdout)
         await proc.wait()
     except asyncio.CancelledError:
@@ -563,50 +570,6 @@ async def serve_gunicorn(
 
     proc = await asyncio.create_subprocess_exec(
         "gunicorn",
-        *args,
-        stderr=asyncio.subprocess.STDOUT,
-        stdout=asyncio.subprocess.PIPE,
-        env=_server_env(request),
-    )
-    stdout = proc.stdout
-    assert stdout is not None
-    stdout = _tee_to_stderr(stdout)
-    try:
-        async for line in stdout:
-            match = _port_regex.match(line.decode("utf-8"))
-            if match:
-                port_future.set_result(int(match.group(1)))
-                break
-        await _consume_log(stdout)
-    except asyncio.CancelledError:
-        proc.terminate()
-        await proc.wait()
-
-
-async def serve_hypercorn(
-    request: ServerCompatRequest,
-    mode: Literal["sync", "async"],
-    certfile: str | None,
-    keyfile: str | None,
-    cafile: str | None,
-    port_future: asyncio.Future[int],
-):
-    args = ["--bind=localhost:0"]
-    if certfile:
-        args.append(f"--certfile={certfile}")
-    if keyfile:
-        args.append(f"--keyfile={keyfile}")
-    if cafile:
-        args.append(f"--ca-certs={cafile}")
-        args.append("--verify-mode=CERT_REQUIRED")
-
-    if mode == "sync":
-        args.append("server:wsgi_app")
-    else:
-        args.append("server:asgi_app")
-
-    proc = await asyncio.create_subprocess_exec(
-        "hypercorn",
         *args,
         stderr=asyncio.subprocess.STDOUT,
         stdout=asyncio.subprocess.PIPE,
@@ -728,7 +691,7 @@ def _find_free_port():
 
 
 Mode = Literal["sync", "async"]
-Server = Literal["granian", "gunicorn", "hypercorn", "pyvoy", "pyvoy-trio", "uvicorn"]
+Server = Literal["granian", "gunicorn", "pyvoy", "pyvoy-trio", "uvicorn"]
 
 
 class Args(argparse.Namespace):
@@ -787,12 +750,6 @@ async def main() -> None:
                     raise ValueError(msg)
                 serve_task = asyncio.create_task(
                     serve_gunicorn(request, certfile, keyfile, cafile, port_future)
-                )
-            case "hypercorn":
-                serve_task = asyncio.create_task(
-                    serve_hypercorn(
-                        request, args.mode, certfile, keyfile, cafile, port_future
-                    )
                 )
             case "pyvoy" | "pyvoy-trio":
                 serve_task = asyncio.create_task(

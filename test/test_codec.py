@@ -71,7 +71,6 @@ async def test_custom_codec() -> None:
     class LoggingTransport(Transport):
         def __init__(self, transport: Transport) -> None:
             self._transport = transport
-            self.last_request_data: bytes | None = None
 
         async def execute(self, request: Request) -> Response:
             nonlocal logged_content
