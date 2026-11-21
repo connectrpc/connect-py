@@ -21,23 +21,37 @@ def decompress(
     compression: Compression,
     data: bytes | bytearray | memoryview,
     read_max_bytes: int | None,
+    *,
+    code: Code = Code.INVALID_ARGUMENT,
 ) -> bytes:
-    """Decompress data from the peer, reporting malformed data as invalid_argument."""
+    """Decompress data from the peer, reporting malformed data with code.
+
+    Servers keep the default, since a malformed request is the client's fault;
+    clients pass internal.
+    """
     try:
         return compression.decompress(data, read_max_bytes)
     except ConnectError:
         raise
     except Exception as e:
-        raise ConnectError(Code.INVALID_ARGUMENT, f"decompress: {e}") from e
+        raise ConnectError(code, f"decompress: {e}") from e
 
 
 def decode_message(
-    codec: Codec, data: bytes | bytearray, message_class: type[_T]
+    codec: Codec,
+    data: bytes | bytearray,
+    message_class: type[_T],
+    *,
+    code: Code = Code.INVALID_ARGUMENT,
 ) -> _T:
-    """Decode a message from the peer, reporting malformed data as invalid_argument."""
+    """Decode a message from the peer, reporting malformed data with code.
+
+    Servers keep the default, since a malformed request is the client's fault;
+    clients pass internal.
+    """
     try:
         return codec.decode(data, message_class)
     except ConnectError:
         raise
     except Exception as e:
-        raise ConnectError(Code.INVALID_ARGUMENT, f"unmarshal message: {e}") from e
+        raise ConnectError(code, f"unmarshal message: {e}") from e
