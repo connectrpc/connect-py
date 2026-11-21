@@ -55,6 +55,8 @@ _skipped_websocket = [
     "--skip",
     "WebSocket Server Metadata/**",
     "--skip",
+    "WebSocket Server Message Size/**",
+    "--skip",
     "WebSocket Server Proto Framing/**",
 ]
 

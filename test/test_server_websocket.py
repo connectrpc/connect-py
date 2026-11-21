@@ -170,10 +170,13 @@ def test_invalid_allowed_origin_pattern(pattern: str) -> None:
 
 
 async def _run(
-    scope: dict[str, Any], connection: _Connection
+    scope: dict[str, Any],
+    connection: _Connection,
+    service: _FixedHaberdasher | None = None,
 ) -> tuple[_FixedHaberdasher, list[Any]]:
     """Run one connection, returning the service and what the server sent."""
-    service = _FixedHaberdasher()
+    if service is None:
+        service = _FixedHaberdasher()
     app = HaberdasherASGIApplication(service)
     with anyio.fail_after(5):
         await app(
@@ -465,3 +468,98 @@ async def test_websocket_rejects_client_end_payload() -> None:
     assert "a Client-End-Stream message has no payload" in sent[1]
     assert sent[2] == 1002
     assert service.protocols == []
+
+
+@pytest.mark.parametrize(
+    ("index", "frame", "message"),
+    [
+        (1, b"M[]", "the Leading-Metadata message must be sent in a text frame"),
+        (
+            2,
+            b'B{"inches": 10}',
+            "a B message under the json codec must be sent in a text frame",
+        ),
+    ],
+)
+@pytest.mark.anyio
+async def test_websocket_wrong_frame_type_is_protocol_error(
+    index: int, frame: bytes, message: str
+) -> None:
+    messages = _rpc_messages()
+    messages[index] = {"type": "websocket.receive", "bytes": frame}
+
+    service, sent = await _run(_scope(), _Connection(messages))
+
+    assert len(sent) == 3
+    assert sent[0] == "M[]"
+    assert '"code": "internal"' in sent[1]
+    assert message in sent[1]
+    assert sent[2] == 1002
+    assert service.protocols == []
+
+
+@pytest.mark.parametrize("body", ["B", "B{"])
+@pytest.mark.anyio
+async def test_websocket_undecodable_body_is_protocol_error(body: str) -> None:
+    # The error keeps the code it has over HTTP, but the stream still ends
+    # as it does for any other protocol error.
+    messages = _rpc_messages()
+    messages[2] = {"type": "websocket.receive", "text": body}
+
+    service, sent = await _run(_scope(), _Connection(messages))
+
+    assert len(sent) == 3
+    assert sent[0] == "M[]"
+    assert '"code": "invalid_argument"' in sent[1]
+    assert "unmarshal message" in sent[1]
+    assert sent[2] == 1002
+    assert service.protocols == []
+
+
+@pytest.mark.anyio
+async def test_websocket_reserved_response_header_fails_rpc() -> None:
+    class ReservedHeaderHaberdasher(_FixedHaberdasher):
+        async def make_hat(
+            self, request: Size, ctx: RequestContext[Size, Hat], /
+        ) -> Hat:
+            ctx.response_headers["connect-custom"] = "1"
+            ctx.response_headers["x-custom"] = "1"
+            return await super().make_hat(request, ctx)
+
+    _, sent = await _run(
+        _scope(), _Connection(_rpc_messages(), hang=True), ReservedHeaderHaberdasher()
+    )
+
+    assert sent == [
+        'M[["x-custom", "1"]]',
+        (
+            'S{"error": {"code": "internal", "message": "response metadata key '
+            "'connect-custom' is reserved\"}}"
+        ),
+        1000,
+    ]
+
+
+@pytest.mark.anyio
+async def test_websocket_reserved_response_trailer_fails_rpc() -> None:
+    class ReservedTrailerHaberdasher(_FixedHaberdasher):
+        async def make_hat(
+            self, request: Size, ctx: RequestContext[Size, Hat], /
+        ) -> Hat:
+            ctx.response_trailers["connect-custom"] = "1"
+            ctx.response_trailers["x-custom"] = "1"
+            return await super().make_hat(request, ctx)
+
+    _, sent = await _run(
+        _scope(), _Connection(_rpc_messages(), hang=True), ReservedTrailerHaberdasher()
+    )
+
+    assert sent == [
+        "M[]",
+        'B{"size":10,"color":"blue"}',
+        (
+            'S{"metadata": {"x-custom": ["1"]}, "error": {"code": "internal", '
+            '"message": "response metadata key \'connect-custom\' is reserved"}}'
+        ),
+        1000,
+    ]

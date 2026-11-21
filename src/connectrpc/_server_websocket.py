@@ -7,10 +7,11 @@ import struct
 from dataclasses import dataclass, field
 from http import HTTPStatus
 from re import compile as re_compile
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, TypeVar, cast
 from urllib.parse import parse_qs
 
 from ._codec import CODEC_NAME_JSON
+from ._envelope import EnvelopeReader
 from ._loop import current_loop
 from ._protocol import ConnectWireError
 from .code import Code
@@ -28,6 +29,12 @@ if TYPE_CHECKING:
         WebSocketScope,
     )
 
+    from ._codec import Codec
+    from ._compression import Compression
+    from ._headers import Headers
+
+_T = TypeVar("_T")
+
 _MARKER_BODY = "B"
 _MARKER_METADATA = "M"
 _MARKER_SERVER_END = "S"
@@ -35,7 +42,6 @@ _MARKER_CLIENT_END = "C"
 
 _CLOSE_NORMAL = 1000
 _CLOSE_PROTOCOL_ERROR = 1002
-_CLOSE_UNSUPPORTED_DATA = 1003
 _CLOSE_MESSAGE_TOO_BIG = 1009
 
 _ENVELOPE_PREFIX_LENGTH = 5
@@ -112,6 +118,67 @@ class _StreamState:
     error_trailers: dict[str, list[str]] = field(default_factory=dict)
 
 
+@dataclass(frozen=True, slots=True)
+class WebSocketStream:
+    """An accepted Connect-over-WebSocket stream, adapted to an HTTP request.
+
+    receive and send translate between marked WebSocket messages and
+    enveloped HTTP body chunks.
+    """
+
+    scope: HTTPScope
+    receive: ASGIReceiveCallable
+    send: ASGISendCallable
+    _state: _StreamState
+
+    def create_envelope_reader(
+        self,
+        message_class: type[_T],
+        codec: Codec,
+        compression: Compression,
+        read_max_bytes: int | None,
+    ) -> EnvelopeReader[_T]:
+        """Create the EnvelopeReader to read the request's messages."""
+        return _RequestReader(
+            self._state, message_class, codec, compression, read_max_bytes
+        )
+
+
+class _RequestReader(EnvelopeReader[_T]):
+    """Reads the messages that the receive adapter enveloped."""
+
+    def __init__(
+        self,
+        state: _StreamState,
+        message_class: type[_T],
+        codec: Codec,
+        compression: Compression,
+        read_max_bytes: int | None,
+    ) -> None:
+        super().__init__(message_class, codec, compression, read_max_bytes)
+        self._state = state
+
+    def _decode(self, data: bytes | bytearray) -> _T:
+        try:
+            return super()._decode(data)
+        except ConnectError:
+            # A B payload that fails to decode is a protocol error.
+            self._state.close_code = _CLOSE_PROTOCOL_ERROR
+            raise
+
+
+def remove_reserved_response_metadata(metadata: Headers) -> ConnectError | None:
+    """Remove the keys a server must not send in its M or S message."""
+    reserved = [key for key in metadata if key.startswith("connect-")]
+    if not reserved:
+        return None
+    for key in reserved:
+        del metadata[key]
+    return ConnectError(
+        Code.INTERNAL, f"response metadata key '{reserved[0]}' is reserved"
+    )
+
+
 async def upgrade_websocket(
     scope: WebSocketScope,
     receive: ASGIReceiveCallable,
@@ -121,20 +188,12 @@ async def upgrade_websocket(
     codecs: Iterable[str],
     read_max_bytes: int | None,
     allowed_origins: Collection[str] = (),
-) -> tuple[HTTPScope, ASGIReceiveCallable, ASGISendCallable] | None:
+) -> WebSocketStream | None:
     """Establish a Connect-over-WebSocket stream and adapt it to HTTP.
 
     Negotiates the subprotocol, validates the handshake, and consumes the
-    client's Leading-Metadata message, then returns an HTTP scope along with
-    receive/send callables that translate between marked WebSocket messages
-    and enveloped HTTP body chunks. Returns None when the RPC must not be
+    client's Leading-Metadata message. Returns None when the RPC must not be
     dispatched, in which case the connection has been rejected or closed.
-
-    allowed_origins holds lowercase host patterns permitted to open
-    cross-origin streams in addition to same-origin handshakes: an exact
-    host and optional port, a "*.example.com" domain wildcard, or "*" for
-    any origin. As in the same-origin check, the port is compared exactly
-    as written and the scheme is ignored.
     """
     message = await receive()
     if message["type"] != "websocket.connect":
@@ -245,7 +304,7 @@ async def upgrade_websocket(
                 Code.INTERNAL,
                 "the Leading-Metadata message must be sent in a text frame",
             ),
-            _CLOSE_UNSUPPORTED_DATA,
+            _CLOSE_PROTOCOL_ERROR,
         )
         return None
     if not metadata_text.startswith(_MARKER_METADATA):
@@ -305,7 +364,7 @@ async def upgrade_websocket(
 
     state = _StreamState()
     binary_bodies = codec_name != CODEC_NAME_JSON
-    return (
+    return WebSocketStream(
         cast("HTTPScope", http_scope),
         _wrap_receive(
             receive,
@@ -315,6 +374,7 @@ async def upgrade_websocket(
             read_max_bytes=read_max_bytes,
         ),
         _WebSocketSendAdapter(send, state, binary_bodies=binary_bodies),
+        state,
     )
 
 
@@ -514,7 +574,7 @@ def _wrap_receive(
                 if is_text == expect_binary:
                     raise _stream_error(
                         state,
-                        _CLOSE_UNSUPPORTED_DATA,
+                        _CLOSE_PROTOCOL_ERROR,
                         Code.INTERNAL,
                         f"a {marker_char} message under the {codec_name} codec must be sent in a {'binary' if expect_binary else 'text'} frame",
                     )
@@ -620,9 +680,9 @@ class _WebSocketSendAdapter:
     def _split_headers(self, headers: Iterable[tuple[bytes, bytes]]) -> list[list[str]]:
         """Split response headers into M entries, stashing error trailers.
 
-        The content type is carried by the subprotocol, compression by the
-        WebSocket layer, and no connect- name may appear in an M message, so
-        none of those headers reach the wire.
+        The content type is carried by the subprotocol and compression by the
+        WebSocket layer, so the headers the server sets for them do not reach
+        the wire.
         """
         fields: dict[str, list[str]] = {}
         for name_bytes, value_bytes in headers:
