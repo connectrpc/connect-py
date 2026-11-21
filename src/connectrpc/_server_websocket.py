@@ -328,7 +328,7 @@ async def upgrade_websocket(
         )
         return None
     try:
-        metadata = _parse_leading_metadata(metadata_payload)
+        metadata = _parse_leading_metadata(metadata_payload, headers)
     except (TypeError, ValueError) as e:
         await _fail_rpc(
             send, ConnectError(Code.INTERNAL, str(e)), _CLOSE_PROTOCOL_ERROR
@@ -453,8 +453,10 @@ async def _fail_rpc(
     await send({"type": "websocket.close", "code": close_code, "reason": None})
 
 
-def _parse_leading_metadata(payload: str) -> dict[str, list[str]]:
-    """Validate and fold a Leading-Metadata payload into effective headers."""
+def _parse_leading_metadata(
+    payload: str, handshake_headers: Container[str]
+) -> dict[str, list[str]]:
+    """Validate a Leading-Metadata payload, returning its headers."""
     parsed = json.loads(payload)
     if not isinstance(parsed, list):
         msg = "Leading-Metadata payload is not a JSON array"
@@ -485,6 +487,9 @@ def _parse_leading_metadata(payload: str) -> dict[str, list[str]]:
             _RESERVED_METADATA_PREFIXES
         ):
             msg = f"metadata key '{key}' is reserved"
+            raise ValueError(msg)
+        if key in handshake_headers:
+            msg = f"metadata key '{key}' matches a header of the handshake request"
             raise ValueError(msg)
         if not key.endswith("-bin"):
             for value in values:

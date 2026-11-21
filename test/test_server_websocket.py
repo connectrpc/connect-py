@@ -563,3 +563,27 @@ async def test_websocket_reserved_response_trailer_fails_rpc() -> None:
         ),
         1000,
     ]
+
+
+@pytest.mark.anyio
+async def test_websocket_rejects_metadata_matching_handshake_header() -> None:
+    # Handshake header names are case-insensitive.
+    scope = _scope()
+    scope["headers"].append((b"X-Custom", b"from-handshake"))
+    messages = _rpc_messages()
+    messages[1] = {
+        "type": "websocket.receive",
+        "text": 'M[["x-custom", "from-metadata"]]',
+    }
+
+    service, sent = await _run(scope, _Connection(messages))
+
+    assert sent == [
+        "M[]",
+        (
+            'S{"error": {"code": "internal", "message": "metadata key '
+            "'x-custom' matches a header of the handshake request\"}}"
+        ),
+        1002,
+    ]
+    assert service.protocols == []
