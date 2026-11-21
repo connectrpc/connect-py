@@ -22,11 +22,10 @@ class ProtocolType(Enum):
     """The Connect-over-WebSocket protocol."""
 
 
-ClientProtocolType = Literal[
+HTTPProtocolType = Literal[
     ProtocolType.CONNECT, ProtocolType.GRPC, ProtocolType.GRPC_WEB
 ]
-"""The protocols clients support.
+"""The protocols carried by HTTP requests and responses.
 
-Connect-over-WebSocket is aimed at servers handling requests from web
-browsers, so clients do not implement it.
+These are the protocols that clients and WSGI applications support.
 """

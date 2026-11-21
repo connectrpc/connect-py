@@ -32,7 +32,7 @@ if TYPE_CHECKING:
     from connectrpc.codec import Codec
     from connectrpc.compression import Compression
     from connectrpc.interceptor import Interceptor, InterceptorSync
-    from connectrpc.protocol import ClientProtocolType
+    from connectrpc.protocol import HTTPProtocolType
     from connectrpc.request import Headers, RequestContext
 
 
@@ -188,7 +188,7 @@ class HaberdasherClient(ConnectClient):
         address: str,
         *,
         codec: Codec | None = _PROTO_BINARY_CODEC,
-        protocol: ClientProtocolType = ProtocolType.CONNECT,
+        protocol: HTTPProtocolType = ProtocolType.CONNECT,
         accept_compression: Iterable[Compression] | None = None,
         send_compression: Compression | None = _GZIP_COMPRESSION,
         timeout_ms: int | None = None,
@@ -396,7 +396,7 @@ class HaberdasherWSGIApplication(ConnectWSGIApplication[HaberdasherSync]):
         read_max_bytes: int | None = DEFAULT_READ_MAX_BYTES,
         compressions: Iterable[Compression] | None = None,
         codecs: Iterable[Codec] | None = _DEFAULT_CODECS,
-        protocols: Iterable[ProtocolType] | None = None,
+        protocols: Iterable[HTTPProtocolType] | None = None,
         timeout: float | None = None,
     ) -> None:
         super().__init__(
@@ -490,7 +490,7 @@ class HaberdasherClientSync(ConnectClientSync):
         address: str,
         *,
         codec: Codec | None = _PROTO_BINARY_CODEC,
-        protocol: ClientProtocolType = ProtocolType.CONNECT,
+        protocol: HTTPProtocolType = ProtocolType.CONNECT,
         accept_compression: Iterable[Compression] | None = None,
         send_compression: Compression | None = _GZIP_COMPRESSION,
         timeout_ms: int | None = None,

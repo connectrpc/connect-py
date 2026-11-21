@@ -29,6 +29,7 @@ if TYPE_CHECKING:
     from connectrpc.codec import Codec
     from connectrpc.compression import Compression
     from connectrpc.interceptor import Interceptor, InterceptorSync
+    from connectrpc.protocol import HTTPProtocolType
     from connectrpc.request import Headers, RequestContext
 
 
@@ -123,7 +124,7 @@ class DeprecatedServiceWSGIApplication(ConnectWSGIApplication[DeprecatedServiceS
         read_max_bytes: int | None = DEFAULT_READ_MAX_BYTES,
         compressions: Iterable[Compression] | None = None,
         codecs: Iterable[Codec] | None = None,
-        protocols: Iterable[ProtocolType] | None = None,
+        protocols: Iterable[HTTPProtocolType] | None = None,
         timeout: float | None = None,
     ) -> None:
         super().__init__(
@@ -352,7 +353,7 @@ class ServiceWithDeprecatedMethodsWSGIApplication(ConnectWSGIApplication[Service
         read_max_bytes: int | None = DEFAULT_READ_MAX_BYTES,
         compressions: Iterable[Compression] | None = None,
         codecs: Iterable[Codec] | None = None,
-        protocols: Iterable[ProtocolType] | None = None,
+        protocols: Iterable[HTTPProtocolType] | None = None,
         timeout: float | None = None,
     ) -> None:
         super().__init__(

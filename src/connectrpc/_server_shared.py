@@ -154,9 +154,9 @@ class EndpointBidiStreamSync(EndpointSync[REQ, RES]):
 def resolve_protocols(
     protocols: Iterable[ProtocolType] | None,
 ) -> frozenset[ProtocolType]:
-    """Return the protocols to serve, which default to all of them."""
+    """Return the protocols to serve."""
     if protocols is None:
-        return frozenset(ProtocolType)
+        return frozenset(ProtocolType) - {ProtocolType.CONNECT_WEBSOCKETS}
     resolved = frozenset(protocols)
     if not resolved:
         msg = "protocols must not be empty"

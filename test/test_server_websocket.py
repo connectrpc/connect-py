@@ -22,6 +22,10 @@ if TYPE_CHECKING:
     from connectrpc.request import RequestContext
 
 
+# Connect-over-WebSocket is only served when asked for.
+_PROTOCOLS = (ProtocolType.CONNECT_WEBSOCKETS,)
+
+
 class _FixedHaberdasher(Haberdasher):
     def __init__(self) -> None:
         self.protocols: list[ProtocolType] = []
@@ -116,7 +120,7 @@ async def test_websocket_origin_check(
 ) -> None:
     service = _FixedHaberdasher()
     app = HaberdasherASGIApplication(
-        service, websockets_allowed_origins=allowed_origins
+        service, protocols=_PROTOCOLS, websockets_allowed_origins=allowed_origins
     )
     connection = _Connection(_rpc_messages(), hang=True)
 
@@ -165,7 +169,9 @@ async def test_websocket_origin_check(
 def test_invalid_allowed_origin_pattern(pattern: str) -> None:
     with pytest.raises(ValueError, match="websockets_allowed_origins"):
         HaberdasherASGIApplication(
-            _FixedHaberdasher(), websockets_allowed_origins=(pattern,)
+            _FixedHaberdasher(),
+            protocols=_PROTOCOLS,
+            websockets_allowed_origins=(pattern,),
         )
 
 
@@ -177,7 +183,7 @@ async def _run(
     """Run one connection, returning the service and what the server sent."""
     if service is None:
         service = _FixedHaberdasher()
-    app = HaberdasherASGIApplication(service)
+    app = HaberdasherASGIApplication(service, protocols=_PROTOCOLS)
     with anyio.fail_after(5):
         await app(
             cast("WebSocketScope", scope),
@@ -277,7 +283,9 @@ async def test_allowed_origins_accepts_generator() -> None:
     # iterable must not be exhausted by the validation.
     service = _FixedHaberdasher()
     app = HaberdasherASGIApplication(
-        service, websockets_allowed_origins=(p for p in ["app.example.org"])
+        service,
+        protocols=_PROTOCOLS,
+        websockets_allowed_origins=(p for p in ["app.example.org"]),
     )
     connection = _Connection(_rpc_messages(), hang=True)
 
@@ -301,7 +309,7 @@ async def test_trailer_headers_kept_on_success() -> None:
             ctx.response_headers["trailer-x-id"] = "1"
             return await super().make_hat(request, ctx)
 
-    app = HaberdasherASGIApplication(TrailerHaberdasher())
+    app = HaberdasherASGIApplication(TrailerHaberdasher(), protocols=_PROTOCOLS)
     connection = _Connection(_rpc_messages(), hang=True)
 
     with anyio.fail_after(5):
@@ -336,7 +344,7 @@ async def test_unary_handler_cancelled_on_disconnect() -> None:
             return Hat()
 
     service = SleepyHaberdasher()
-    app = HaberdasherASGIApplication(service)
+    app = HaberdasherASGIApplication(service, protocols=_PROTOCOLS)
     connection = _Connection(
         [*_rpc_messages(), {"type": "websocket.disconnect", "code": 1001}]
     )
@@ -366,7 +374,9 @@ async def test_oversized_message_ends_stream_when_handler_catches_error() -> Non
                 pass
             return Hat(size=1, color="blue")
 
-    app = HaberdasherASGIApplication(CatchingHaberdasher(), read_max_bytes=8)
+    app = HaberdasherASGIApplication(
+        CatchingHaberdasher(), protocols=_PROTOCOLS, read_max_bytes=8
+    )
     scope = _scope()
     scope["path"] = "/connectrpc.example.Haberdasher/MakeFlexibleHat"
     scope["raw_path"] = scope["path"].encode()
@@ -439,7 +449,7 @@ async def test_websocket_trims_metadata_whitespace() -> None:
         ) -> Hat:
             return Hat(size=request.inches, color=ctx.request_headers["x-custom"])
 
-    app = HaberdasherASGIApplication(EchoingHaberdasher())
+    app = HaberdasherASGIApplication(EchoingHaberdasher(), protocols=_PROTOCOLS)
     messages = _rpc_messages()
     messages[1] = {
         "type": "websocket.receive",
@@ -650,7 +660,7 @@ async def test_websocket_server_timeout_bounds_leading_metadata() -> None:
     # The server's timeout protects it from a client that upgrades, sends no
     # deadline, and never sends its Leading-Metadata message.
     service = _FixedHaberdasher()
-    app = HaberdasherASGIApplication(service, timeout=0.05)
+    app = HaberdasherASGIApplication(service, protocols=_PROTOCOLS, timeout=0.05)
     connection = _Connection([{"type": "websocket.connect"}], hang=True)
 
     with anyio.fail_after(5):
@@ -691,7 +701,9 @@ async def test_websocket_server_timeout_starts_at_handshake() -> None:
             await anyio.sleep(0.2)
             return await super().make_hat(request, ctx)
 
-    app = HaberdasherASGIApplication(SlowHaberdasher(), timeout=0.3)
+    app = HaberdasherASGIApplication(
+        SlowHaberdasher(), protocols=_PROTOCOLS, timeout=0.3
+    )
     connection = SlowConnection(_rpc_messages(), hang=True)
 
     with anyio.fail_after(5):

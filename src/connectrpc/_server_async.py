@@ -351,8 +351,8 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
                           If set to empty, disables compression.
             codecs: The codecs supported by the server. If unset, defaults to Protocol Buffers
                     binary and JSON codecs.
-            protocols: The protocols the server serves. If unset, all supported
-                protocols are served.
+            protocols: The protocols the server serves. If unset, the Connect,
+                gRPC, and gRPC-Web protocols are served.
             timeout: The maximum time to handle a request in seconds. A request from the
                 client with a shorter timeout uses the client's timeout. If unset,
                 requests are only limited by the client's timeout.

@@ -9,7 +9,7 @@ import pytest
 from pyqwest import Client, SyncClient
 from pyqwest.testing import ASGITransport, WSGITransport
 
-from connectrpc.protocol import ProtocolType
+from connectrpc.protocol import HTTPProtocolType, ProtocolType
 
 from .connectrpc.example.haberdasher_connect import (
     Haberdasher,
@@ -133,6 +133,25 @@ _UNSERVED_PROTOCOL_CASES = [
 def test_empty_protocols_rejected() -> None:
     with pytest.raises(ValueError, match="protocols must not be empty"):
         HaberdasherASGIApplication(_FixedHaberdasher(), protocols=())
+
+
+@pytest.mark.anyio
+async def test_websocket_handshake_rejected_by_default() -> None:
+    # Connect-over-WebSocket is only served when asked for.
+    app = HaberdasherASGIApplication(_FixedHaberdasher())
+    connection = _Connection([{"type": "websocket.connect"}])
+
+    with anyio.fail_after(5):
+        await app(
+            cast("WebSocketScope", _websocket_scope()),
+            cast("ASGIReceiveCallable", connection.receive),
+            cast("ASGISendCallable", connection.send),
+        )
+
+    assert connection.sent == [
+        {"type": "websocket.http.response.start", "status": 400, "headers": []},
+        {"type": "websocket.http.response.body", "body": b""},
+    ]
 
 
 @pytest.mark.anyio
@@ -274,7 +293,7 @@ def test_empty_protocols_rejected_sync() -> None:
     ("protocols", "content_type", "accept_post"), _UNSERVED_PROTOCOL_CASES
 )
 def test_http_protocol_rejected_when_not_served_sync(
-    protocols: tuple[ProtocolType, ...], content_type: str, accept_post: str
+    protocols: tuple[HTTPProtocolType, ...], content_type: str, accept_post: str
 ) -> None:
     app = HaberdasherWSGIApplication(_FixedHaberdasherSync(), protocols=protocols)
     environ: dict[str, Any] = {
@@ -299,6 +318,34 @@ def test_http_protocol_rejected_when_not_served_sync(
     assert ("accept-post", accept_post) in [
         (name.lower(), value) for name, value in headers
     ]
+
+
+@pytest.mark.parametrize(
+    ("connection", "upgrade"),
+    [("Upgrade", "websocket"), ("keep-alive, upgrade", "WebSocket")],
+)
+def test_websocket_handshake_rejected_sync(connection: str, upgrade: str) -> None:
+    # A WSGI application only serves requests over HTTP.
+    app = HaberdasherWSGIApplication(_FixedHaberdasherSync())
+    environ: dict[str, Any] = {
+        "REQUEST_METHOD": "GET",
+        "PATH_INFO": _PATH,
+        "HTTP_CONNECTION": connection,
+        "HTTP_UPGRADE": upgrade,
+        "HTTP_SEC_WEBSOCKET_PROTOCOL": "connectrpc.1+json",
+        "wsgi.input": BytesIO(),
+    }
+    setup_testing_defaults(environ)
+    statuses: list[str] = []
+
+    def start_response(
+        status: str, _headers: list[tuple[str, str]], _exc_info: object = None
+    ) -> None:
+        statuses.append(status)
+
+    list(app(environ, cast("Any", start_response)))
+
+    assert statuses == ["400 Bad Request"]
 
 
 def test_served_protocol_passes_restriction_sync() -> None:

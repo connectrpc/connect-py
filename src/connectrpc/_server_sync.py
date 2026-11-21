@@ -73,7 +73,7 @@ if TYPE_CHECKING:
     from protobuf import DescService
 
     from .compression import Compression
-    from .protocol import ProtocolType
+    from .protocol import HTTPProtocolType
 else:
     StartResponse = "wsgiref.types.StartResponse"
     WSGIEnvironment = "wsgiref.types.WSGIEnvironment"
@@ -110,6 +110,15 @@ def _process_headers(environ: WSGIEnvironment) -> Headers:
             header = key[5:].replace("_", "-")
             headers[header] = value
     return headers
+
+
+def _is_websocket_handshake(headers: Headers) -> bool:
+    """Whether the request asks to upgrade the connection to a WebSocket."""
+    connection = headers.get("connection", "").lower().split(",")
+    upgrade = headers.get("upgrade", "").lower().split(",")
+    return "upgrade" in (token.strip() for token in connection) and "websocket" in (
+        token.strip() for token in upgrade
+    )
 
 
 def prepare_response_headers(
@@ -254,7 +263,7 @@ class ConnectWSGIApplication(ABC, Generic[_SVC]):
         read_max_bytes: int | None = DEFAULT_READ_MAX_BYTES,
         compressions: Iterable[Compression] | None = None,
         codecs: Iterable[Codec] | None = None,
-        protocols: Iterable[ProtocolType] | None = None,
+        protocols: Iterable[HTTPProtocolType] | None = None,
         timeout: float | None = None,
     ) -> None: ...
 
@@ -271,7 +280,7 @@ class ConnectWSGIApplication(ABC, Generic[_SVC]):
         read_max_bytes: int | None = DEFAULT_READ_MAX_BYTES,
         compressions: Iterable[Compression] | None = None,
         codecs: Iterable[Codec] | None = None,
-        protocols: Iterable[ProtocolType] | None = None,
+        protocols: Iterable[HTTPProtocolType] | None = None,
         timeout: float | None = None,
     ) -> None: ...
 
@@ -285,7 +294,7 @@ class ConnectWSGIApplication(ABC, Generic[_SVC]):
         read_max_bytes: int | None = DEFAULT_READ_MAX_BYTES,
         compressions: Iterable[Compression] | None = None,
         codecs: Iterable[Codec] | None = None,
-        protocols: Iterable[ProtocolType] | None = None,
+        protocols: Iterable[HTTPProtocolType] | None = None,
         timeout: float | None = None,
     ) -> None:
         """Initialize the WSGI application.
@@ -420,6 +429,10 @@ class ConnectWSGIApplication(ABC, Generic[_SVC]):
             http_method = environ["REQUEST_METHOD"]
             http_scheme = environ.get("wsgi.url_scheme", "http")
             headers = _process_headers(environ)
+            if _is_websocket_handshake(headers):
+                # WSGI cannot upgrade a connection, so the endpoint only
+                # serves requests over HTTP.
+                raise HTTPError(HTTPStatus.BAD_REQUEST, [])
             if ra := environ.get("REMOTE_ADDR"):
                 port = environ.get("REMOTE_PORT", "0")
                 client_address = f"{ra}:{port}"

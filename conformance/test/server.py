@@ -56,6 +56,7 @@ from connectrpc.compression.brotli import BrotliCompression
 from connectrpc.compression.gzip import GzipCompression
 from connectrpc.compression.zstd import ZstdCompression
 from connectrpc.errors import ConnectError
+from connectrpc.protocol import ProtocolType
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Iterator
@@ -442,6 +443,7 @@ if read_max_bytes is not None:
 
 asgi_app = ConformanceServiceASGIApplication(
     TestService(),
+    protocols=tuple(ProtocolType),
     read_max_bytes=read_max_bytes,
     compressions=(GzipCompression(), ZstdCompression(), BrotliCompression()),
     codecs=(proto_binary_codec(), proto_json_codec(_REGISTRY)),

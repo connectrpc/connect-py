@@ -39,7 +39,7 @@ if TYPE_CHECKING:
     from .codec import Codec
     from .compression import Compression
     from .method import MethodInfo
-    from .protocol import ClientProtocolType
+    from .protocol import HTTPProtocolType
     from .request import Headers, RequestContext
 else:
     Self = "Self"
@@ -83,7 +83,7 @@ class ConnectClient:
         address: str,
         *,
         codec: Codec | None = None,
-        protocol: ClientProtocolType = ProtocolType.CONNECT,
+        protocol: HTTPProtocolType = ProtocolType.CONNECT,
         accept_compression: Iterable[Compression] | None = None,
         send_compression: Compression | None = _gzip,
         timeout_ms: int | None = None,
