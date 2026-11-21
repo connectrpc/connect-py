@@ -29,6 +29,7 @@ if TYPE_CHECKING:
     from connectrpc.codec import Codec
     from connectrpc.compression import Compression
     from connectrpc.interceptor import Interceptor, InterceptorSync
+    from connectrpc.protocol import HTTPProtocolType
     from connectrpc.request import Headers, RequestContext
 
 
@@ -85,6 +86,7 @@ class HaberdasherASGIApplication(ConnectASGIApplication[Haberdasher]):
         codecs: Iterable[Codec] | None = None,
         protocols: Iterable[ProtocolType] | None = None,
         timeout: float | None = None,
+        websocket_allowed_origins: Iterable[str] = (),
     ) -> None:
         super().__init__(
             service=service,
@@ -95,6 +97,7 @@ class HaberdasherASGIApplication(ConnectASGIApplication[Haberdasher]):
             codecs=codecs,
             protocols=protocols,
             timeout=timeout,
+            websocket_allowed_origins=websocket_allowed_origins,
         )
 
 
@@ -291,7 +294,7 @@ class HaberdasherWSGIApplication(ConnectWSGIApplication[HaberdasherSync]):
         read_max_bytes: int | None = DEFAULT_READ_MAX_BYTES,
         compressions: Iterable[Compression] | None = None,
         codecs: Iterable[Codec] | None = None,
-        protocols: Iterable[ProtocolType] | None = None,
+        protocols: Iterable[HTTPProtocolType] | None = None,
         timeout: float | None = None,
     ) -> None:
         super().__init__(

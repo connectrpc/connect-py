@@ -32,6 +32,7 @@ if TYPE_CHECKING:
     from connectrpc.codec import Codec
     from connectrpc.compression import Compression
     from connectrpc.interceptor import Interceptor, InterceptorSync
+    from connectrpc.protocol import HTTPProtocolType
     from connectrpc.request import Headers, RequestContext
 
 
@@ -67,6 +68,7 @@ class DeprecatedServiceASGIApplication(ConnectASGIApplication[DeprecatedService]
         codecs: Iterable[Codec] | None = _DEFAULT_CODECS,
         protocols: Iterable[ProtocolType] | None = None,
         timeout: float | None = None,
+        websocket_allowed_origins: Iterable[str] = (),
     ) -> None:
         super().__init__(
             service=service,
@@ -77,6 +79,7 @@ class DeprecatedServiceASGIApplication(ConnectASGIApplication[DeprecatedService]
             codecs=codecs,
             protocols=protocols,
             timeout=timeout,
+            websocket_allowed_origins=websocket_allowed_origins,
         )
 
     def _build_endpoints(self, service: DeprecatedService) -> Mapping[str, Endpoint]:
@@ -105,7 +108,7 @@ class DeprecatedServiceClient(ConnectClient):
         address: str,
         *,
         codec: Codec | None = _PROTO_BINARY_CODEC,
-        protocol: ProtocolType = ProtocolType.CONNECT,
+        protocol: HTTPProtocolType = ProtocolType.CONNECT,
         accept_compression: Iterable[Compression] | None = None,
         send_compression: Compression | None = _GZIP_COMPRESSION,
         timeout_ms: int | None = None,
@@ -168,7 +171,7 @@ class DeprecatedServiceWSGIApplication(ConnectWSGIApplication[DeprecatedServiceS
         read_max_bytes: int | None = DEFAULT_READ_MAX_BYTES,
         compressions: Iterable[Compression] | None = None,
         codecs: Iterable[Codec] | None = _DEFAULT_CODECS,
-        protocols: Iterable[ProtocolType] | None = None,
+        protocols: Iterable[HTTPProtocolType] | None = None,
         timeout: float | None = None,
     ) -> None:
         super().__init__(
@@ -208,7 +211,7 @@ class DeprecatedServiceClientSync(ConnectClientSync):
         address: str,
         *,
         codec: Codec | None = _PROTO_BINARY_CODEC,
-        protocol: ProtocolType = ProtocolType.CONNECT,
+        protocol: HTTPProtocolType = ProtocolType.CONNECT,
         accept_compression: Iterable[Compression] | None = None,
         send_compression: Compression | None = _GZIP_COMPRESSION,
         timeout_ms: int | None = None,
@@ -288,6 +291,7 @@ class ServiceWithDeprecatedMethodsASGIApplication(ConnectASGIApplication[Service
         codecs: Iterable[Codec] | None = _DEFAULT_CODECS,
         protocols: Iterable[ProtocolType] | None = None,
         timeout: float | None = None,
+        websocket_allowed_origins: Iterable[str] = (),
     ) -> None:
         super().__init__(
             service=service,
@@ -298,6 +302,7 @@ class ServiceWithDeprecatedMethodsASGIApplication(ConnectASGIApplication[Service
             codecs=codecs,
             protocols=protocols,
             timeout=timeout,
+            websocket_allowed_origins=websocket_allowed_origins,
         )
 
     def _build_endpoints(self, service: ServiceWithDeprecatedMethods) -> Mapping[str, Endpoint]:
@@ -358,7 +363,7 @@ class ServiceWithDeprecatedMethodsClient(ConnectClient):
         address: str,
         *,
         codec: Codec | None = _PROTO_BINARY_CODEC,
-        protocol: ProtocolType = ProtocolType.CONNECT,
+        protocol: HTTPProtocolType = ProtocolType.CONNECT,
         accept_compression: Iterable[Compression] | None = None,
         send_compression: Compression | None = _GZIP_COMPRESSION,
         timeout_ms: int | None = None,
@@ -506,7 +511,7 @@ class ServiceWithDeprecatedMethodsWSGIApplication(ConnectWSGIApplication[Service
         read_max_bytes: int | None = DEFAULT_READ_MAX_BYTES,
         compressions: Iterable[Compression] | None = None,
         codecs: Iterable[Codec] | None = _DEFAULT_CODECS,
-        protocols: Iterable[ProtocolType] | None = None,
+        protocols: Iterable[HTTPProtocolType] | None = None,
         timeout: float | None = None,
     ) -> None:
         super().__init__(
@@ -578,7 +583,7 @@ class ServiceWithDeprecatedMethodsClientSync(ConnectClientSync):
         address: str,
         *,
         codec: Codec | None = _PROTO_BINARY_CODEC,
-        protocol: ProtocolType = ProtocolType.CONNECT,
+        protocol: HTTPProtocolType = ProtocolType.CONNECT,
         accept_compression: Iterable[Compression] | None = None,
         send_compression: Compression | None = _GZIP_COMPRESSION,
         timeout_ms: int | None = None,

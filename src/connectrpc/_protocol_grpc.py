@@ -49,6 +49,7 @@ _DEFAULT_GRPC_USER_AGENT = f"grpc-python-connect/{__version__} ({sys.version})"
 
 
 class GRPCServerProtocol:
+    _content_type = GRPC_CONTENT_TYPE_DEFAULT
     _protocol_type: ProtocolType = ProtocolType.GRPC
 
     def create_request_context(
@@ -75,6 +76,7 @@ class GRPCServerProtocol:
             request_headers=headers,
             server_address=server_address,
             client_address=client_address,
+            protocol=self._protocol_type,
         )
         if timeout_ns is not None:
             ctx._end_time = time.monotonic() + (timeout_ns / 1_000_000_000)
@@ -124,6 +126,7 @@ class GRPCServerProtocol:
 
 
 class GRPCWebServerProtocol(GRPCServerProtocol):
+    _content_type = GRPC_WEB_CONTENT_TYPE_DEFAULT
     _protocol_type: ProtocolType = ProtocolType.GRPC_WEB
 
     def uses_trailers(self) -> bool:
@@ -227,6 +230,7 @@ class GRPCClientProtocol:
     def __init__(self) -> None:
         self._content_type = GRPC_CONTENT_TYPE_DEFAULT
         self._content_type_prefix = GRPC_CONTENT_TYPE_PREFIX
+        self._protocol_type = ProtocolType.GRPC
 
     def create_request_context(
         self,
@@ -271,6 +275,7 @@ class GRPCClientProtocol:
             request_headers=headers,
             timeout_ms=timeout_ms,
             server_address=server_address,
+            protocol=self._protocol_type,
         )
 
     def validate_response(
@@ -333,6 +338,7 @@ class GRPCWebClientProtocol(GRPCClientProtocol):
     def __init__(self) -> None:
         self._content_type = GRPC_WEB_CONTENT_TYPE_DEFAULT
         self._content_type_prefix = GRPC_WEB_CONTENT_TYPE_PREFIX
+        self._protocol_type = ProtocolType.GRPC_WEB
 
     def create_envelope_reader(
         self,

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from enum import Enum
+from typing import Literal
 
 
 class ProtocolType(Enum):
@@ -16,3 +17,15 @@ class ProtocolType(Enum):
 
     GRPC_WEB = 3
     """The gRPC-Web protocol."""
+
+    CONNECT_WEBSOCKET = 4
+    """The Connect-over-WebSocket protocol."""
+
+
+HTTPProtocolType = Literal[
+    ProtocolType.CONNECT, ProtocolType.GRPC, ProtocolType.GRPC_WEB
+]
+"""The protocols carried by HTTP requests and responses.
+
+These are the protocols that clients and WSGI applications support.
+"""

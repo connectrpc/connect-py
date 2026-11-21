@@ -5,6 +5,7 @@ features:
     - HTTP_VERSION_3
   protocols:
     - PROTOCOL_CONNECT
+    - PROTOCOL_CONNECT_WEBSOCKET
     - PROTOCOL_GRPC
     - PROTOCOL_GRPC_WEB
   codecs:

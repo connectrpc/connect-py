@@ -15,7 +15,7 @@ from pyqwest.testing import ASGITransport, WSGITransport
 from connectrpc.client import ResponseMetadata
 from connectrpc.code import Code
 from connectrpc.errors import ConnectError
-from connectrpc.protocol import ProtocolType
+from connectrpc.protocol import HTTPProtocolType, ProtocolType
 
 from ._util import call, cancel_when
 from .connectrpc.example.haberdasher_connect import (
@@ -861,7 +861,7 @@ async def test_metadata_interceptor_closes_stream_async(method: str) -> None:
     "protocol", [ProtocolType.CONNECT, ProtocolType.GRPC, ProtocolType.GRPC_WEB]
 )
 def test_metadata_interceptor_closes_stream_sync(
-    protocol: ProtocolType,
+    protocol: HTTPProtocolType,
     chunks: int | None,
     hats: int,
     cancelled: bool,
@@ -931,7 +931,7 @@ def test_metadata_interceptor_closes_stream_sync(
 @pytest.mark.parametrize(
     "protocol", [ProtocolType.CONNECT, ProtocolType.GRPC, ProtocolType.GRPC_WEB]
 )
-def test_server_stream_sees_middleware_context_sync(protocol: ProtocolType) -> None:
+def test_server_stream_sees_middleware_context_sync(protocol: HTTPProtocolType) -> None:
     """A server stream and its on_end see context vars that WSGI middleware sets and
     resets around the call, even though the server iterates the response later, and
     on_end can reset a context var that on_start set."""
