@@ -212,11 +212,18 @@ class _StreamResponse:
     codec: Codec
     compression: Compression
     writer: EnvelopeWriter
+    websocket: bool = False
     request_stream: AsyncGenerator[Any] | None = None
 
     async def send_headers(
         self, send: _ResponseSender, ctx: RequestContext | None
     ) -> None:
+        if (
+            self.websocket
+            and ctx is not None
+            and (error := remove_reserved_response_metadata(ctx.response_headers))
+        ):
+            raise error
         headers = [
             (b"content-type", self.protocol.content_type(self.codec).encode()),
             (
@@ -247,6 +254,11 @@ class _StreamResponse:
         """
         if send.failed:
             return False
+        if self.websocket and ctx is not None:
+            # Headers set after the response started are never sent.
+            if not send.started:
+                error = remove_reserved_response_metadata(ctx.response_headers) or error
+            error = remove_reserved_response_metadata(ctx.response_trailers) or error
         if not send.started:
             # Exception before any response message is returned
             await self.send_headers(send, ctx)
@@ -270,34 +282,6 @@ class _StreamResponse:
             }
         )
         return True
-
-
-@dataclass(slots=True)
-class _WebSocketStreamResponse(_StreamResponse):
-    """How a WebSocket stream's response is written.
-
-    A handler that sets response metadata the server must not send fails the
-    RPC, and the response leaves that metadata out.
-    """
-
-    async def send_headers(
-        self, send: _ResponseSender, ctx: RequestContext | None
-    ) -> None:
-        if ctx is not None and (
-            error := remove_reserved_response_metadata(ctx.response_headers)
-        ):
-            raise error
-        await super().send_headers(send, ctx)
-
-    async def end(
-        self, send: _ResponseSender, error: Exception | None, ctx: RequestContext | None
-    ) -> bool:
-        if ctx is not None:
-            # Headers set after the response started are never sent.
-            if not send.started:
-                error = remove_reserved_response_metadata(ctx.response_headers) or error
-            error = remove_reserved_response_metadata(ctx.response_trailers) or error
-        return await super().end(send, error, ctx)
 
 
 class ConnectASGIApplication(ABC, Generic[_SVC]):
@@ -611,15 +595,12 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
                                 headers, self._compressions
                             )
                         )
-                        stream_response = (
-                            _WebSocketStreamResponse
-                            if is_websocket
-                            else _StreamResponse
-                        )(
+                        stream_response = _StreamResponse(
                             protocol,
                             codec,
                             resp_compression,
                             protocol.create_envelope_writer(codec, resp_compression),
+                            websocket=is_websocket,
                         )
                         if isinstance(protocol, ConnectServerProtocol):
                             # Connect reports a stream's errors in its end-stream
