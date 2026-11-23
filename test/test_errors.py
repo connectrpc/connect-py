@@ -1204,7 +1204,7 @@ async def test_async_unhandled_exception_reraised(
     class RaisingHaberdasher(Haberdasher):
         async def make_hat(self, _request, _ctx) -> Hat:
             if exception is None:
-                return None  # ty: ignore[invalid-return-type]
+                return None  # ty: ignore[invalid-explicit-return]
             msg = "Something went wrong"
             raise exception(msg)
 

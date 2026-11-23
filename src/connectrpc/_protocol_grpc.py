@@ -214,7 +214,7 @@ class GRPCEnvelopeWriter(EnvelopeWriter):
 
 
 class GRPCWebEnvelopeWriter(GRPCEnvelopeWriter):
-    def end(self, user_trailers: Headers, error: ConnectWireError | None) -> bytes:  # ty: ignore[invalid-method-override]
+    def end(self, user_trailers: Headers, error: ConnectWireError | None) -> bytes:  # ty: ignore[incompatible-method-override]
         trailers = super().end(user_trailers, error)
         data = "".join(f"{k}: {v}\r\n" for k, v in trailers.allitems()).encode()
         if self._compression:
