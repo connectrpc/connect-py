@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from ._protocol_connect import ConnectServerProtocol
+from ._protocol_connect import ConnectServerProtocol, ConnectWebSocketServerProtocol
 from ._protocol_grpc import (
     GRPC_CONTENT_TYPE_DEFAULT,
     GRPC_CONTENT_TYPE_PREFIX,
@@ -17,11 +17,17 @@ if TYPE_CHECKING:
 
 
 _CONNECT_PROTOCOL = ConnectServerProtocol()
+_CONNECT_WEBSOCKET_PROTOCOL = ConnectWebSocketServerProtocol()
 _GRPC_PROTOCOL = GRPCServerProtocol()
 _GRPC_WEB_PROTOCOL = GRPCWebServerProtocol()
 
 
-def negotiate_server_protocol(content_type: str) -> ServerProtocol:
+def negotiate_server_protocol(
+    content_type: str, *, websocket: bool = False
+) -> ServerProtocol:
+    if websocket:
+        # The upgrade already negotiated the protocol and its codec.
+        return _CONNECT_WEBSOCKET_PROTOCOL
     if content_type == GRPC_CONTENT_TYPE_DEFAULT or content_type.startswith(
         GRPC_CONTENT_TYPE_PREFIX
     ):

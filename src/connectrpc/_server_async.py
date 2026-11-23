@@ -50,9 +50,16 @@ from ._server_shared import (
     resolve_protocols,
     unserved_protocol_error,
 )
-from ._shared import decode_message, decompress
+from ._server_websocket import (
+    WebSocketStream,
+    reject_websocket,
+    remove_reserved_response_metadata,
+    upgrade_websocket,
+)
+from ._shared import DecodeError, decode_message, decompress
 from .code import Code
 from .errors import ConnectError
+from .protocol import ProtocolType
 from .request import Headers, RequestContext
 
 if TYPE_CHECKING:
@@ -75,14 +82,12 @@ if TYPE_CHECKING:
         ASGISendEvent,
         HTTPScope,
         Scope,
-        WebSocketScope,
     )
     from protobuf import DescService
 
     from . import _server_shared
     from ._loop_trio import TrioLoop, TrioTimeout
     from .compression import Compression
-    from .protocol import ProtocolType
 else:
     ASGIReceiveCallable = "asgiref.typing.ASGIReceiveCallable"
     ASGISendCallable = "asgiref.typing.ASGISendCallable"
@@ -207,11 +212,18 @@ class _StreamResponse:
     codec: Codec
     compression: Compression
     writer: EnvelopeWriter
+    websocket: WebSocketStream | None = None
     request_stream: AsyncGenerator[Any] | None = None
 
     async def send_headers(
         self, send: _ResponseSender, ctx: RequestContext | None
     ) -> None:
+        if (
+            self.websocket is not None
+            and ctx is not None
+            and (error := remove_reserved_response_metadata(ctx.response_headers))
+        ):
+            raise error
         headers = [
             (b"content-type", self.protocol.content_type(self.codec).encode()),
             (
@@ -242,6 +254,11 @@ class _StreamResponse:
         """
         if send.failed:
             return False
+        if self.websocket is not None and ctx is not None:
+            # Headers set after the response started are never sent.
+            if not send.started:
+                error = remove_reserved_response_metadata(ctx.response_headers) or error
+            error = remove_reserved_response_metadata(ctx.response_trailers) or error
         if not send.started:
             # Exception before any response message is returned
             await self.send_headers(send, ctx)
@@ -284,6 +301,7 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
         codecs: Iterable[Codec] | None = None,
         protocols: Iterable[ProtocolType] | None = None,
         timeout: float | None = None,
+        websocket_allowed_origins: Iterable[str] = (),
     ) -> None: ...
 
     @overload
@@ -302,6 +320,7 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
         codecs: Iterable[Codec] | None = None,
         protocols: Iterable[ProtocolType] | None = None,
         timeout: float | None = None,
+        websocket_allowed_origins: Iterable[str] = (),
     ) -> None: ...
 
     def __init__(
@@ -316,6 +335,7 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
         codecs: Iterable[Codec] | None = None,
         protocols: Iterable[ProtocolType] | None = None,
         timeout: float | None = None,
+        websocket_allowed_origins: Iterable[str] = (),
     ) -> None:
         """Initialize the ASGI application.
 
@@ -331,11 +351,18 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
                           If set to empty, disables compression.
             codecs: The codecs supported by the server. If unset, defaults to Protocol Buffers
                     binary and JSON codecs.
-            protocols: The protocols the server serves. If unset, all supported
-                protocols are served.
+            protocols: The protocols the server serves. If unset, the Connect,
+                gRPC, and gRPC-Web protocols are served.
             timeout: The maximum time to handle a request in seconds. A request from the
                 client with a shorter timeout uses the client's timeout. If unset,
                 requests are only limited by the client's timeout.
+            websocket_allowed_origins: Host patterns permitted to open cross-origin
+                Connect-over-WebSocket streams, matched case-insensitively against
+                the host and port of the handshake's Origin header exactly as
+                written, ignoring only the scheme: an exact value such as
+                "app.example.com" or "app.example.com:8443", a "*.example.com"
+                domain wildcard, or "*" to allow any origin. A handshake from the
+                same host as the Host header is always permitted.
 
         """
         super().__init__()
@@ -370,6 +397,26 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
         codecs = codecs if codecs is not None else get_default_codecs()
         self._codecs = {codec.name(): codec for codec in codecs}
         self._protocols = resolve_protocols(protocols)
+        origin_patterns = tuple(websocket_allowed_origins)
+        for pattern in origin_patterns:
+            if (
+                "/" in pattern
+                or "*" in pattern[1:]
+                or (
+                    pattern.startswith("*")
+                    and pattern != "*"
+                    and not pattern.startswith("*.")
+                )
+            ):
+                msg = (
+                    f"websocket_allowed_origins pattern '{pattern}' must be a "
+                    "host without a scheme, a '*.example.com' domain wildcard, "
+                    "or '*'"
+                )
+                raise ValueError(msg)
+        self._websocket_allowed_origins = tuple(
+            pattern.lower() for pattern in origin_patterns
+        )
 
     @property
     def path(self) -> str:
@@ -382,10 +429,6 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
     async def __call__(
         self, scope: Scope, receive: ASGIReceiveCallable, send: ASGISendCallable
     ) -> None:
-        if scope["type"] == "websocket":
-            await _reject_websocket(scope, receive, send)
-            return
-
         if scope["type"] == "lifespan":
             await self._handle_lifespan(receive, send)
             return
@@ -398,7 +441,29 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
             self._resolved_endpoints = self._resolve_endpoints(
                 cast("_SVC", self._service)
             )
-        await self._handle_request(scope, receive, send, self._resolved_endpoints)
+
+        websocket: WebSocketStream | None = None
+        if scope["type"] == "websocket":
+            if ProtocolType.CONNECT_WEBSOCKET not in self._protocols:
+                await reject_websocket(scope, receive, send)
+                return
+            websocket = await upgrade_websocket(
+                scope,
+                receive,
+                send,
+                endpoints=self._resolved_endpoints,
+                codecs=self._codecs,
+                read_max_bytes=self._read_max_bytes,
+                allowed_origins=self._websocket_allowed_origins,
+                server_timeout=self._timeout,
+            )
+            if websocket is None:
+                return
+            scope, receive, send = websocket.scope, websocket.receive, websocket.send
+
+        await self._handle_request(
+            scope, receive, send, self._resolved_endpoints, websocket=websocket
+        )
 
     async def _handle_lifespan(
         self, receive: ASGIReceiveCallable, send: ASGISendCallable
@@ -440,7 +505,10 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
         receive: ASGIReceiveCallable,
         send: ASGISendCallable,
         endpoints: Mapping[str, Endpoint],
+        *,
+        websocket: WebSocketStream | None = None,
     ) -> None:
+        is_websocket = websocket is not None
         loop = current_loop()
         receiver = _RequestReceiver(receive, loop.event())
         sender = _ResponseSender(send)
@@ -462,6 +530,13 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
             # to the server as it is too late for us to be able to do anything.
             async with (timeout := loop.timeout_at(None)):
                 try:
+                    if not is_websocket and self._protocols == {
+                        ProtocolType.CONNECT_WEBSOCKET
+                    }:
+                        raise HTTPError(
+                            HTTPStatus.UPGRADE_REQUIRED, [("upgrade", "websocket")]
+                        )
+
                     path = scope["path"]
                     endpoint = endpoints.get(path)
                     if not endpoint and scope["root_path"]:
@@ -479,7 +554,9 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
                     )
 
                     content_type = headers.get("content-type", "")
-                    protocol = negotiate_server_protocol(content_type)
+                    protocol = negotiate_server_protocol(
+                        content_type, websocket=is_websocket
+                    )
                     if protocol._protocol_type not in self._protocols:
                         raise unserved_protocol_error(
                             self._protocols, unary=isinstance(endpoint, EndpointUnary)
@@ -498,9 +575,12 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
                         codec_name = query_params.get("encoding", ("",))[0]
                     else:
                         query_params = _UNSET_QUERY_PARAMS
+                        # WebSocket requests use unary-style content types
+                        # (e.g. application/json) even for streams.
                         codec_name = protocol.codec_name_from_content_type(
                             headers.get("content-type", ""),
-                            stream=not isinstance(endpoint, EndpointUnary),
+                            stream=not isinstance(endpoint, EndpointUnary)
+                            and not is_websocket,
                         )
                     codec = self._codecs.get(codec_name)
 
@@ -508,6 +588,7 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
                     req_compression: Compression | None = None
                     if codec and not (
                         isinstance(endpoint, EndpointUnary)
+                        and not is_websocket
                         and isinstance(protocol, ConnectServerProtocol)
                     ):
                         req_compression, resp_compression = (
@@ -520,6 +601,7 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
                             codec,
                             resp_compression,
                             protocol.create_envelope_writer(codec, resp_compression),
+                            websocket=websocket,
                         )
                         if isinstance(protocol, ConnectServerProtocol):
                             # Connect reports a stream's errors in its end-stream
@@ -539,11 +621,16 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
                     if (timeout_ms := ctx.timeout_ms) is not None:
                         deadline = loop.time() + timeout_ms / 1000
                         timeout.reschedule(deadline)
+                    if is_websocket:
+                        # The upgrade injects this header to carry the
+                        # deadline into the request context. The protocol
+                        # keeps it out of the effective headers.
+                        headers.pop("connect-timeout-ms", None)
 
                     if not codec:
                         accept_post = (
                             "application/json, application/proto"
-                            if isinstance(endpoint, EndpointUnary)
+                            if isinstance(endpoint, EndpointUnary) or is_websocket
                             else "application/connect+json, application/connect+proto"
                         )
                         raise HTTPError(
@@ -555,9 +642,12 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
                         self._metadata_interceptors, ctx
                     )
                     # We resolve the response protocol before any fallible logic to
-                    # be able to return errors properly.
-                    if isinstance(endpoint, EndpointUnary) and isinstance(
-                        protocol, ConnectServerProtocol
+                    # be able to return errors properly. Over WebSocket, unary
+                    # RPCs also use the streaming message flow.
+                    if (
+                        isinstance(endpoint, EndpointUnary)
+                        and not is_websocket
+                        and isinstance(protocol, ConnectServerProtocol)
                     ):
                         unary = _UnaryResponse(
                             codec,
@@ -778,13 +868,16 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
             req_compression,
             self._read_max_bytes,
             loop,
+            stream.websocket,
         )
         # Closed by the request's end, since the handler may not consume it.
         stream.request_stream = request_stream
         # Once the request has been fully read, watch receive() for a client
         # disconnect so a handler that is blocked or still streaming is stopped
         # promptly. The handler's generator is closed within the watch's scope.
-        async with loop.watch_for_disconnect(receive, scope) as disconnected:
+        async with loop.watch_for_disconnect(
+            receive, scope, cancel=isinstance(endpoint, EndpointUnary)
+        ) as disconnected:
             await self._stream_responses(
                 endpoint,
                 request_stream,
@@ -944,33 +1037,6 @@ class ConnectASGIApplication(ABC, Generic[_SVC]):
         return resolved_endpoints
 
 
-async def _reject_websocket(
-    scope: WebSocketScope, receive: ASGIReceiveCallable, send: ASGISendCallable
-) -> None:
-    """Reject a WebSocket handshake with 400 Bad Request, before the upgrade."""
-    message = await receive()
-    if message["type"] != "websocket.connect":
-        return
-    if "websocket.http.response" in (scope.get("extensions") or {}):
-        await send(
-            cast(
-                "ASGISendEvent",
-                {
-                    "type": "websocket.http.response.start",
-                    "status": HTTPStatus.BAD_REQUEST.value,
-                    "headers": [],
-                },
-            )
-        )
-        await send(
-            cast("ASGISendEvent", {"type": "websocket.http.response.body", "body": b""})
-        )
-    else:
-        # Without the extension, a close before accept makes the server
-        # reject the handshake with its own status code.
-        await send({"type": "websocket.close", "code": 1002, "reason": None})
-
-
 def _timeout_error(
     timeout: Timeout | TrioTimeout,
     receive: _RequestReceiver,
@@ -1023,6 +1089,7 @@ async def _request_stream(
     compression: Compression,
     read_max_bytes: int | None,
     loop: AsyncioLoop | TrioLoop,
+    websocket: WebSocketStream | None,
 ) -> AsyncGenerator[_REQ]:
     body = _read_body(receive)
     try:
@@ -1035,6 +1102,11 @@ async def _request_stream(
                     # Check for cancellation each message. While this seems heavyweight,
                     # conformance tests require it.
                     await loop.checkpoint()
+    except DecodeError as e:
+        if websocket is not None:
+            # A B payload that fails to decode is a protocol error.
+            websocket.fail_with_protocol_error(e)
+        raise
     finally:
         await _aclose(body)
 

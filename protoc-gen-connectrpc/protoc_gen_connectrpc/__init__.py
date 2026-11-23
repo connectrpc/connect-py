@@ -74,6 +74,7 @@ _HEADERS = _CONNECTRPC_REQUEST.ident("Headers", type_only=True)
 _REQUEST_CONTEXT = _CONNECTRPC_REQUEST.ident("RequestContext", type_only=True)
 _CONNECTRPC_PROTOCOL = Module("connectrpc.protocol")
 _PROTOCOL_TYPE = _CONNECTRPC_PROTOCOL.ident("ProtocolType")
+_HTTP_PROTOCOL_TYPE = _CONNECTRPC_PROTOCOL.ident("HTTPProtocolType", type_only=True)
 _CONNECTRPC_SERVER = Module("connectrpc.server")
 _DEFAULT_READ_MAX_BYTES = _CONNECTRPC_SERVER.ident("DEFAULT_READ_MAX_BYTES")
 _ENDPOINT = _CONNECTRPC_SERVER.ident("Endpoint")
@@ -215,6 +216,7 @@ def _generate_async_stubs(f: File, service: DescService, options: Options) -> No
             )
             f.print("protocols: ", _ITERABLE, "[", _PROTOCOL_TYPE, "] | None = None,")
             f.print("timeout: float | None = None,")
+            f.print("websocket_allowed_origins: ", _ITERABLE, "[str] = (),")
         with f.scope(") -> None:"):
             with f.scope("super().__init__("):
                 f.print("service=service,")
@@ -225,6 +227,7 @@ def _generate_async_stubs(f: File, service: DescService, options: Options) -> No
                 f.print("codecs=codecs,")
                 f.print("protocols=protocols,")
                 f.print("timeout=timeout,")
+                f.print("websocket_allowed_origins=websocket_allowed_origins,")
             f.print(")")
         if options.protobuf == _ProtobufOption.GOOGLE:
             _generate_build_endpoints(f, service, options, is_sync=False)
@@ -362,7 +365,9 @@ def _generate_sync_stubs(f: File, service: DescService, options: Options) -> Non
             f.print(
                 "codecs: ", _ITERABLE, "[", _CODEC, "] | None = ", default_codecs, ","
             )
-            f.print("protocols: ", _ITERABLE, "[", _PROTOCOL_TYPE, "] | None = None,")
+            f.print(
+                "protocols: ", _ITERABLE, "[", _HTTP_PROTOCOL_TYPE, "] | None = None,"
+            )
             f.print("timeout: float | None = None,")
         with f.scope(") -> None:"):
             with f.scope("super().__init__("):
@@ -448,7 +453,7 @@ def _print_google_compat_client_init(
         f.print("address: str,")
         f.print("*,")
         f.print("codec: ", _CODEC, " | None = _PROTO_BINARY_CODEC,")
-        f.print("protocol: ", _PROTOCOL_TYPE, " = ", _PROTOCOL_TYPE, ".CONNECT,")
+        f.print("protocol: ", _HTTP_PROTOCOL_TYPE, " = ", _PROTOCOL_TYPE, ".CONNECT,")
         f.print(
             "accept_compression: ", _ITERABLE, "[", _COMPRESSION, "] | None = None,"
         )

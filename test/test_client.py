@@ -27,7 +27,7 @@ from pyqwest.testing import ASGITransport, WSGITransport
 from connectrpc.client import ResponseMetadata
 from connectrpc.code import Code
 from connectrpc.errors import ConnectError
-from connectrpc.protocol import ProtocolType
+from connectrpc.protocol import HTTPProtocolType, ProtocolType
 
 from ._util import call
 from .connectrpc.example.haberdasher_connect import (
@@ -134,7 +134,7 @@ _protocols = [ProtocolType.CONNECT, ProtocolType.GRPC, ProtocolType.GRPC_WEB]
 
 @pytest.mark.anyio
 @pytest.mark.parametrize("protocol", _protocols)
-async def test_request_content_async(protocol: ProtocolType) -> None:
+async def test_request_content_async(protocol: HTTPProtocolType) -> None:
     """A request with one message reaches the transport as sized bytes; a stream stays a stream."""
 
     class SizeHaberdasher(Haberdasher):
@@ -182,7 +182,7 @@ async def test_request_content_async(protocol: ProtocolType) -> None:
 
 
 @pytest.mark.parametrize("protocol", _protocols)
-def test_request_content_sync(protocol: ProtocolType) -> None:
+def test_request_content_sync(protocol: HTTPProtocolType) -> None:
     """A request with one message reaches the transport as sized bytes; a stream stays a stream."""
 
     class SizeHaberdasherSync(HaberdasherSync):
@@ -287,7 +287,7 @@ class _FailingSyncTransport(SyncTransport):
 
 @pytest.mark.anyio
 @pytest.mark.parametrize("protocol", _protocols)
-async def test_request_iterator_error_async(protocol: ProtocolType) -> None:
+async def test_request_iterator_error_async(protocol: HTTPProtocolType) -> None:
     """A request iterator that raises fails the call with INTERNAL, chained from it."""
     error = RuntimeError("Test error")
 
@@ -312,7 +312,7 @@ async def test_request_iterator_error_async(protocol: ProtocolType) -> None:
 
 
 @pytest.mark.parametrize("protocol", _protocols)
-def test_request_iterator_error_sync(protocol: ProtocolType) -> None:
+def test_request_iterator_error_sync(protocol: HTTPProtocolType) -> None:
     """A request iterator that raises fails the call with INTERNAL, chained from it."""
     error = RuntimeError("Test error")
 
@@ -502,3 +502,18 @@ def test_trio_guest_on_asyncio() -> None:
         return (await done).unwrap()
 
     assert asyncio.run(asyncio_host()).size == 3
+
+
+def test_websockets_protocol_rejected() -> None:
+    # The annotation only permits HTTPProtocolType, and an untyped caller
+    # gets a runtime error.
+    with pytest.raises(ValueError, match="clients do not support protocol"):
+        HaberdasherClient(
+            "http://localhost",
+            protocol=cast("ProtocolType", ProtocolType.CONNECT_WEBSOCKET),  # ty: ignore[invalid-argument-type]
+        )
+    with pytest.raises(ValueError, match="clients do not support protocol"):
+        HaberdasherClientSync(
+            "http://localhost",
+            protocol=cast("ProtocolType", ProtocolType.CONNECT_WEBSOCKET),  # ty: ignore[invalid-argument-type]
+        )

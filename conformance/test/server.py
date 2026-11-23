@@ -56,6 +56,7 @@ from connectrpc.compression.brotli import BrotliCompression
 from connectrpc.compression.gzip import GzipCompression
 from connectrpc.compression.zstd import ZstdCompression
 from connectrpc.errors import ConnectError
+from connectrpc.protocol import ProtocolType
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Iterator
@@ -442,6 +443,7 @@ if read_max_bytes is not None:
 
 asgi_app = ConformanceServiceASGIApplication(
     TestService(),
+    protocols=tuple(ProtocolType),
     read_max_bytes=read_max_bytes,
     compressions=(GzipCompression(), ZstdCompression(), BrotliCompression()),
     codecs=(proto_binary_codec(), proto_json_codec(_REGISTRY)),
@@ -464,6 +466,19 @@ def _server_env(request: ServerCompatRequest) -> dict[str, str]:
     if request.message_receive_limit:
         env["READ_MAX_BYTES"] = str(request.message_receive_limit)
     return env
+
+
+def _websocket_max_message_size(request: ServerCompatRequest) -> int | None:
+    """Return the server's cap on a WebSocket message for the receive limit.
+
+    The application's limit only applies once the server has read the whole
+    message, so is effecitvely not a limit and we configure the servers with
+    it.
+    """
+    if not request.message_receive_limit:
+        return None
+    # Conformance requires the marker byte in the limit.
+    return request.message_receive_limit + 1
 
 
 _port_regex = re.compile(r".*://[^:]+:(\d+).*")
@@ -607,9 +622,12 @@ async def serve_pyvoy(
     if mode == "sync":
         interface = "wsgi"
         app = "server:wsgi_app"
+        # WebSockets require ASGI.
+        websockets = False
     else:
         interface = "asgi"
         app = "server:asgi_app"
+        websockets = True
 
     async def start():
         # Currently explicit env not accepted but it's safe to set it here.
@@ -623,6 +641,9 @@ async def serve_pyvoy(
             tls_cert=tls_cert,
             tls_ca_cert=tls_ca_cert,
             loop=loop,
+            websockets=websockets,
+            websockets_max_message_size=_websocket_max_message_size(request),
+            websockets_compression_no_context_takeover=True,
         ) as server:
             if (
                 request.http_version == HTTPVersion.HTTP_VERSION_3
@@ -650,7 +671,17 @@ async def serve_uvicorn(
     cafile: str | None,
     port_future: asyncio.Future[int],
 ):
-    args = ["--port=0", "--no-access-log"]
+    args = [
+        "--port=0",
+        "--no-access-log",
+        # The default wsproto implementation does not send a close frame for
+        # protocol errors it detects itself, such as invalid UTF-8 in a text
+        # frame, so the client sees 1006 instead of 1007.
+        "--ws=websockets-sansio",
+        "--ws-per-message-deflate=false",
+    ]
+    if (max_message_size := _websocket_max_message_size(request)) is not None:
+        args.append(f"--ws-max-size={max_message_size}")
     if certfile:
         args.append(f"--ssl-certfile={certfile}")
     if keyfile:

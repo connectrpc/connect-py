@@ -4,11 +4,12 @@ from io import BytesIO
 from typing import TYPE_CHECKING, Any, cast
 from wsgiref.util import setup_testing_defaults
 
+import anyio
 import pytest
 from pyqwest import Client, SyncClient
 from pyqwest.testing import ASGITransport, WSGITransport
 
-from connectrpc.protocol import ProtocolType
+from connectrpc.protocol import HTTPProtocolType, ProtocolType
 
 from .connectrpc.example.haberdasher_connect import (
     Haberdasher,
@@ -47,7 +48,10 @@ class _Connection:
         self.sent: list[dict[str, Any]] = []
 
     async def receive(self) -> dict[str, Any]:
-        return self._messages.pop(0)
+        if self._messages:
+            return self._messages.pop(0)
+        await anyio.sleep_forever()
+        raise AssertionError
 
     async def send(self, message: dict[str, Any]) -> None:
         self.sent.append(message)
@@ -132,15 +136,17 @@ def test_empty_protocols_rejected() -> None:
 
 
 @pytest.mark.anyio
-async def test_websocket_handshake_rejected() -> None:
+async def test_websocket_handshake_rejected_by_default() -> None:
+    # Connect-over-WebSocket is only served when asked for.
     app = HaberdasherASGIApplication(_FixedHaberdasher())
     connection = _Connection([{"type": "websocket.connect"}])
 
-    await app(
-        cast("WebSocketScope", _websocket_scope()),
-        cast("ASGIReceiveCallable", connection.receive),
-        cast("ASGISendCallable", connection.send),
-    )
+    with anyio.fail_after(5):
+        await app(
+            cast("WebSocketScope", _websocket_scope()),
+            cast("ASGIReceiveCallable", connection.receive),
+            cast("ASGISendCallable", connection.send),
+        )
 
     assert connection.sent == [
         {"type": "websocket.http.response.start", "status": 400, "headers": []},
@@ -149,15 +155,60 @@ async def test_websocket_handshake_rejected() -> None:
 
 
 @pytest.mark.anyio
-async def test_websocket_handshake_rejected_without_extension() -> None:
-    app = HaberdasherASGIApplication(_FixedHaberdasher())
+async def test_websocket_handshake_rejected_when_not_served() -> None:
+    app = HaberdasherASGIApplication(
+        _FixedHaberdasher(), protocols=(ProtocolType.CONNECT,)
+    )
     connection = _Connection([{"type": "websocket.connect"}])
 
-    await app(
-        cast("WebSocketScope", _websocket_scope(extension=False)),
-        cast("ASGIReceiveCallable", connection.receive),
-        cast("ASGISendCallable", connection.send),
+    with anyio.fail_after(5):
+        await app(
+            cast("WebSocketScope", _websocket_scope()),
+            cast("ASGIReceiveCallable", connection.receive),
+            cast("ASGISendCallable", connection.send),
+        )
+
+    assert connection.sent == [
+        {"type": "websocket.http.response.start", "status": 400, "headers": []},
+        {"type": "websocket.http.response.body", "body": b""},
+    ]
+
+
+@pytest.mark.anyio
+async def test_http_rejected_when_websockets_only() -> None:
+    app = HaberdasherASGIApplication(
+        _FixedHaberdasher(), protocols=(ProtocolType.CONNECT_WEBSOCKET,)
     )
+    connection = _Connection(
+        [{"type": "http.request", "body": b"", "more_body": False}]
+    )
+
+    with anyio.fail_after(5):
+        await app(
+            cast("HTTPScope", _http_scope("application/proto")),
+            cast("ASGIReceiveCallable", connection.receive),
+            cast("ASGISendCallable", connection.send),
+        )
+
+    start = connection.sent[0]
+    assert start["type"] == "http.response.start"
+    assert start["status"] == 426
+    assert (b"upgrade", b"websocket") in start["headers"]
+
+
+@pytest.mark.anyio
+async def test_websocket_handshake_rejected_without_extension() -> None:
+    app = HaberdasherASGIApplication(
+        _FixedHaberdasher(), protocols=(ProtocolType.CONNECT,)
+    )
+    connection = _Connection([{"type": "websocket.connect"}])
+
+    with anyio.fail_after(5):
+        await app(
+            cast("WebSocketScope", _websocket_scope(extension=False)),
+            cast("ASGIReceiveCallable", connection.receive),
+            cast("ASGISendCallable", connection.send),
+        )
 
     assert connection.sent == [
         {"type": "websocket.close", "code": 1002, "reason": None}
@@ -176,11 +227,12 @@ async def test_http_protocol_rejected_when_not_served(
         [{"type": "http.request", "body": b"", "more_body": False}]
     )
 
-    await app(
-        cast("HTTPScope", _http_scope(content_type)),
-        cast("ASGIReceiveCallable", connection.receive),
-        cast("ASGISendCallable", connection.send),
-    )
+    with anyio.fail_after(5):
+        await app(
+            cast("HTTPScope", _http_scope(content_type)),
+            cast("ASGIReceiveCallable", connection.receive),
+            cast("ASGISendCallable", connection.send),
+        )
 
     start = connection.sent[0]
     assert start["type"] == "http.response.start"
@@ -188,6 +240,35 @@ async def test_http_protocol_rejected_when_not_served(
     assert (b"accept-post", accept_post.encode()) in [
         (name.lower(), value) for name, value in start["headers"]
     ]
+
+
+@pytest.mark.anyio
+async def test_websocket_served_when_websockets_only() -> None:
+    app = HaberdasherASGIApplication(
+        _FixedHaberdasher(), protocols=(ProtocolType.CONNECT_WEBSOCKET,)
+    )
+    connection = _Connection(
+        [
+            {"type": "websocket.connect"},
+            {"type": "websocket.receive", "text": "M[]"},
+            {"type": "websocket.receive", "text": 'B{"inches": 10}'},
+            {"type": "websocket.receive", "text": "C"},
+        ]
+    )
+
+    with anyio.fail_after(5):
+        await app(
+            cast("WebSocketScope", _websocket_scope()),
+            cast("ASGIReceiveCallable", connection.receive),
+            cast("ASGISendCallable", connection.send),
+        )
+
+    texts = [
+        m["text"]
+        for m in connection.sent
+        if m["type"] == "websocket.send" and m.get("text") is not None
+    ]
+    assert texts == ["M[]", 'B{"size":10,"color":"blue"}', "S{}"]
 
 
 @pytest.mark.anyio
@@ -212,7 +293,7 @@ def test_empty_protocols_rejected_sync() -> None:
     ("protocols", "content_type", "accept_post"), _UNSERVED_PROTOCOL_CASES
 )
 def test_http_protocol_rejected_when_not_served_sync(
-    protocols: tuple[ProtocolType, ...], content_type: str, accept_post: str
+    protocols: tuple[HTTPProtocolType, ...], content_type: str, accept_post: str
 ) -> None:
     app = HaberdasherWSGIApplication(_FixedHaberdasherSync(), protocols=protocols)
     environ: dict[str, Any] = {
@@ -237,6 +318,34 @@ def test_http_protocol_rejected_when_not_served_sync(
     assert ("accept-post", accept_post) in [
         (name.lower(), value) for name, value in headers
     ]
+
+
+@pytest.mark.parametrize(
+    ("connection", "upgrade"),
+    [("Upgrade", "websocket"), ("keep-alive, upgrade", "WebSocket")],
+)
+def test_websocket_handshake_rejected_sync(connection: str, upgrade: str) -> None:
+    # A WSGI application only serves requests over HTTP.
+    app = HaberdasherWSGIApplication(_FixedHaberdasherSync())
+    environ: dict[str, Any] = {
+        "REQUEST_METHOD": "GET",
+        "PATH_INFO": _PATH,
+        "HTTP_CONNECTION": connection,
+        "HTTP_UPGRADE": upgrade,
+        "HTTP_SEC_WEBSOCKET_PROTOCOL": "connectrpc.1+json",
+        "wsgi.input": BytesIO(),
+    }
+    setup_testing_defaults(environ)
+    statuses: list[str] = []
+
+    def start_response(
+        status: str, _headers: list[tuple[str, str]], _exc_info: object = None
+    ) -> None:
+        statuses.append(status)
+
+    list(app(environ, cast("Any", start_response)))
+
+    assert statuses == ["400 Bad Request"]
 
 
 def test_served_protocol_passes_restriction_sync() -> None:

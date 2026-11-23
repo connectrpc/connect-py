@@ -9,6 +9,7 @@ import time
 from typing import TYPE_CHECKING, Generic, TypeVar
 
 from ._headers import Headers
+from .protocol import ProtocolType
 
 if TYPE_CHECKING:
     from .method import MethodInfo
@@ -22,6 +23,7 @@ class RequestContext(Generic[REQ, RES]):
 
     _method: MethodInfo[REQ, RES]
     _http_method: str
+    _protocol: ProtocolType
     _request_headers: Headers
     _response_headers: Headers | None
     _response_trailers: Headers | None
@@ -35,10 +37,12 @@ class RequestContext(Generic[REQ, RES]):
         timeout_ms: int | None = None,
         server_address: str | None = None,
         client_address: str | None = None,
+        protocol: ProtocolType = ProtocolType.CONNECT,
     ) -> None:
         """Initialize a Context object."""
         self._method = method
         self._http_method = http_method
+        self._protocol = protocol
         self._request_headers = request_headers
         self._response_headers = None
         self._response_trailers = None
@@ -63,6 +67,15 @@ class RequestContext(Generic[REQ, RES]):
         via GET.
         """
         return self._http_method
+
+    @property
+    def protocol(self) -> ProtocolType:
+        """Returns the protocol the RPC is invoked over.
+
+        - On the client, this is the protocol the client was configured with.
+        - On the server, this is the protocol of the incoming request.
+        """
+        return self._protocol
 
     @property
     def request_headers(self) -> Headers:

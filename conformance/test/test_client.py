@@ -28,7 +28,16 @@ _skipped_tests_sync = [
 # but we don't seem to see failures in other repos so maybe not.
 _flaky_tests = ["--known-flaky", "**/HTTPVersion:1/**/(grpc server impl)/**"]
 
-_skipped_tests = []
+# The client does not implement the Connect-over-WebSocket protocol, which
+# is aimed at servers handling requests from web browsers.
+_skipped_tests = [
+    "--skip",
+    "**/Protocol:PROTOCOL_CONNECT_WEBSOCKET/**",
+    "--skip",
+    "WebSocket Client Proto Framing/**",
+    "--skip",
+    "WebSocket Client Unexpected Responses/**",
+]
 if sys.platform == "darwin":
     # TODO: Investigate HTTP/3 conformance test failures on macOS more.
     # Currently, it seems to be an issue with the conformance runner itself and we see this log message.
