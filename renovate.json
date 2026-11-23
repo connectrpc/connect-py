@@ -6,7 +6,7 @@
   // `gh-actions-lock` extension. Keep it in step with the `--pin` in
   // the `actions-lock` CI job, which verifies the result.
   "constraints": {
-    "ghActionsLock": "v0.4.1"
+    "ghActionsLock": "v0.5.1"
   },
   "lockFileMaintenance": {
     "enabled": true

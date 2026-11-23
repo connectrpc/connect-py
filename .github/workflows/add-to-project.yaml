@@ -20,5 +20,5 @@ permissions: {}
 jobs:
   call-workflow-add-to-project:
     name: Call workflow to add issue to project
-    uses: connectrpc/base-workflows/.github/workflows/add-to-project.yaml@2c9b8323e8bc69bf296e283f13fcae22f3aa6a60 # main
+    uses: connectrpc/base-workflows/.github/workflows/add-to-project.yaml@f80fdd301dc9faf6b94e16c616fcdfd2316f1af9 # main
     secrets: inherit

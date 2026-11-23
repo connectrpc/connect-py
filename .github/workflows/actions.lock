@@ -6,37 +6,37 @@ workflows:
     '.github/workflows/add-to-project.yaml': []
     '.github/workflows/ci.yaml':
         - 'actions/checkout@v7.0.1'
-        - 'actions/setup-go@v7.0.0'
-        - 'astral-sh/setup-uv@v10.3.3'
+        - 'actions/setup-go@v7.1.0'
+        - 'astral-sh/setup-uv@v10.4.0'
         - 'codecov/codecov-action@v7.1.1'
     '.github/workflows/codeql.yml':
         - 'actions/checkout@v7.0.1'
-        - 'github/codeql-action@v4.39.3'
+        - 'github/codeql-action@v4.39.4'
     '.github/workflows/docs.yaml':
         - 'actions/checkout@v7.0.1'
         - 'actions/deploy-pages@v5.0.1'
         - 'actions/upload-pages-artifact@v5.0.0'
-        - 'astral-sh/setup-uv@v10.3.3'
+        - 'astral-sh/setup-uv@v10.4.0'
     '.github/workflows/pr-title.yaml': []
     '.github/workflows/release-fastapi.yaml':
         - 'actions/checkout@v7.0.1'
-        - 'astral-sh/setup-uv@v10.3.3'
+        - 'astral-sh/setup-uv@v10.4.0'
         - 'pypa/gh-action-pypi-publish@v1.14.3'
     '.github/workflows/release-grpchealth.yaml':
         - 'actions/checkout@v7.0.1'
-        - 'astral-sh/setup-uv@v10.3.3'
+        - 'astral-sh/setup-uv@v10.4.0'
         - 'pypa/gh-action-pypi-publish@v1.14.3'
     '.github/workflows/release-grpcreflect.yaml':
         - 'actions/checkout@v7.0.1'
-        - 'astral-sh/setup-uv@v10.3.3'
+        - 'astral-sh/setup-uv@v10.4.0'
         - 'pypa/gh-action-pypi-publish@v1.14.3'
     '.github/workflows/release-otel.yaml':
         - 'actions/checkout@v7.0.1'
-        - 'astral-sh/setup-uv@v10.3.3'
+        - 'astral-sh/setup-uv@v10.4.0'
         - 'pypa/gh-action-pypi-publish@v1.14.3'
     '.github/workflows/release.yaml':
         - 'actions/checkout@v7.0.1'
-        - 'astral-sh/setup-uv@v10.3.3'
+        - 'astral-sh/setup-uv@v10.4.0'
         - 'pypa/gh-action-pypi-publish@v1.14.3'
 dependencies:
     'actions/checkout@v7.0.1':
@@ -54,9 +54,9 @@ dependencies:
         commit: 'sha1-ed597411d8f924073f98dfc5c65a23a2325f34cd'
         owner_id: 44036562
         repo_id: 205262760
-    'actions/setup-go@v7.0.0':
-        ref: 'v7.0.0'
-        commit: 'sha1-b7ad1dad31e06c5925ef5d2fc7ad053ef454303e'
+    'actions/setup-go@v7.1.0':
+        ref: 'v7.1.0'
+        commit: 'sha1-d8cbb8045d7f43706b9177cceb36c1f91a6644d5'
         owner_id: 44036562
         repo_id: 192624594
     'actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405':
@@ -76,9 +76,9 @@ dependencies:
         repo_id: 496012378
         uses:
             - 'actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f'
-    'astral-sh/setup-uv@v10.3.3':
-        ref: 'v10.3.3'
-        commit: 'sha1-68559e99cc807c1eb7e9238fd43a15bba460eec2'
+    'astral-sh/setup-uv@v10.4.0':
+        ref: 'v10.4.0'
+        commit: 'sha1-1db35dd8eee11c5894872e0b383ae6c406cf738d'
         owner_id: 115962839
         repo_id: 846733598
     'codecov/codecov-action@v7.1.1':
@@ -88,9 +88,9 @@ dependencies:
         repo_id: 200299178
         uses:
             - 'actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd'
-    'github/codeql-action@v4.39.3':
-        ref: 'v4.39.3'
-        commit: 'sha1-33d7b85da1a04171e211befe2c739303b9a4c066'
+    'github/codeql-action@v4.39.4':
+        ref: 'v4.39.4'
+        commit: 'sha1-1bd86f2fdb4b86187fa4059f16f31a3202acc9ea'
         owner_id: 9919
         repo_id: 259445878
     'pypa/gh-action-pypi-publish@v1.14.3':
