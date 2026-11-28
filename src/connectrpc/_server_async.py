@@ -133,8 +133,11 @@ class _ResponseSender:
     async def __call__(self, message: ASGISendEvent) -> None:
         try:
             await self._send(message)
-        except Exception:
-            self.failed = True
+        except BaseException as e:
+            # An interrupted start may already have reached the server. Neither
+            # repeating it nor sending a body without it is safe.
+            if message["type"] == "http.response.start" or isinstance(e, Exception):
+                self.failed = True
             raise
         if message["type"] == "http.response.start":
             self.started = True
