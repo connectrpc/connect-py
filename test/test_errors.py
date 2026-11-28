@@ -1042,7 +1042,16 @@ async def test_async_server_timeout_in_on_end_keeps_handler_error(
 
 
 @pytest.mark.anyio
-async def test_async_server_timeout_writing_unary_response() -> None:
+@pytest.mark.parametrize(
+    "expected_sends",
+    [
+        pytest.param(["http.response.start"], id="start"),
+        pytest.param(["http.response.start", "http.response.body"], id="body"),
+    ],
+)
+async def test_async_server_timeout_writing_unary_response(
+    expected_sends: list[str],
+) -> None:
     """A unary response the client doesn't read is abandoned at the deadline.
 
     Nothing more can be sent, so the timeout is left to the server like any
@@ -1069,8 +1078,8 @@ async def test_async_server_timeout_writing_unary_response() -> None:
 
     async def send(message) -> None:
         sent.append(message["type"])
-        if message["type"] == "http.response.body":
-            # The client isn't reading, so the server never drains the body.
+        if sent == expected_sends:
+            # The server may have accepted the event before send returns.
             await anyio.Event().wait()
 
     scope: HTTPScope = {
@@ -1098,7 +1107,7 @@ async def test_async_server_timeout_writing_unary_response() -> None:
         pytest.fail("the response write was not abandoned at the deadline")
     assert exc_info.value.code == Code.DEADLINE_EXCEEDED
 
-    assert sent == ["http.response.start", "http.response.body"]
+    assert sent == expected_sends
     assert errors == [None]
 
 
