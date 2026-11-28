@@ -28,8 +28,8 @@ class EnvelopeReader(Generic[_RES]):
     _next_message_length: int | None
     _flags_mask = 0b01
 
-    # Invalid flags and truncated frames are bad requests on the server and
-    # internal errors on the client.
+    # Invalid flags, truncated frames, and malformed messages are bad requests
+    # on the server and internal errors on the client.
     _protocol_error_code = Code.INVALID_ARGUMENT
 
     def __init__(
@@ -73,14 +73,22 @@ class EnvelopeReader(Generic[_RES]):
 
                     if message_data:  # Don't decompress empty message
                         message_data = decompress(
-                            self._compression, message_data, self._read_max_bytes
+                            self._compression,
+                            message_data,
+                            self._read_max_bytes,
+                            code=self._protocol_error_code,
                         )
 
                 if self.handle_end_message(prefix_byte, message_data):
                     self._ended = True
                     return
 
-                res = decode_message(self._codec, message_data, self._message_class)
+                res = decode_message(
+                    self._codec,
+                    message_data,
+                    self._message_class,
+                    code=self._protocol_error_code,
+                )
                 yield res
 
             if len(self._buffer) < 5:

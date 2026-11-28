@@ -194,6 +194,14 @@ _http_errors = [
         "unknown encoding 'weird'; accepted encodings are gzip, identity",
         id="bad encoding",
     ),
+    pytest.param(
+        200,
+        b"\xff\xff\xff",
+        {"content-type": "application/proto"},
+        Code.INTERNAL,
+        "unmarshal message: invalid varint",
+        id="malformed message",
+    ),
 ]
 
 
